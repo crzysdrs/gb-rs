@@ -1,0 +1,6 @@
+[package]
+name = "gb"
+version = "0.1.0"
+authors = ["Mitch Souders <mitch.souders@gmail.com>"]
+
+[dependencies]
