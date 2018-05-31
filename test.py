@@ -1,21 +1,20 @@
 #!/usr/bin/env python
 from bs4 import BeautifulSoup
 from collections import defaultdict, namedtuple
+from bases import Bases
 import re
 
 gens = {}
 
-Gen = namedtuple("Gen", "name fmt init elems")
+Gen = namedtuple("Gen", "op op_name name size cycles cycles_false fmt init elems")
 
 def read_cell(opcode, c):
     if re.match("\xa0+", c):
-        i = Instr(opcode, "INVALID", 1, 0)
-        generic = i.mnem
-        g = Gen("INVALID", "INVALID", [], [])
+        g = Gen(opcode, "INVALID", "INVALID", 1, 1, None, ["opcode"], [], [])
     else:
         mnemonic, l2, l3 = c.split("<br/>")
-        m = re.match("([0-9]+)\xa0+([0-9]+)", l2)
-        bytes, cycles = (m.group(1), m.group(2))
+        m = re.match("([0-9]+)\xa0+([0-9]+)(?:/([0-9]+))?", l2)
+        bytes, cycles, cycles_false = (int(m.group(1)), int(m.group(2)), int(m.group(3)) if m.group(3) else None)
         (z, n, h, c) = l3.split(" ")
         generic = mnemonic
         generic = re.sub("HL\+", "HLP", generic)
@@ -71,21 +70,26 @@ def read_cell(opcode, c):
                     "a16" : "u16",
                     "r8" : "i8"
                 }
-                init.append("read_u{}(bytes)? as {}".format(m.group(2), conv[i]))
+                init.append("read_u{}(bytes)?{}".format(m.group(2), "" if conv[i][0] == "u" else
+                                                        " as {}".format(conv[i])))
                 elems.append(conv[i])
             else:
                 print i
                 assert(False)
 
-        i = Instr(opcode, mnemonic, int(bytes), int(cycles))
-        g = Gen("_".join([name] + new_items), name + (" " if len(fmt) > 0 else "") + ",".join(fmt), init, elems)
+        g = Gen(
+            opcode,
+            name,
+            "_".join([name] + new_items),
+            bytes,
+            cycles,
+            cycles_false,
+            name + (" " if len(fmt) > 0 else "") + ",".join(fmt),
+            init,
+            elems
+        )
     gens[opcode] = g
 
-    instr[generic].append(i)
-    return i
-
-
-Instr = namedtuple("Instr", "opcode mnem bytes cycles")
 
 soup = BeautifulSoup(open("gameboy_opcodes.html").read(), 'html.parser')
 
@@ -93,7 +97,6 @@ tables = soup.find_all('table')
 base = tables[0]
 extend = tables[1]
 
-instr = defaultdict(list)
 
 def do_table(table, prefix = 0):
     for (r_id, r) in enumerate(table.find_all('tr')[1:]):
@@ -101,24 +104,32 @@ def do_table(table, prefix = 0):
             read_cell((prefix << 8) | (r_id << 4) | d_id,  d.decode_contents())
 
 do_table(base)
-do_table(extend, prefix=0xC0)
-
-print len(instr.keys()), sorted(instr.keys())
+do_table(extend, prefix=0xCB)
 
 seen = {}
 display = ""
 defs = ""
 read = ""
+data = ""
 
-for i in range(0,256):
+import itertools
+for i in itertools.chain(range(0,256), range(0xCB << 8 + 0, (0xCB << 8) + 0x100)):
+    print "0x{:02}".format(i)
+
     args = ", ".join(["x{}".format(z) for (z, _) in enumerate(gens[i].elems)])
-    read += "0x{:02x} => {{\n {} Instr::{}{}\n}},\n".format(
-        i,
-        "".join(["let x{} = {};\n".format(id, val) for (id, val) in enumerate(gens[i].init)]),
+    read += "0x{:02x} => Instr::{}{},\n".format(
+        i & 0xff,
         gens[i].name,
-        "({})".format(args) if len(args) else "",
+        "({})".format(", ".join(gens[i].init)) if len(args) else "",
 
     )
+    data += "OpCode {{ mnemonic : \"{}\", size : {}, cycles: {}, cycles_false: {} }},\n".format(
+        gens[i].op_name,
+        gens[i].size,
+        gens[i].cycles,
+        "None" if gens[i].cycles_false is None else "Some({})".format(gens[i].cycles_false)
+    )
+
     if gens[i].name in seen:
         continue
     seen[gens[i].name] = True
@@ -134,7 +145,7 @@ for i in range(0,256):
         "" if len(gens[i].elems) == 0 else "({})".format(", ".join(gens[i].elems))
     )
 
-
 #print defs
 #print read
-print display
+#print display
+print data

@@ -118,10 +118,9 @@ enum Instr {
     ADD_r8_d8(Reg8, u8),
     RST_LIT(u8),
     RET,
-    PREFIX_CB(Reg8),
     CALL_a16(u16),
     ADC_r8_d8(Reg8, u8),
-    INVALID,
+    INVALID(u16),
     SUB_d8(u8),
     RETI,
     SBC_r8_d8(Reg8, u8),
@@ -140,15 +139,562 @@ enum Instr {
     LD_r16_r16(Reg16, Reg16),
     LD_r8_ia16(Reg8, u16),
     EI,
-    CP_d8(u8),}
+    CP_d8(u8),
+    RLC_r8(Reg8),
+    RLC_ir16(Reg16),
+    RRC_r8(Reg8),
+    RRC_ir16(Reg16),
+    RL_r8(Reg8),
+    RL_ir16(Reg16),
+    RR_r8(Reg8),
+    RR_ir16(Reg16),
+    SLA_r8(Reg8),
+    SLA_ir16(Reg16),
+    SRA_r8(Reg8),
+    SRA_ir16(Reg16),
+    SWAP_r8(Reg8),
+    SWAP_ir16(Reg16),
+    SRL_r8(Reg8),
+    SRL_ir16(Reg16),
+    BIT_l8_r8(u8, Reg8),
+    BIT_l8_ir16(u8, Reg16),
+    RES_l8_r8(u8, Reg8),
+    RES_l8_ir16(u8, Reg16),
+    SET_l8_r8(u8, Reg8),
+    SET_l8_ir16(u8, Reg16),
+}
 
 struct OpCode {
     mnemonic : & 'static str,
+    size : u8,
     cycles : u8,
+    cycles_false : Option<u8>,
 }
 
-static opcodes : [OpCode; 1] = [
-    OpCode { mnemonic: "NOP", cycles: 3} ];
+static OPCODES : [OpCode; 512] = [
+    OpCode { mnemonic : "NOP", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 3, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "INC", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "INC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "DEC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RLCA", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 3, cycles: 20, cycles_false: None },
+    OpCode { mnemonic : "ADD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "DEC", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "INC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "DEC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RRCA", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "STOP", size : 2, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 3, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "INC", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "INC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "DEC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RLA", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "JR", size : 2, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "ADD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "DEC", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "INC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "DEC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RRA", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "JR", size : 2, cycles: 12, cycles_false: Some(8) },
+    OpCode { mnemonic : "LD", size : 3, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "INC", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "INC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "DEC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "DAA", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "JR", size : 2, cycles: 12, cycles_false: Some(8) },
+    OpCode { mnemonic : "ADD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "DEC", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "INC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "DEC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "CPL", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "JR", size : 2, cycles: 12, cycles_false: Some(8) },
+    OpCode { mnemonic : "LD", size : 3, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "INC", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "INC", size : 1, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "DEC", size : 1, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 2, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "SCF", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "JR", size : 2, cycles: 12, cycles_false: Some(8) },
+    OpCode { mnemonic : "ADD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "DEC", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "INC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "DEC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "CCF", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "HALT", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "ADD", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "ADC", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "ADC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SUB", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SUB", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SUB", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SUB", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SUB", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SUB", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SUB", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SUB", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SBC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SBC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SBC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SBC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SBC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SBC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "SBC", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SBC", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "AND", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "AND", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "AND", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "AND", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "AND", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "AND", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "AND", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "AND", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "XOR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "XOR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "XOR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "XOR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "XOR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "XOR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "XOR", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "XOR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "OR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "OR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "OR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "OR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "OR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "OR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "OR", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "OR", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "CP", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "CP", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "CP", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "CP", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "CP", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "CP", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "CP", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "CP", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "RET", size : 1, cycles: 20, cycles_false: Some(8) },
+    OpCode { mnemonic : "POP", size : 1, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "JP", size : 3, cycles: 16, cycles_false: Some(12) },
+    OpCode { mnemonic : "JP", size : 3, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "CALL", size : 3, cycles: 24, cycles_false: Some(12) },
+    OpCode { mnemonic : "PUSH", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "ADD", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RST", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RET", size : 1, cycles: 20, cycles_false: Some(8) },
+    OpCode { mnemonic : "RET", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "JP", size : 3, cycles: 16, cycles_false: Some(12) },
+    OpCode { mnemonic : "CB", size : 2, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "CALL", size : 3, cycles: 24, cycles_false: Some(12) },
+    OpCode { mnemonic : "CALL", size : 3, cycles: 24, cycles_false: None },
+    OpCode { mnemonic : "ADC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RST", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RET", size : 1, cycles: 20, cycles_false: Some(8) },
+    OpCode { mnemonic : "POP", size : 1, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "JP", size : 3, cycles: 16, cycles_false: Some(12) },
+    OpCode { mnemonic : "INVALID", size : 1, cycles: 1, cycles_false: None },
+    OpCode { mnemonic : "CALL", size : 3, cycles: 24, cycles_false: Some(12) },
+    OpCode { mnemonic : "PUSH", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "SUB", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RST", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RET", size : 1, cycles: 20, cycles_false: Some(8) },
+    OpCode { mnemonic : "RETI", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "JP", size : 3, cycles: 16, cycles_false: Some(12) },
+    OpCode { mnemonic : "INVALID", size : 1, cycles: 1, cycles_false: None },
+    OpCode { mnemonic : "CALL", size : 3, cycles: 24, cycles_false: Some(12) },
+    OpCode { mnemonic : "INVALID", size : 1, cycles: 1, cycles_false: None },
+    OpCode { mnemonic : "SBC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RST", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "LDH", size : 2, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "POP", size : 1, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "INVALID", size : 1, cycles: 1, cycles_false: None },
+    OpCode { mnemonic : "INVALID", size : 1, cycles: 1, cycles_false: None },
+    OpCode { mnemonic : "PUSH", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "AND", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RST", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "ADD", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "JP", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 3, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "INVALID", size : 1, cycles: 1, cycles_false: None },
+    OpCode { mnemonic : "INVALID", size : 1, cycles: 1, cycles_false: None },
+    OpCode { mnemonic : "INVALID", size : 1, cycles: 1, cycles_false: None },
+    OpCode { mnemonic : "XOR", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RST", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "LDH", size : 2, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "POP", size : 1, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "DI", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "INVALID", size : 1, cycles: 1, cycles_false: None },
+    OpCode { mnemonic : "PUSH", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "OR", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RST", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 2, cycles: 12, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 1, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "LD", size : 3, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "EI", size : 1, cycles: 4, cycles_false: None },
+    OpCode { mnemonic : "INVALID", size : 1, cycles: 1, cycles_false: None },
+    OpCode { mnemonic : "INVALID", size : 1, cycles: 1, cycles_false: None },
+    OpCode { mnemonic : "CP", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RST", size : 1, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RLC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RLC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RLC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RLC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RLC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RLC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RLC", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RLC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RRC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RRC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RRC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RRC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RRC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RRC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RRC", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RRC", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RL", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RR", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RR", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RR", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RR", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RR", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RR", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RR", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RR", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SLA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SLA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SLA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SLA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SLA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SLA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SLA", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "SLA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRA", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "SRA", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SWAP", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SWAP", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SWAP", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SWAP", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SWAP", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SWAP", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SWAP", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "SWAP", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SRL", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "SRL", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "BIT", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "RES", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 16, cycles_false: None },
+    OpCode { mnemonic : "SET", size : 2, cycles: 8, cycles_false: None },
+];
+
+fn get_op(opcode :u16) -> &'static OpCode {
+    if opcode & 0xCB00 == 0xCB00 {
+        &OPCODES[(1 << 8 | (opcode & 0xFF)) as usize]
+    } else if (opcode & 0xFF) == opcode {
+        &OPCODES[opcode as usize]
+    } else {
+        panic!("opcode out of range");
+    }
+}
 
 fn read_u8<R:Read>(bytes: &mut R) -> io::Result<u8> {
     let mut buf = [0u8; 1];
@@ -163,1154 +709,544 @@ fn read_u16<R:Read>(bytes: &mut R) -> io::Result<u16> {
 }
 
 impl Instr {
-    fn disasm<R: Read>(bytes : &mut R) -> io::Result<Instr> {
+    fn prefix_cb_disasm<R: Read>(bytes : &mut R) -> io::Result<(u16, Instr)> {
         let mut opcode = [0u8; 1];
         bytes.read_exact(&mut opcode)?;
+        let real = ((0xCB as u16) << 8 | (opcode[0] as u16));
         let i = match opcode[0] {
-            0x00 => {
-                Instr::NOP
-            },
-            0x01 => {
-                let x0 = Reg16::BC;
-                let x1 = read_u16(bytes)? as u16;
-                Instr::LD_r16_d16(x0, x1)
-            },
-            0x02 => {
-                let x0 = Reg16::BC;
-                let x1 = Reg8::A;
-                Instr::LD_ir16_r8(x0, x1)
-            },
-            0x03 => {
-                let x0 = Reg16::BC;
-                Instr::INC_r16(x0)
-            },
-            0x04 => {
-                let x0 = Reg8::B;
-                Instr::INC_r8(x0)
-            },
-            0x05 => {
-                let x0 = Reg8::B;
-                Instr::DEC_r8(x0)
-            },
-            0x06 => {
-                let x0 = Reg8::B;
-                let x1 = read_u8(bytes)? as u8;
-                Instr::LD_r8_d8(x0, x1)
-            },
-            0x07 => {
-                Instr::RLCA
-            },
-            0x08 => {
-                let x0 = read_u16(bytes)? as u16;
-                let x1 = Reg16::SP;
-                Instr::LD_ia16_r16(x0, x1)
-            },
-            0x09 => {
-                let x0 = Reg16::HL;
-                let x1 = Reg16::BC;
-                Instr::ADD_r16_r16(x0, x1)
-            },
-            0x0a => {
-                let x0 = Reg8::A;
-                let x1 = Reg16::BC;
-                Instr::LD_r8_ir16(x0, x1)
-            },
-            0x0b => {
-                let x0 = Reg16::BC;
-                Instr::DEC_r16(x0)
-            },
-            0x0c => {
-                let x0 = Reg8::C;
-                Instr::INC_r8(x0)
-            },
-            0x0d => {
-                let x0 = Reg8::C;
-                Instr::DEC_r8(x0)
-            },
-            0x0e => {
-                let x0 = Reg8::C;
-                let x1 = read_u8(bytes)? as u8;
-                Instr::LD_r8_d8(x0, x1)
-            },
-            0x0f => {
-                Instr::RRCA
-            },
-            0x10 => {
-                let x0 = 0;
-                Instr::STOP_0(x0)
-            },
-            0x11 => {
-                let x0 = Reg16::DE;
-                let x1 = read_u16(bytes)? as u16;
-                Instr::LD_r16_d16(x0, x1)
-            },
-            0x12 => {
-                let x0 = Reg16::DE;
-                let x1 = Reg8::A;
-                Instr::LD_ir16_r8(x0, x1)
-            },
-            0x13 => {
-                let x0 = Reg16::DE;
-                Instr::INC_r16(x0)
-            },
-            0x14 => {
-                let x0 = Reg8::D;
-                Instr::INC_r8(x0)
-            },
-            0x15 => {
-                let x0 = Reg8::D;
-                Instr::DEC_r8(x0)
-            },
-            0x16 => {
-                let x0 = Reg8::D;
-                let x1 = read_u8(bytes)? as u8;
-                Instr::LD_r8_d8(x0, x1)
-            },
-            0x17 => {
-                Instr::RLA
-            },
-            0x18 => {
-                let x0 = read_u8(bytes)? as i8;
-                Instr::JR_r8(x0)
-            },
-            0x19 => {
-                let x0 = Reg16::HL;
-                let x1 = Reg16::DE;
-                Instr::ADD_r16_r16(x0, x1)
-            },
-            0x1a => {
-                let x0 = Reg8::A;
-                let x1 = Reg16::DE;
-                Instr::LD_r8_ir16(x0, x1)
-            },
-            0x1b => {
-                let x0 = Reg16::DE;
-                Instr::DEC_r16(x0)
-            },
-            0x1c => {
-                let x0 = Reg8::E;
-                Instr::INC_r8(x0)
-            },
-            0x1d => {
-                let x0 = Reg8::E;
-                Instr::DEC_r8(x0)
-            },
-            0x1e => {
-                let x0 = Reg8::E;
-                let x1 = read_u8(bytes)? as u8;
-                Instr::LD_r8_d8(x0, x1)
-            },
-            0x1f => {
-                Instr::RRA
-            },
-            0x20 => {
-                let x0 = Cond::NZ;
-                let x1 = read_u8(bytes)? as i8;
-                Instr::JR_COND_r8(x0, x1)
-            },
-            0x21 => {
-                let x0 = Reg16::HL;
-                let x1 = read_u16(bytes)? as u16;
-                Instr::LD_r16_d16(x0, x1)
-            },
-            0x22 => {
-                let x0 = Reg16::HLP;
-                let x1 = Reg8::A;
-                Instr::LD_ir16_r8(x0, x1)
-            },
-            0x23 => {
-                let x0 = Reg16::HL;
-                Instr::INC_r16(x0)
-            },
-            0x24 => {
-                let x0 = Reg8::H;
-                Instr::INC_r8(x0)
-            },
-            0x25 => {
-                let x0 = Reg8::H;
-                Instr::DEC_r8(x0)
-            },
-            0x26 => {
-                let x0 = Reg8::H;
-                let x1 = read_u8(bytes)? as u8;
-                Instr::LD_r8_d8(x0, x1)
-            },
-            0x27 => {
-                Instr::DAA
-            },
-            0x28 => {
-                let x0 = Cond::Z;
-                let x1 = read_u8(bytes)? as i8;
-                Instr::JR_COND_r8(x0, x1)
-            },
-            0x29 => {
-                let x0 = Reg16::HL;
-                let x1 = Reg16::HL;
-                Instr::ADD_r16_r16(x0, x1)
-            },
-            0x2a => {
-                let x0 = Reg8::A;
-                let x1 = Reg16::HLP;
-                Instr::LD_r8_ir16(x0, x1)
-            },
-            0x2b => {
-                let x0 = Reg16::HL;
-                Instr::DEC_r16(x0)
-            },
-            0x2c => {
-                let x0 = Reg8::L;
-                Instr::INC_r8(x0)
-            },
-            0x2d => {
-                let x0 = Reg8::L;
-                Instr::DEC_r8(x0)
-            },
-            0x2e => {
-                let x0 = Reg8::L;
-                let x1 = read_u8(bytes)? as u8;
-                Instr::LD_r8_d8(x0, x1)
-            },
-            0x2f => {
-                Instr::CPL
-            },
-            0x30 => {
-                let x0 = Cond::NC;
-                let x1 = read_u8(bytes)? as i8;
-                Instr::JR_COND_r8(x0, x1)
-            },
-            0x31 => {
-                let x0 = Reg16::SP;
-                let x1 = read_u16(bytes)? as u16;
-                Instr::LD_r16_d16(x0, x1)
-            },
-            0x32 => {
-                let x0 = Reg16::HLS;
-                let x1 = Reg8::A;
-                Instr::LD_ir16_r8(x0, x1)
-            },
-            0x33 => {
-                let x0 = Reg16::SP;
-                Instr::INC_r16(x0)
-            },
-            0x34 => {
-                let x0 = Reg16::HL;
-                Instr::INC_ir16(x0)
-            },
-            0x35 => {
-                let x0 = Reg16::HL;
-                Instr::DEC_ir16(x0)
-            },
-            0x36 => {
-                let x0 = Reg16::HL;
-                let x1 = read_u8(bytes)? as u8;
-                Instr::LD_ir16_d8(x0, x1)
-            },
-            0x37 => {
-                Instr::SCF
-            },
-            0x38 => {
-                let x0 = Cond::C;
-                let x1 = read_u8(bytes)? as i8;
-                Instr::JR_COND_r8(x0, x1)
-            },
-            0x39 => {
-                let x0 = Reg16::HL;
-                let x1 = Reg16::SP;
-                Instr::ADD_r16_r16(x0, x1)
-            },
-            0x3a => {
-                let x0 = Reg8::A;
-                let x1 = Reg16::HLS;
-                Instr::LD_r8_ir16(x0, x1)
-            },
-            0x3b => {
-                let x0 = Reg16::SP;
-                Instr::DEC_r16(x0)
-            },
-            0x3c => {
-                let x0 = Reg8::A;
-                Instr::INC_r8(x0)
-            },
-            0x3d => {
-                let x0 = Reg8::A;
-                Instr::DEC_r8(x0)
-            },
-            0x3e => {
-                let x0 = Reg8::A;
-                let x1 = read_u8(bytes)? as u8;
-                Instr::LD_r8_d8(x0, x1)
-            },
-            0x3f => {
-                Instr::CCF
-            },
-            0x40 => {
-                let x0 = Reg8::B;
-                let x1 = Reg8::B;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x41 => {
-                let x0 = Reg8::B;
-                let x1 = Reg8::C;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x42 => {
-                let x0 = Reg8::B;
-                let x1 = Reg8::D;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x43 => {
-                let x0 = Reg8::B;
-                let x1 = Reg8::E;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x44 => {
-                let x0 = Reg8::B;
-                let x1 = Reg8::H;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x45 => {
-                let x0 = Reg8::B;
-                let x1 = Reg8::L;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x46 => {
-                let x0 = Reg8::B;
-                let x1 = Reg16::HL;
-                Instr::LD_r8_ir16(x0, x1)
-            },
-            0x47 => {
-                let x0 = Reg8::B;
-                let x1 = Reg8::A;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x48 => {
-                let x0 = Reg8::C;
-                let x1 = Reg8::B;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x49 => {
-                let x0 = Reg8::C;
-                let x1 = Reg8::C;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x4a => {
-                let x0 = Reg8::C;
-                let x1 = Reg8::D;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x4b => {
-                let x0 = Reg8::C;
-                let x1 = Reg8::E;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x4c => {
-                let x0 = Reg8::C;
-                let x1 = Reg8::H;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x4d => {
-                let x0 = Reg8::C;
-                let x1 = Reg8::L;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x4e => {
-                let x0 = Reg8::C;
-                let x1 = Reg16::HL;
-                Instr::LD_r8_ir16(x0, x1)
-            },
-            0x4f => {
-                let x0 = Reg8::C;
-                let x1 = Reg8::A;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x50 => {
-                let x0 = Reg8::D;
-                let x1 = Reg8::B;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x51 => {
-                let x0 = Reg8::D;
-                let x1 = Reg8::C;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x52 => {
-                let x0 = Reg8::D;
-                let x1 = Reg8::D;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x53 => {
-                let x0 = Reg8::D;
-                let x1 = Reg8::E;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x54 => {
-                let x0 = Reg8::D;
-                let x1 = Reg8::H;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x55 => {
-                let x0 = Reg8::D;
-                let x1 = Reg8::L;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x56 => {
-                let x0 = Reg8::D;
-                let x1 = Reg16::HL;
-                Instr::LD_r8_ir16(x0, x1)
-            },
-            0x57 => {
-                let x0 = Reg8::D;
-                let x1 = Reg8::A;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x58 => {
-                let x0 = Reg8::E;
-                let x1 = Reg8::B;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x59 => {
-                let x0 = Reg8::E;
-                let x1 = Reg8::C;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x5a => {
-                let x0 = Reg8::E;
-                let x1 = Reg8::D;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x5b => {
-                let x0 = Reg8::E;
-                let x1 = Reg8::E;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x5c => {
-                let x0 = Reg8::E;
-                let x1 = Reg8::H;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x5d => {
-                let x0 = Reg8::E;
-                let x1 = Reg8::L;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x5e => {
-                let x0 = Reg8::E;
-                let x1 = Reg16::HL;
-                Instr::LD_r8_ir16(x0, x1)
-            },
-            0x5f => {
-                let x0 = Reg8::E;
-                let x1 = Reg8::A;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x60 => {
-                let x0 = Reg8::H;
-                let x1 = Reg8::B;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x61 => {
-                let x0 = Reg8::H;
-                let x1 = Reg8::C;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x62 => {
-                let x0 = Reg8::H;
-                let x1 = Reg8::D;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x63 => {
-                let x0 = Reg8::H;
-                let x1 = Reg8::E;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x64 => {
-                let x0 = Reg8::H;
-                let x1 = Reg8::H;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x65 => {
-                let x0 = Reg8::H;
-                let x1 = Reg8::L;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x66 => {
-                let x0 = Reg8::H;
-                let x1 = Reg16::HL;
-                Instr::LD_r8_ir16(x0, x1)
-            },
-            0x67 => {
-                let x0 = Reg8::H;
-                let x1 = Reg8::A;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x68 => {
-                let x0 = Reg8::L;
-                let x1 = Reg8::B;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x69 => {
-                let x0 = Reg8::L;
-                let x1 = Reg8::C;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x6a => {
-                let x0 = Reg8::L;
-                let x1 = Reg8::D;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x6b => {
-                let x0 = Reg8::L;
-                let x1 = Reg8::E;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x6c => {
-                let x0 = Reg8::L;
-                let x1 = Reg8::H;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x6d => {
-                let x0 = Reg8::L;
-                let x1 = Reg8::L;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x6e => {
-                let x0 = Reg8::L;
-                let x1 = Reg16::HL;
-                Instr::LD_r8_ir16(x0, x1)
-            },
-            0x6f => {
-                let x0 = Reg8::L;
-                let x1 = Reg8::A;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x70 => {
-                let x0 = Reg16::HL;
-                let x1 = Reg8::B;
-                Instr::LD_ir16_r8(x0, x1)
-            },
-            0x71 => {
-                let x0 = Reg16::HL;
-                let x1 = Reg8::C;
-                Instr::LD_ir16_r8(x0, x1)
-            },
-            0x72 => {
-                let x0 = Reg16::HL;
-                let x1 = Reg8::D;
-                Instr::LD_ir16_r8(x0, x1)
-            },
-            0x73 => {
-                let x0 = Reg16::HL;
-                let x1 = Reg8::E;
-                Instr::LD_ir16_r8(x0, x1)
-            },
-            0x74 => {
-                let x0 = Reg16::HL;
-                let x1 = Reg8::H;
-                Instr::LD_ir16_r8(x0, x1)
-            },
-            0x75 => {
-                let x0 = Reg16::HL;
-                let x1 = Reg8::L;
-                Instr::LD_ir16_r8(x0, x1)
-            },
-            0x76 => {
-                Instr::HALT
-            },
-            0x77 => {
-                let x0 = Reg16::HL;
-                let x1 = Reg8::A;
-                Instr::LD_ir16_r8(x0, x1)
-            },
-            0x78 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::B;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x79 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::C;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x7a => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::D;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x7b => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::E;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x7c => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::H;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x7d => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::L;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x7e => {
-                let x0 = Reg8::A;
-                let x1 = Reg16::HL;
-                Instr::LD_r8_ir16(x0, x1)
-            },
-            0x7f => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::A;
-                Instr::LD_r8_r8(x0, x1)
-            },
-            0x80 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::B;
-                Instr::ADD_r8_r8(x0, x1)
-            },
-            0x81 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::C;
-                Instr::ADD_r8_r8(x0, x1)
-            },
-            0x82 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::D;
-                Instr::ADD_r8_r8(x0, x1)
-            },
-            0x83 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::E;
-                Instr::ADD_r8_r8(x0, x1)
-            },
-            0x84 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::H;
-                Instr::ADD_r8_r8(x0, x1)
-            },
-            0x85 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::L;
-                Instr::ADD_r8_r8(x0, x1)
-            },
-            0x86 => {
-                let x0 = Reg8::A;
-                let x1 = Reg16::HL;
-                Instr::ADD_r8_ir16(x0, x1)
-            },
-            0x87 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::A;
-                Instr::ADD_r8_r8(x0, x1)
-            },
-            0x88 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::B;
-                Instr::ADC_r8_r8(x0, x1)
-            },
-            0x89 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::C;
-                Instr::ADC_r8_r8(x0, x1)
-            },
-            0x8a => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::D;
-                Instr::ADC_r8_r8(x0, x1)
-            },
-            0x8b => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::E;
-                Instr::ADC_r8_r8(x0, x1)
-            },
-            0x8c => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::H;
-                Instr::ADC_r8_r8(x0, x1)
-            },
-            0x8d => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::L;
-                Instr::ADC_r8_r8(x0, x1)
-            },
-            0x8e => {
-                let x0 = Reg8::A;
-                let x1 = Reg16::HL;
-                Instr::ADC_r8_ir16(x0, x1)
-            },
-            0x8f => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::A;
-                Instr::ADC_r8_r8(x0, x1)
-            },
-            0x90 => {
-                let x0 = Reg8::B;
-                Instr::SUB_r8(x0)
-            },
-            0x91 => {
-                let x0 = Reg8::C;
-                Instr::SUB_r8(x0)
-            },
-            0x92 => {
-                let x0 = Reg8::D;
-                Instr::SUB_r8(x0)
-            },
-            0x93 => {
-                let x0 = Reg8::E;
-                Instr::SUB_r8(x0)
-            },
-            0x94 => {
-                let x0 = Reg8::H;
-                Instr::SUB_r8(x0)
-            },
-            0x95 => {
-                let x0 = Reg8::L;
-                Instr::SUB_r8(x0)
-            },
-            0x96 => {
-                let x0 = Reg16::HL;
-                Instr::SUB_ir16(x0)
-            },
-            0x97 => {
-                let x0 = Reg8::A;
-                Instr::SUB_r8(x0)
-            },
-            0x98 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::B;
-                Instr::SBC_r8_r8(x0, x1)
-            },
-            0x99 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::C;
-                Instr::SBC_r8_r8(x0, x1)
-            },
-            0x9a => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::D;
-                Instr::SBC_r8_r8(x0, x1)
-            },
-            0x9b => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::E;
-                Instr::SBC_r8_r8(x0, x1)
-            },
-            0x9c => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::H;
-                Instr::SBC_r8_r8(x0, x1)
-            },
-            0x9d => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::L;
-                Instr::SBC_r8_r8(x0, x1)
-            },
-            0x9e => {
-                let x0 = Reg8::A;
-                let x1 = Reg16::HL;
-                Instr::SBC_r8_ir16(x0, x1)
-            },
-            0x9f => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::A;
-                Instr::SBC_r8_r8(x0, x1)
-            },
-            0xa0 => {
-                let x0 = Reg8::B;
-                Instr::AND_r8(x0)
-            },
-            0xa1 => {
-                let x0 = Reg8::C;
-                Instr::AND_r8(x0)
-            },
-            0xa2 => {
-                let x0 = Reg8::D;
-                Instr::AND_r8(x0)
-            },
-            0xa3 => {
-                let x0 = Reg8::E;
-                Instr::AND_r8(x0)
-            },
-            0xa4 => {
-                let x0 = Reg8::H;
-                Instr::AND_r8(x0)
-            },
-            0xa5 => {
-                let x0 = Reg8::L;
-                Instr::AND_r8(x0)
-            },
-            0xa6 => {
-                let x0 = Reg16::HL;
-                Instr::AND_ir16(x0)
-            },
-            0xa7 => {
-                let x0 = Reg8::A;
-                Instr::AND_r8(x0)
-            },
-            0xa8 => {
-                let x0 = Reg8::B;
-                Instr::XOR_r8(x0)
-            },
-            0xa9 => {
-                let x0 = Reg8::C;
-                Instr::XOR_r8(x0)
-            },
-            0xaa => {
-                let x0 = Reg8::D;
-                Instr::XOR_r8(x0)
-            },
-            0xab => {
-                let x0 = Reg8::E;
-                Instr::XOR_r8(x0)
-            },
-            0xac => {
-                let x0 = Reg8::H;
-                Instr::XOR_r8(x0)
-            },
-            0xad => {
-                let x0 = Reg8::L;
-                Instr::XOR_r8(x0)
-            },
-            0xae => {
-                let x0 = Reg16::HL;
-                Instr::XOR_ir16(x0)
-            },
-            0xaf => {
-                let x0 = Reg8::A;
-                Instr::XOR_r8(x0)
-            },
-            0xb0 => {
-                let x0 = Reg8::B;
-                Instr::OR_r8(x0)
-            },
-            0xb1 => {
-                let x0 = Reg8::C;
-                Instr::OR_r8(x0)
-            },
-            0xb2 => {
-                let x0 = Reg8::D;
-                Instr::OR_r8(x0)
-            },
-            0xb3 => {
-                let x0 = Reg8::E;
-                Instr::OR_r8(x0)
-            },
-            0xb4 => {
-                let x0 = Reg8::H;
-                Instr::OR_r8(x0)
-            },
-            0xb5 => {
-                let x0 = Reg8::L;
-                Instr::OR_r8(x0)
-            },
-            0xb6 => {
-                let x0 = Reg16::HL;
-                Instr::OR_ir16(x0)
-            },
-            0xb7 => {
-                let x0 = Reg8::A;
-                Instr::OR_r8(x0)
-            },
-            0xb8 => {
-                let x0 = Reg8::B;
-                Instr::CP_r8(x0)
-            },
-            0xb9 => {
-                let x0 = Reg8::C;
-                Instr::CP_r8(x0)
-            },
-            0xba => {
-                let x0 = Reg8::D;
-                Instr::CP_r8(x0)
-            },
-            0xbb => {
-                let x0 = Reg8::E;
-                Instr::CP_r8(x0)
-            },
-            0xbc => {
-                let x0 = Reg8::H;
-                Instr::CP_r8(x0)
-            },
-            0xbd => {
-                let x0 = Reg8::L;
-                Instr::CP_r8(x0)
-            },
-            0xbe => {
-                let x0 = Reg16::HL;
-                Instr::CP_ir16(x0)
-            },
-            0xbf => {
-                let x0 = Reg8::A;
-                Instr::CP_r8(x0)
-            },
-            0xc0 => {
-                let x0 = Cond::NZ;
-                Instr::RET_COND(x0)
-            },
-            0xc1 => {
-                let x0 = Reg16::BC;
-                Instr::POP_r16(x0)
-            },
-            0xc2 => {
-                let x0 = Cond::NZ;
-                let x1 = read_u16(bytes)? as u16;
-                Instr::JP_COND_a16(x0, x1)
-            },
-            0xc3 => {
-                let x0 = read_u16(bytes)? as u16;
-                Instr::JP_a16(x0)
-            },
-            0xc4 => {
-                let x0 = Cond::NZ;
-                let x1 = read_u16(bytes)? as u16;
-                Instr::CALL_COND_a16(x0, x1)
-            },
-            0xc5 => {
-                let x0 = Reg16::BC;
-                Instr::PUSH_r16(x0)
-            },
-            0xc6 => {
-                let x0 = Reg8::A;
-                let x1 = read_u8(bytes)? as u8;
-                Instr::ADD_r8_d8(x0, x1)
-            },
-            0xc7 => {
-                let x0 = 0x00;
-                Instr::RST_LIT(x0)
-            },
-            0xc8 => {
-                let x0 = Cond::Z;
-                Instr::RET_COND(x0)
-            },
-            0xc9 => {
-                Instr::RET
-            },
-            0xca => {
-                let x0 = Cond::Z;
-                let x1 = read_u16(bytes)? as u16;
-                Instr::JP_COND_a16(x0, x1)
-            },
+            0x00 => Instr::RLC_r8(Reg8::B),
+            0x01 => Instr::RLC_r8(Reg8::C),
+            0x02 => Instr::RLC_r8(Reg8::D),
+            0x03 => Instr::RLC_r8(Reg8::E),
+            0x04 => Instr::RLC_r8(Reg8::H),
+            0x05 => Instr::RLC_r8(Reg8::L),
+            0x06 => Instr::RLC_ir16(Reg16::HL),
+            0x07 => Instr::RLC_r8(Reg8::A),
+            0x08 => Instr::RRC_r8(Reg8::B),
+            0x09 => Instr::RRC_r8(Reg8::C),
+            0x0a => Instr::RRC_r8(Reg8::D),
+            0x0b => Instr::RRC_r8(Reg8::E),
+            0x0c => Instr::RRC_r8(Reg8::H),
+            0x0d => Instr::RRC_r8(Reg8::L),
+            0x0e => Instr::RRC_ir16(Reg16::HL),
+            0x0f => Instr::RRC_r8(Reg8::A),
+            0x10 => Instr::RL_r8(Reg8::B),
+            0x11 => Instr::RL_r8(Reg8::C),
+            0x12 => Instr::RL_r8(Reg8::D),
+            0x13 => Instr::RL_r8(Reg8::E),
+            0x14 => Instr::RL_r8(Reg8::H),
+            0x15 => Instr::RL_r8(Reg8::L),
+            0x16 => Instr::RL_ir16(Reg16::HL),
+            0x17 => Instr::RL_r8(Reg8::A),
+            0x18 => Instr::RR_r8(Reg8::B),
+            0x19 => Instr::RR_r8(Reg8::C),
+            0x1a => Instr::RR_r8(Reg8::D),
+            0x1b => Instr::RR_r8(Reg8::E),
+            0x1c => Instr::RR_r8(Reg8::H),
+            0x1d => Instr::RR_r8(Reg8::L),
+            0x1e => Instr::RR_ir16(Reg16::HL),
+            0x1f => Instr::RR_r8(Reg8::A),
+            0x20 => Instr::SLA_r8(Reg8::B),
+            0x21 => Instr::SLA_r8(Reg8::C),
+            0x22 => Instr::SLA_r8(Reg8::D),
+            0x23 => Instr::SLA_r8(Reg8::E),
+            0x24 => Instr::SLA_r8(Reg8::H),
+            0x25 => Instr::SLA_r8(Reg8::L),
+            0x26 => Instr::SLA_ir16(Reg16::HL),
+            0x27 => Instr::SLA_r8(Reg8::A),
+            0x28 => Instr::SRA_r8(Reg8::B),
+            0x29 => Instr::SRA_r8(Reg8::C),
+            0x2a => Instr::SRA_r8(Reg8::D),
+            0x2b => Instr::SRA_r8(Reg8::E),
+            0x2c => Instr::SRA_r8(Reg8::H),
+            0x2d => Instr::SRA_r8(Reg8::L),
+            0x2e => Instr::SRA_ir16(Reg16::HL),
+            0x2f => Instr::SRA_r8(Reg8::A),
+            0x30 => Instr::SWAP_r8(Reg8::B),
+            0x31 => Instr::SWAP_r8(Reg8::C),
+            0x32 => Instr::SWAP_r8(Reg8::D),
+            0x33 => Instr::SWAP_r8(Reg8::E),
+            0x34 => Instr::SWAP_r8(Reg8::H),
+            0x35 => Instr::SWAP_r8(Reg8::L),
+            0x36 => Instr::SWAP_ir16(Reg16::HL),
+            0x37 => Instr::SWAP_r8(Reg8::A),
+            0x38 => Instr::SRL_r8(Reg8::B),
+            0x39 => Instr::SRL_r8(Reg8::C),
+            0x3a => Instr::SRL_r8(Reg8::D),
+            0x3b => Instr::SRL_r8(Reg8::E),
+            0x3c => Instr::SRL_r8(Reg8::H),
+            0x3d => Instr::SRL_r8(Reg8::L),
+            0x3e => Instr::SRL_ir16(Reg16::HL),
+            0x3f => Instr::SRL_r8(Reg8::A),
+            0x40 => Instr::BIT_l8_r8(0, Reg8::B),
+            0x41 => Instr::BIT_l8_r8(0, Reg8::C),
+            0x42 => Instr::BIT_l8_r8(0, Reg8::D),
+            0x43 => Instr::BIT_l8_r8(0, Reg8::E),
+            0x44 => Instr::BIT_l8_r8(0, Reg8::H),
+            0x45 => Instr::BIT_l8_r8(0, Reg8::L),
+            0x46 => Instr::BIT_l8_ir16(0, Reg16::HL),
+            0x47 => Instr::BIT_l8_r8(0, Reg8::A),
+            0x48 => Instr::BIT_l8_r8(1, Reg8::B),
+            0x49 => Instr::BIT_l8_r8(1, Reg8::C),
+            0x4a => Instr::BIT_l8_r8(1, Reg8::D),
+            0x4b => Instr::BIT_l8_r8(1, Reg8::E),
+            0x4c => Instr::BIT_l8_r8(1, Reg8::H),
+            0x4d => Instr::BIT_l8_r8(1, Reg8::L),
+            0x4e => Instr::BIT_l8_ir16(1, Reg16::HL),
+            0x4f => Instr::BIT_l8_r8(1, Reg8::A),
+            0x50 => Instr::BIT_l8_r8(2, Reg8::B),
+            0x51 => Instr::BIT_l8_r8(2, Reg8::C),
+            0x52 => Instr::BIT_l8_r8(2, Reg8::D),
+            0x53 => Instr::BIT_l8_r8(2, Reg8::E),
+            0x54 => Instr::BIT_l8_r8(2, Reg8::H),
+            0x55 => Instr::BIT_l8_r8(2, Reg8::L),
+            0x56 => Instr::BIT_l8_ir16(2, Reg16::HL),
+            0x57 => Instr::BIT_l8_r8(2, Reg8::A),
+            0x58 => Instr::BIT_l8_r8(3, Reg8::B),
+            0x59 => Instr::BIT_l8_r8(3, Reg8::C),
+            0x5a => Instr::BIT_l8_r8(3, Reg8::D),
+            0x5b => Instr::BIT_l8_r8(3, Reg8::E),
+            0x5c => Instr::BIT_l8_r8(3, Reg8::H),
+            0x5d => Instr::BIT_l8_r8(3, Reg8::L),
+            0x5e => Instr::BIT_l8_ir16(3, Reg16::HL),
+            0x5f => Instr::BIT_l8_r8(3, Reg8::A),
+            0x60 => Instr::BIT_l8_r8(4, Reg8::B),
+            0x61 => Instr::BIT_l8_r8(4, Reg8::C),
+            0x62 => Instr::BIT_l8_r8(4, Reg8::D),
+            0x63 => Instr::BIT_l8_r8(4, Reg8::E),
+            0x64 => Instr::BIT_l8_r8(4, Reg8::H),
+            0x65 => Instr::BIT_l8_r8(4, Reg8::L),
+            0x66 => Instr::BIT_l8_ir16(4, Reg16::HL),
+            0x67 => Instr::BIT_l8_r8(4, Reg8::A),
+            0x68 => Instr::BIT_l8_r8(5, Reg8::B),
+            0x69 => Instr::BIT_l8_r8(5, Reg8::C),
+            0x6a => Instr::BIT_l8_r8(5, Reg8::D),
+            0x6b => Instr::BIT_l8_r8(5, Reg8::E),
+            0x6c => Instr::BIT_l8_r8(5, Reg8::H),
+            0x6d => Instr::BIT_l8_r8(5, Reg8::L),
+            0x6e => Instr::BIT_l8_ir16(5, Reg16::HL),
+            0x6f => Instr::BIT_l8_r8(5, Reg8::A),
+            0x70 => Instr::BIT_l8_r8(6, Reg8::B),
+            0x71 => Instr::BIT_l8_r8(6, Reg8::C),
+            0x72 => Instr::BIT_l8_r8(6, Reg8::D),
+            0x73 => Instr::BIT_l8_r8(6, Reg8::E),
+            0x74 => Instr::BIT_l8_r8(6, Reg8::H),
+            0x75 => Instr::BIT_l8_r8(6, Reg8::L),
+            0x76 => Instr::BIT_l8_ir16(6, Reg16::HL),
+            0x77 => Instr::BIT_l8_r8(6, Reg8::A),
+            0x78 => Instr::BIT_l8_r8(7, Reg8::B),
+            0x79 => Instr::BIT_l8_r8(7, Reg8::C),
+            0x7a => Instr::BIT_l8_r8(7, Reg8::D),
+            0x7b => Instr::BIT_l8_r8(7, Reg8::E),
+            0x7c => Instr::BIT_l8_r8(7, Reg8::H),
+            0x7d => Instr::BIT_l8_r8(7, Reg8::L),
+            0x7e => Instr::BIT_l8_ir16(7, Reg16::HL),
+            0x7f => Instr::BIT_l8_r8(7, Reg8::A),
+            0x80 => Instr::RES_l8_r8(0, Reg8::B),
+            0x81 => Instr::RES_l8_r8(0, Reg8::C),
+            0x82 => Instr::RES_l8_r8(0, Reg8::D),
+            0x83 => Instr::RES_l8_r8(0, Reg8::E),
+            0x84 => Instr::RES_l8_r8(0, Reg8::H),
+            0x85 => Instr::RES_l8_r8(0, Reg8::L),
+            0x86 => Instr::RES_l8_ir16(0, Reg16::HL),
+            0x87 => Instr::RES_l8_r8(0, Reg8::A),
+            0x88 => Instr::RES_l8_r8(1, Reg8::B),
+            0x89 => Instr::RES_l8_r8(1, Reg8::C),
+            0x8a => Instr::RES_l8_r8(1, Reg8::D),
+            0x8b => Instr::RES_l8_r8(1, Reg8::E),
+            0x8c => Instr::RES_l8_r8(1, Reg8::H),
+            0x8d => Instr::RES_l8_r8(1, Reg8::L),
+            0x8e => Instr::RES_l8_ir16(1, Reg16::HL),
+            0x8f => Instr::RES_l8_r8(1, Reg8::A),
+            0x90 => Instr::RES_l8_r8(2, Reg8::B),
+            0x91 => Instr::RES_l8_r8(2, Reg8::C),
+            0x92 => Instr::RES_l8_r8(2, Reg8::D),
+            0x93 => Instr::RES_l8_r8(2, Reg8::E),
+            0x94 => Instr::RES_l8_r8(2, Reg8::H),
+            0x95 => Instr::RES_l8_r8(2, Reg8::L),
+            0x96 => Instr::RES_l8_ir16(2, Reg16::HL),
+            0x97 => Instr::RES_l8_r8(2, Reg8::A),
+            0x98 => Instr::RES_l8_r8(3, Reg8::B),
+            0x99 => Instr::RES_l8_r8(3, Reg8::C),
+            0x9a => Instr::RES_l8_r8(3, Reg8::D),
+            0x9b => Instr::RES_l8_r8(3, Reg8::E),
+            0x9c => Instr::RES_l8_r8(3, Reg8::H),
+            0x9d => Instr::RES_l8_r8(3, Reg8::L),
+            0x9e => Instr::RES_l8_ir16(3, Reg16::HL),
+            0x9f => Instr::RES_l8_r8(3, Reg8::A),
+            0xa0 => Instr::RES_l8_r8(4, Reg8::B),
+            0xa1 => Instr::RES_l8_r8(4, Reg8::C),
+            0xa2 => Instr::RES_l8_r8(4, Reg8::D),
+            0xa3 => Instr::RES_l8_r8(4, Reg8::E),
+            0xa4 => Instr::RES_l8_r8(4, Reg8::H),
+            0xa5 => Instr::RES_l8_r8(4, Reg8::L),
+            0xa6 => Instr::RES_l8_ir16(4, Reg16::HL),
+            0xa7 => Instr::RES_l8_r8(4, Reg8::A),
+            0xa8 => Instr::RES_l8_r8(5, Reg8::B),
+            0xa9 => Instr::RES_l8_r8(5, Reg8::C),
+            0xaa => Instr::RES_l8_r8(5, Reg8::D),
+            0xab => Instr::RES_l8_r8(5, Reg8::E),
+            0xac => Instr::RES_l8_r8(5, Reg8::H),
+            0xad => Instr::RES_l8_r8(5, Reg8::L),
+            0xae => Instr::RES_l8_ir16(5, Reg16::HL),
+            0xaf => Instr::RES_l8_r8(5, Reg8::A),
+            0xb0 => Instr::RES_l8_r8(6, Reg8::B),
+            0xb1 => Instr::RES_l8_r8(6, Reg8::C),
+            0xb2 => Instr::RES_l8_r8(6, Reg8::D),
+            0xb3 => Instr::RES_l8_r8(6, Reg8::E),
+            0xb4 => Instr::RES_l8_r8(6, Reg8::H),
+            0xb5 => Instr::RES_l8_r8(6, Reg8::L),
+            0xb6 => Instr::RES_l8_ir16(6, Reg16::HL),
+            0xb7 => Instr::RES_l8_r8(6, Reg8::A),
+            0xb8 => Instr::RES_l8_r8(7, Reg8::B),
+            0xb9 => Instr::RES_l8_r8(7, Reg8::C),
+            0xba => Instr::RES_l8_r8(7, Reg8::D),
+            0xbb => Instr::RES_l8_r8(7, Reg8::E),
+            0xbc => Instr::RES_l8_r8(7, Reg8::H),
+            0xbd => Instr::RES_l8_r8(7, Reg8::L),
+            0xbe => Instr::RES_l8_ir16(7, Reg16::HL),
+            0xbf => Instr::RES_l8_r8(7, Reg8::A),
+            0xc0 => Instr::SET_l8_r8(0, Reg8::B),
+            0xc1 => Instr::SET_l8_r8(0, Reg8::C),
+            0xc2 => Instr::SET_l8_r8(0, Reg8::D),
+            0xc3 => Instr::SET_l8_r8(0, Reg8::E),
+            0xc4 => Instr::SET_l8_r8(0, Reg8::H),
+            0xc5 => Instr::SET_l8_r8(0, Reg8::L),
+            0xc6 => Instr::SET_l8_ir16(0, Reg16::HL),
+            0xc7 => Instr::SET_l8_r8(0, Reg8::A),
+            0xc8 => Instr::SET_l8_r8(1, Reg8::B),
+            0xc9 => Instr::SET_l8_r8(1, Reg8::C),
+            0xca => Instr::SET_l8_r8(1, Reg8::D),
+            0xcb => Instr::SET_l8_r8(1, Reg8::E),
+            0xcc => Instr::SET_l8_r8(1, Reg8::H),
+            0xcd => Instr::SET_l8_r8(1, Reg8::L),
+            0xce => Instr::SET_l8_ir16(1, Reg16::HL),
+            0xcf => Instr::SET_l8_r8(1, Reg8::A),
+            0xd0 => Instr::SET_l8_r8(2, Reg8::B),
+            0xd1 => Instr::SET_l8_r8(2, Reg8::C),
+            0xd2 => Instr::SET_l8_r8(2, Reg8::D),
+            0xd3 => Instr::SET_l8_r8(2, Reg8::E),
+            0xd4 => Instr::SET_l8_r8(2, Reg8::H),
+            0xd5 => Instr::SET_l8_r8(2, Reg8::L),
+            0xd6 => Instr::SET_l8_ir16(2, Reg16::HL),
+            0xd7 => Instr::SET_l8_r8(2, Reg8::A),
+            0xd8 => Instr::SET_l8_r8(3, Reg8::B),
+            0xd9 => Instr::SET_l8_r8(3, Reg8::C),
+            0xda => Instr::SET_l8_r8(3, Reg8::D),
+            0xdb => Instr::SET_l8_r8(3, Reg8::E),
+            0xdc => Instr::SET_l8_r8(3, Reg8::H),
+            0xdd => Instr::SET_l8_r8(3, Reg8::L),
+            0xde => Instr::SET_l8_ir16(3, Reg16::HL),
+            0xdf => Instr::SET_l8_r8(3, Reg8::A),
+            0xe0 => Instr::SET_l8_r8(4, Reg8::B),
+            0xe1 => Instr::SET_l8_r8(4, Reg8::C),
+            0xe2 => Instr::SET_l8_r8(4, Reg8::D),
+            0xe3 => Instr::SET_l8_r8(4, Reg8::E),
+            0xe4 => Instr::SET_l8_r8(4, Reg8::H),
+            0xe5 => Instr::SET_l8_r8(4, Reg8::L),
+            0xe6 => Instr::SET_l8_ir16(4, Reg16::HL),
+            0xe7 => Instr::SET_l8_r8(4, Reg8::A),
+            0xe8 => Instr::SET_l8_r8(5, Reg8::B),
+            0xe9 => Instr::SET_l8_r8(5, Reg8::C),
+            0xea => Instr::SET_l8_r8(5, Reg8::D),
+            0xeb => Instr::SET_l8_r8(5, Reg8::E),
+            0xec => Instr::SET_l8_r8(5, Reg8::H),
+            0xed => Instr::SET_l8_r8(5, Reg8::L),
+            0xee => Instr::SET_l8_ir16(5, Reg16::HL),
+            0xef => Instr::SET_l8_r8(5, Reg8::A),
+            0xf0 => Instr::SET_l8_r8(6, Reg8::B),
+            0xf1 => Instr::SET_l8_r8(6, Reg8::C),
+            0xf2 => Instr::SET_l8_r8(6, Reg8::D),
+            0xf3 => Instr::SET_l8_r8(6, Reg8::E),
+            0xf4 => Instr::SET_l8_r8(6, Reg8::H),
+            0xf5 => Instr::SET_l8_r8(6, Reg8::L),
+            0xf6 => Instr::SET_l8_ir16(6, Reg16::HL),
+            0xf7 => Instr::SET_l8_r8(6, Reg8::A),
+            0xf8 => Instr::SET_l8_r8(7, Reg8::B),
+            0xf9 => Instr::SET_l8_r8(7, Reg8::C),
+            0xfa => Instr::SET_l8_r8(7, Reg8::D),
+            0xfb => Instr::SET_l8_r8(7, Reg8::E),
+            0xfc => Instr::SET_l8_r8(7, Reg8::H),
+            0xfd => Instr::SET_l8_r8(7, Reg8::L),
+            0xfe => Instr::SET_l8_ir16(7, Reg16::HL),
+            0xff => Instr::SET_l8_r8(7, Reg8::A),
+            i => Instr::INVALID(real),
+        };
+        Ok((real, i))
+    }
+
+    fn disasm<R: Read>(bytes : &mut R) -> io::Result<(u16, Instr)> {
+        let mut instr = [0u8; 4];
+        bytes.read_exact(&mut instr[..1])?;
+        let size = get_op(instr[0] as u16).size as usize;
+        bytes.read_exact(&mut instr[1..size])?;
+        let mut opcode : u16 = instr[0] as u16;
+        let i = match instr[0] {
+            0x00 => Instr::NOP,
+            0x01 => Instr::LD_r16_d16(Reg16::BC, read_u16(&mut instr[1..3].as_ref())?),
+            0x02 => Instr::LD_ir16_r8(Reg16::BC, Reg8::A),
+            0x03 => Instr::INC_r16(Reg16::BC),
+            0x04 => Instr::INC_r8(Reg8::B),
+            0x05 => Instr::DEC_r8(Reg8::B),
+            0x06 => Instr::LD_r8_d8(Reg8::B, read_u8(&mut instr[1..2].as_ref())?),
+            0x07 => Instr::RLCA,
+            0x08 => Instr::LD_ia16_r16(read_u16(&mut instr[1..3].as_ref())?, Reg16::SP),
+            0x09 => Instr::ADD_r16_r16(Reg16::HL, Reg16::BC),
+            0x0a => Instr::LD_r8_ir16(Reg8::A, Reg16::BC),
+            0x0b => Instr::DEC_r16(Reg16::BC),
+            0x0c => Instr::INC_r8(Reg8::C),
+            0x0d => Instr::DEC_r8(Reg8::C),
+            0x0e => Instr::LD_r8_d8(Reg8::C, read_u8(&mut instr[1..2].as_ref())?),
+            0x0f => Instr::RRCA,
+            0x10 => Instr::STOP_0(0),
+            0x11 => Instr::LD_r16_d16(Reg16::DE, read_u16(&mut instr[1..3].as_ref())?),
+            0x12 => Instr::LD_ir16_r8(Reg16::DE, Reg8::A),
+            0x13 => Instr::INC_r16(Reg16::DE),
+            0x14 => Instr::INC_r8(Reg8::D),
+            0x15 => Instr::DEC_r8(Reg8::D),
+            0x16 => Instr::LD_r8_d8(Reg8::D, read_u8(&mut instr[1..2].as_ref())?),
+            0x17 => Instr::RLA,
+            0x18 => Instr::JR_r8(read_u8(&mut instr[1..2].as_ref())? as i8),
+            0x19 => Instr::ADD_r16_r16(Reg16::HL, Reg16::DE),
+            0x1a => Instr::LD_r8_ir16(Reg8::A, Reg16::DE),
+            0x1b => Instr::DEC_r16(Reg16::DE),
+            0x1c => Instr::INC_r8(Reg8::E),
+            0x1d => Instr::DEC_r8(Reg8::E),
+            0x1e => Instr::LD_r8_d8(Reg8::E, read_u8(&mut instr[1..2].as_ref())?),
+            0x1f => Instr::RRA,
+            0x20 => Instr::JR_COND_r8(Cond::NZ, read_u8(&mut instr[1..2].as_ref())? as i8),
+            0x21 => Instr::LD_r16_d16(Reg16::HL, read_u16(&mut instr[1..3].as_ref())?),
+            0x22 => Instr::LD_ir16_r8(Reg16::HLP, Reg8::A),
+            0x23 => Instr::INC_r16(Reg16::HL),
+            0x24 => Instr::INC_r8(Reg8::H),
+            0x25 => Instr::DEC_r8(Reg8::H),
+            0x26 => Instr::LD_r8_d8(Reg8::H, read_u8(&mut instr[1..2].as_ref())?),
+            0x27 => Instr::DAA,
+            0x28 => Instr::JR_COND_r8(Cond::Z, read_u8(&mut instr[1..2].as_ref())? as i8),
+            0x29 => Instr::ADD_r16_r16(Reg16::HL, Reg16::HL),
+            0x2a => Instr::LD_r8_ir16(Reg8::A, Reg16::HLP),
+            0x2b => Instr::DEC_r16(Reg16::HL),
+            0x2c => Instr::INC_r8(Reg8::L),
+            0x2d => Instr::DEC_r8(Reg8::L),
+            0x2e => Instr::LD_r8_d8(Reg8::L, read_u8(&mut instr[1..2].as_ref())?),
+            0x2f => Instr::CPL,
+            0x30 => Instr::JR_COND_r8(Cond::NC, read_u8(&mut instr[1..2].as_ref())? as i8),
+            0x31 => Instr::LD_r16_d16(Reg16::SP, read_u16(&mut instr[1..3].as_ref())?),
+            0x32 => Instr::LD_ir16_r8(Reg16::HLS, Reg8::A),
+            0x33 => Instr::INC_r16(Reg16::SP),
+            0x34 => Instr::INC_ir16(Reg16::HL),
+            0x35 => Instr::DEC_ir16(Reg16::HL),
+            0x36 => Instr::LD_ir16_d8(Reg16::HL, read_u8(&mut instr[1..2].as_ref())?),
+            0x37 => Instr::SCF,
+            0x38 => Instr::JR_COND_r8(Cond::C, read_u8(&mut instr[1..2].as_ref())? as i8),
+            0x39 => Instr::ADD_r16_r16(Reg16::HL, Reg16::SP),
+            0x3a => Instr::LD_r8_ir16(Reg8::A, Reg16::HLS),
+            0x3b => Instr::DEC_r16(Reg16::SP),
+            0x3c => Instr::INC_r8(Reg8::A),
+            0x3d => Instr::DEC_r8(Reg8::A),
+            0x3e => Instr::LD_r8_d8(Reg8::A, read_u8(&mut instr[1..2].as_ref())?),
+            0x3f => Instr::CCF,
+            0x40 => Instr::LD_r8_r8(Reg8::B, Reg8::B),
+            0x41 => Instr::LD_r8_r8(Reg8::B, Reg8::C),
+            0x42 => Instr::LD_r8_r8(Reg8::B, Reg8::D),
+            0x43 => Instr::LD_r8_r8(Reg8::B, Reg8::E),
+            0x44 => Instr::LD_r8_r8(Reg8::B, Reg8::H),
+            0x45 => Instr::LD_r8_r8(Reg8::B, Reg8::L),
+            0x46 => Instr::LD_r8_ir16(Reg8::B, Reg16::HL),
+            0x47 => Instr::LD_r8_r8(Reg8::B, Reg8::A),
+            0x48 => Instr::LD_r8_r8(Reg8::C, Reg8::B),
+            0x49 => Instr::LD_r8_r8(Reg8::C, Reg8::C),
+            0x4a => Instr::LD_r8_r8(Reg8::C, Reg8::D),
+            0x4b => Instr::LD_r8_r8(Reg8::C, Reg8::E),
+            0x4c => Instr::LD_r8_r8(Reg8::C, Reg8::H),
+            0x4d => Instr::LD_r8_r8(Reg8::C, Reg8::L),
+            0x4e => Instr::LD_r8_ir16(Reg8::C, Reg16::HL),
+            0x4f => Instr::LD_r8_r8(Reg8::C, Reg8::A),
+            0x50 => Instr::LD_r8_r8(Reg8::D, Reg8::B),
+            0x51 => Instr::LD_r8_r8(Reg8::D, Reg8::C),
+            0x52 => Instr::LD_r8_r8(Reg8::D, Reg8::D),
+            0x53 => Instr::LD_r8_r8(Reg8::D, Reg8::E),
+            0x54 => Instr::LD_r8_r8(Reg8::D, Reg8::H),
+            0x55 => Instr::LD_r8_r8(Reg8::D, Reg8::L),
+            0x56 => Instr::LD_r8_ir16(Reg8::D, Reg16::HL),
+            0x57 => Instr::LD_r8_r8(Reg8::D, Reg8::A),
+            0x58 => Instr::LD_r8_r8(Reg8::E, Reg8::B),
+            0x59 => Instr::LD_r8_r8(Reg8::E, Reg8::C),
+            0x5a => Instr::LD_r8_r8(Reg8::E, Reg8::D),
+            0x5b => Instr::LD_r8_r8(Reg8::E, Reg8::E),
+            0x5c => Instr::LD_r8_r8(Reg8::E, Reg8::H),
+            0x5d => Instr::LD_r8_r8(Reg8::E, Reg8::L),
+            0x5e => Instr::LD_r8_ir16(Reg8::E, Reg16::HL),
+            0x5f => Instr::LD_r8_r8(Reg8::E, Reg8::A),
+            0x60 => Instr::LD_r8_r8(Reg8::H, Reg8::B),
+            0x61 => Instr::LD_r8_r8(Reg8::H, Reg8::C),
+            0x62 => Instr::LD_r8_r8(Reg8::H, Reg8::D),
+            0x63 => Instr::LD_r8_r8(Reg8::H, Reg8::E),
+            0x64 => Instr::LD_r8_r8(Reg8::H, Reg8::H),
+            0x65 => Instr::LD_r8_r8(Reg8::H, Reg8::L),
+            0x66 => Instr::LD_r8_ir16(Reg8::H, Reg16::HL),
+            0x67 => Instr::LD_r8_r8(Reg8::H, Reg8::A),
+            0x68 => Instr::LD_r8_r8(Reg8::L, Reg8::B),
+            0x69 => Instr::LD_r8_r8(Reg8::L, Reg8::C),
+            0x6a => Instr::LD_r8_r8(Reg8::L, Reg8::D),
+            0x6b => Instr::LD_r8_r8(Reg8::L, Reg8::E),
+            0x6c => Instr::LD_r8_r8(Reg8::L, Reg8::H),
+            0x6d => Instr::LD_r8_r8(Reg8::L, Reg8::L),
+            0x6e => Instr::LD_r8_ir16(Reg8::L, Reg16::HL),
+            0x6f => Instr::LD_r8_r8(Reg8::L, Reg8::A),
+            0x70 => Instr::LD_ir16_r8(Reg16::HL, Reg8::B),
+            0x71 => Instr::LD_ir16_r8(Reg16::HL, Reg8::C),
+            0x72 => Instr::LD_ir16_r8(Reg16::HL, Reg8::D),
+            0x73 => Instr::LD_ir16_r8(Reg16::HL, Reg8::E),
+            0x74 => Instr::LD_ir16_r8(Reg16::HL, Reg8::H),
+            0x75 => Instr::LD_ir16_r8(Reg16::HL, Reg8::L),
+            0x76 => Instr::HALT,
+            0x77 => Instr::LD_ir16_r8(Reg16::HL, Reg8::A),
+            0x78 => Instr::LD_r8_r8(Reg8::A, Reg8::B),
+            0x79 => Instr::LD_r8_r8(Reg8::A, Reg8::C),
+            0x7a => Instr::LD_r8_r8(Reg8::A, Reg8::D),
+            0x7b => Instr::LD_r8_r8(Reg8::A, Reg8::E),
+            0x7c => Instr::LD_r8_r8(Reg8::A, Reg8::H),
+            0x7d => Instr::LD_r8_r8(Reg8::A, Reg8::L),
+            0x7e => Instr::LD_r8_ir16(Reg8::A, Reg16::HL),
+            0x7f => Instr::LD_r8_r8(Reg8::A, Reg8::A),
+            0x80 => Instr::ADD_r8_r8(Reg8::A, Reg8::B),
+            0x81 => Instr::ADD_r8_r8(Reg8::A, Reg8::C),
+            0x82 => Instr::ADD_r8_r8(Reg8::A, Reg8::D),
+            0x83 => Instr::ADD_r8_r8(Reg8::A, Reg8::E),
+            0x84 => Instr::ADD_r8_r8(Reg8::A, Reg8::H),
+            0x85 => Instr::ADD_r8_r8(Reg8::A, Reg8::L),
+            0x86 => Instr::ADD_r8_ir16(Reg8::A, Reg16::HL),
+            0x87 => Instr::ADD_r8_r8(Reg8::A, Reg8::A),
+            0x88 => Instr::ADC_r8_r8(Reg8::A, Reg8::B),
+            0x89 => Instr::ADC_r8_r8(Reg8::A, Reg8::C),
+            0x8a => Instr::ADC_r8_r8(Reg8::A, Reg8::D),
+            0x8b => Instr::ADC_r8_r8(Reg8::A, Reg8::E),
+            0x8c => Instr::ADC_r8_r8(Reg8::A, Reg8::H),
+            0x8d => Instr::ADC_r8_r8(Reg8::A, Reg8::L),
+            0x8e => Instr::ADC_r8_ir16(Reg8::A, Reg16::HL),
+            0x8f => Instr::ADC_r8_r8(Reg8::A, Reg8::A),
+            0x90 => Instr::SUB_r8(Reg8::B),
+            0x91 => Instr::SUB_r8(Reg8::C),
+            0x92 => Instr::SUB_r8(Reg8::D),
+            0x93 => Instr::SUB_r8(Reg8::E),
+            0x94 => Instr::SUB_r8(Reg8::H),
+            0x95 => Instr::SUB_r8(Reg8::L),
+            0x96 => Instr::SUB_ir16(Reg16::HL),
+            0x97 => Instr::SUB_r8(Reg8::A),
+            0x98 => Instr::SBC_r8_r8(Reg8::A, Reg8::B),
+            0x99 => Instr::SBC_r8_r8(Reg8::A, Reg8::C),
+            0x9a => Instr::SBC_r8_r8(Reg8::A, Reg8::D),
+            0x9b => Instr::SBC_r8_r8(Reg8::A, Reg8::E),
+            0x9c => Instr::SBC_r8_r8(Reg8::A, Reg8::H),
+            0x9d => Instr::SBC_r8_r8(Reg8::A, Reg8::L),
+            0x9e => Instr::SBC_r8_ir16(Reg8::A, Reg16::HL),
+            0x9f => Instr::SBC_r8_r8(Reg8::A, Reg8::A),
+            0xa0 => Instr::AND_r8(Reg8::B),
+            0xa1 => Instr::AND_r8(Reg8::C),
+            0xa2 => Instr::AND_r8(Reg8::D),
+            0xa3 => Instr::AND_r8(Reg8::E),
+            0xa4 => Instr::AND_r8(Reg8::H),
+            0xa5 => Instr::AND_r8(Reg8::L),
+            0xa6 => Instr::AND_ir16(Reg16::HL),
+            0xa7 => Instr::AND_r8(Reg8::A),
+            0xa8 => Instr::XOR_r8(Reg8::B),
+            0xa9 => Instr::XOR_r8(Reg8::C),
+            0xaa => Instr::XOR_r8(Reg8::D),
+            0xab => Instr::XOR_r8(Reg8::E),
+            0xac => Instr::XOR_r8(Reg8::H),
+            0xad => Instr::XOR_r8(Reg8::L),
+            0xae => Instr::XOR_ir16(Reg16::HL),
+            0xaf => Instr::XOR_r8(Reg8::A),
+            0xb0 => Instr::OR_r8(Reg8::B),
+            0xb1 => Instr::OR_r8(Reg8::C),
+            0xb2 => Instr::OR_r8(Reg8::D),
+            0xb3 => Instr::OR_r8(Reg8::E),
+            0xb4 => Instr::OR_r8(Reg8::H),
+            0xb5 => Instr::OR_r8(Reg8::L),
+            0xb6 => Instr::OR_ir16(Reg16::HL),
+            0xb7 => Instr::OR_r8(Reg8::A),
+            0xb8 => Instr::CP_r8(Reg8::B),
+            0xb9 => Instr::CP_r8(Reg8::C),
+            0xba => Instr::CP_r8(Reg8::D),
+            0xbb => Instr::CP_r8(Reg8::E),
+            0xbc => Instr::CP_r8(Reg8::H),
+            0xbd => Instr::CP_r8(Reg8::L),
+            0xbe => Instr::CP_ir16(Reg16::HL),
+            0xbf => Instr::CP_r8(Reg8::A),
+            0xc0 => Instr::RET_COND(Cond::NZ),
+            0xc1 => Instr::POP_r16(Reg16::BC),
+            0xc2 => Instr::JP_COND_a16(Cond::NZ, read_u16(&mut instr[1..3].as_ref())?),
+            0xc3 => Instr::JP_a16(read_u16(&mut instr[1..3].as_ref())?),
+            0xc4 => Instr::CALL_COND_a16(Cond::NZ, read_u16(&mut instr[1..3].as_ref())?),
+            0xc5 => Instr::PUSH_r16(Reg16::BC),
+            0xc6 => Instr::ADD_r8_d8(Reg8::A, read_u8(&mut instr[1..2].as_ref())?),
+            0xc7 => Instr::RST_LIT(0x00),
+            0xc8 => Instr::RET_COND(Cond::Z),
+            0xc9 => Instr::RET,
+            0xca => Instr::JP_COND_a16(Cond::Z, read_u16(&mut instr[1..3].as_ref())?),
             0xcb => {
-                /*
-                let x0 = Reg8::;
-                Instr::PREFIX_CB(x0)
-                 */
-                Instr::INVALID
+                let (cb_op, cb_instr) = Instr::prefix_cb_disasm(&mut instr[1..2].as_ref())?;
+                opcode = cb_op;
+                cb_instr
             },
-            0xcc => {
-                let x0 = Cond::Z;
-                let x1 = read_u16(bytes)? as u16;
-                Instr::CALL_COND_a16(x0, x1)
-            },
-            0xcd => {
-                let x0 = read_u16(bytes)? as u16;
-                Instr::CALL_a16(x0)
-            },
-            0xce => {
-                let x0 = Reg8::A;
-                let x1 = read_u8(bytes)? as u8;
-                Instr::ADC_r8_d8(x0, x1)
-            },
-            0xcf => {
-                let x0 = 0x08;
-                Instr::RST_LIT(x0)
-            },
-            0xd0 => {
-                let x0 = Cond::NC;
-                Instr::RET_COND(x0)
-            },
-            0xd1 => {
-                let x0 = Reg16::DE;
-                Instr::POP_r16(x0)
-            },
-            0xd2 => {
-                let x0 = Cond::NC;
-                let x1 = read_u16(bytes)? as u16;
-                Instr::JP_COND_a16(x0, x1)
-            },
-            0xd3 => {
-                Instr::INVALID
-            },
-            0xd4 => {
-                let x0 = Cond::NC;
-                let x1 = read_u16(bytes)? as u16;
-                Instr::CALL_COND_a16(x0, x1)
-            },
-            0xd5 => {
-                let x0 = Reg16::DE;
-                Instr::PUSH_r16(x0)
-            },
-            0xd6 => {
-                let x0 = read_u8(bytes)? as u8;
-                Instr::SUB_d8(x0)
-            },
-            0xd7 => {
-                let x0 = 0x10;
-                Instr::RST_LIT(x0)
-            },
-            0xd8 => {
-                let x0 = Cond::C;
-                Instr::RET_COND(x0)
-            },
-            0xd9 => {
-                Instr::RETI
-            },
-            0xda => {
-                let x0 = Cond::C;
-                let x1 = read_u16(bytes)? as u16;
-                Instr::JP_COND_a16(x0, x1)
-            },
-            0xdb => {
-                Instr::INVALID
-            },
-            0xdc => {
-                let x0 = Cond::C;
-                let x1 = read_u16(bytes)? as u16;
-                Instr::CALL_COND_a16(x0, x1)
-            },
-            0xdd => {
-                Instr::INVALID
-            },
-            0xde => {
-                let x0 = Reg8::A;
-                let x1 = read_u8(bytes)? as u8;
-                Instr::SBC_r8_d8(x0, x1)
-            },
-            0xdf => {
-                let x0 = 0x18;
-                Instr::RST_LIT(x0)
-            },
-            0xe0 => {
-                let x0 = read_u8(bytes)? as u8;
-                let x1 = Reg8::A;
-                Instr::LDH_ia8_r8(x0, x1)
-            },
-            0xe1 => {
-                let x0 = Reg16::HL;
-                Instr::POP_r16(x0)
-            },
-            0xe2 => {
-                let x0 = Reg8::C;
-                let x1 = Reg8::A;
-                Instr::LD_ir8_r8(x0, x1)
-            },
-            0xe3 => {
-                Instr::INVALID
-            },
-            0xe4 => {
-                Instr::INVALID
-            },
-            0xe5 => {
-                let x0 = Reg16::HL;
-                Instr::PUSH_r16(x0)
-            },
-            0xe6 => {
-                let x0 = read_u8(bytes)? as u8;
-                Instr::AND_d8(x0)
-            },
-            0xe7 => {
-                let x0 = 0x20;
-                Instr::RST_LIT(x0)
-            },
-            0xe8 => {
-                let x0 = Reg16::SP;
-                let x1 = read_u8(bytes)? as i8;
-                Instr::ADD_r16_r8(x0, x1)
-            },
-            0xe9 => {
-                let x0 = Reg16::HL;
-                Instr::JP_ir16(x0)
-            },
-            0xea => {
-                let x0 = read_u16(bytes)? as u16;
-                let x1 = Reg8::A;
-                Instr::LD_ia16_r8(x0, x1)
-            },
-            0xeb => {
-                Instr::INVALID
-            },
-            0xec => {
-                Instr::INVALID
-            },
-            0xed => {
-                Instr::INVALID
-            },
-            0xee => {
-                let x0 = read_u8(bytes)? as u8;
-                Instr::XOR_d8(x0)
-            },
-            0xef => {
-                let x0 = 0x28;
-                Instr::RST_LIT(x0)
-            },
-            0xf0 => {
-                let x0 = Reg8::A;
-                let x1 = read_u8(bytes)? as u8;
-                Instr::LDH_r8_ia8(x0, x1)
-            },
-            0xf1 => {
-                let x0 = Reg16::AF;
-                Instr::POP_r16(x0)
-            },
-            0xf2 => {
-                let x0 = Reg8::A;
-                let x1 = Reg8::C;
-                Instr::LD_r8_ir8(x0, x1)
-            },
-            0xf3 => {
-                Instr::DI
-            },
-            0xf4 => {
-                Instr::INVALID
-            },
-            0xf5 => {
-                let x0 = Reg16::AF;
-                Instr::PUSH_r16(x0)
-            },
-            0xf6 => {
-                let x0 = read_u8(bytes)? as u8;
-                Instr::OR_d8(x0)
-            },
-            0xf7 => {
-                let x0 = 0x30;
-                Instr::RST_LIT(x0)
-            },
-            0xf8 => {
-                let x0 = Reg16::HL;
-                let x1 = Reg16::SP;
-                let x2 = read_u8(bytes)? as i8;
-                Instr::LD_r16_r16_r8(x0, x1, x2)
-            },
-            0xf9 => {
-                let x0 = Reg16::SP;
-                let x1 = Reg16::HL;
-                Instr::LD_r16_r16(x0, x1)
-            },
-            0xfa => {
-                let x0 = Reg8::A;
-                let x1 = read_u16(bytes)? as u16;
-                Instr::LD_r8_ia16(x0, x1)
-            },
-            0xfb => {
-                Instr::EI
-            },
-            0xfc => {
-                Instr::INVALID
-            },
-            0xfd => {
-                Instr::INVALID
-            },
-            0xfe => {
-                let x0 = read_u8(bytes)? as u8;
-                Instr::CP_d8(x0)
-            },
-            0xff => {
-                let x0 = 0x38;
-                Instr::RST_LIT(x0)
-            },
-            _ => {
-                Instr::INVALID
+            0xcc => Instr::CALL_COND_a16(Cond::Z, read_u16(&mut instr[1..3].as_ref())?),
+            0xcd => Instr::CALL_a16(read_u16(&mut instr[1..3].as_ref())?),
+            0xce => Instr::ADC_r8_d8(Reg8::A, read_u8(&mut instr[1..2].as_ref())?),
+            0xcf => Instr::RST_LIT(0x08),
+            0xd0 => Instr::RET_COND(Cond::NC),
+            0xd1 => Instr::POP_r16(Reg16::DE),
+            0xd2 => Instr::JP_COND_a16(Cond::NC, read_u16(&mut instr[1..3].as_ref())?),
+            //0xd3 => Instr::INVALID,
+            0xd4 => Instr::CALL_COND_a16(Cond::NC, read_u16(&mut instr[1..3].as_ref())?),
+            0xd5 => Instr::PUSH_r16(Reg16::DE),
+            0xd6 => Instr::SUB_d8(read_u8(&mut instr[1..2].as_ref())?),
+            0xd7 => Instr::RST_LIT(0x10),
+            0xd8 => Instr::RET_COND(Cond::C),
+            0xd9 => Instr::RETI,
+            0xda => Instr::JP_COND_a16(Cond::C, read_u16(&mut instr[1..3].as_ref())?),
+            //0xdb => Instr::INVALID,
+            0xdc => Instr::CALL_COND_a16(Cond::C, read_u16(&mut instr[1..3].as_ref())?),
+            //0xdd => Instr::INVALID,
+            0xde => Instr::SBC_r8_d8(Reg8::A, read_u8(&mut instr[1..2].as_ref())?),
+            0xdf => Instr::RST_LIT(0x18),
+            0xe0 => Instr::LDH_ia8_r8(read_u8(&mut instr[1..2].as_ref())?, Reg8::A),
+            0xe1 => Instr::POP_r16(Reg16::HL),
+            0xe2 => Instr::LD_ir8_r8(Reg8::C, Reg8::A),
+            //0xe3 => Instr::INVALID,
+            //0xe4 => Instr::INVALID,
+            0xe5 => Instr::PUSH_r16(Reg16::HL),
+            0xe6 => Instr::AND_d8(read_u8(&mut instr[1..2].as_ref())?),
+            0xe7 => Instr::RST_LIT(0x20),
+            0xe8 => Instr::ADD_r16_r8(Reg16::SP, read_u8(&mut instr[1..2].as_ref())? as i8),
+            0xe9 => Instr::JP_ir16(Reg16::HL),
+            0xea => Instr::LD_ia16_r8(read_u16(&mut instr[1..3].as_ref())?, Reg8::A),
+            // 0xeb => Instr::INVALID,
+            // 0xec => Instr::INVALID,
+            // 0xed => Instr::INVALID,
+            0xee => Instr::XOR_d8(read_u8(&mut instr[1..2].as_ref())?),
+            0xef => Instr::RST_LIT(0x28),
+            0xf0 => Instr::LDH_r8_ia8(Reg8::A, read_u8(&mut instr[1..2].as_ref())?),
+            0xf1 => Instr::POP_r16(Reg16::AF),
+            0xf2 => Instr::LD_r8_ir8(Reg8::A, Reg8::C),
+            0xf3 => Instr::DI,
+            //0xf4 => Instr::INVALID,
+            0xf5 => Instr::PUSH_r16(Reg16::AF),
+            0xf6 => Instr::OR_d8(read_u8(&mut instr[1..2].as_ref())?),
+            0xf7 => Instr::RST_LIT(0x30),
+            0xf8 => Instr::LD_r16_r16_r8(Reg16::HL, Reg16::SP, read_u8(&mut instr[1..2].as_ref())? as i8),
+            0xf9 => Instr::LD_r16_r16(Reg16::SP, Reg16::HL),
+            0xfa => Instr::LD_r8_ia16(Reg8::A, read_u16(&mut instr[1..3].as_ref())?),
+            0xfb => Instr::EI,
+            //0xfc => Instr::INVALID,
+            //0xfd => Instr::INVALID,
+            0xfe => Instr::CP_d8(read_u8(&mut instr[1..2].as_ref())?),
+            0xff => Instr::RST_LIT(0x38),
+            i => {
+                Instr::INVALID(i as u16)
             }
         };
-        Ok(i)
+        Ok((opcode as u16, i))
     }
 }
 
@@ -1369,10 +1305,9 @@ impl fmt::Display for Instr {
             Instr::ADD_r8_d8(x0, x1) => write!(f, "ADD {:?},{:?}", x0, x1),
             Instr::RST_LIT(x0) => write!(f, "RST {:?}", x0),
             Instr::RET => write!(f, "RET"),
-            Instr::PREFIX_CB(x0) => write!(f, "PREFIX {:?}", x0),
             Instr::CALL_a16(x0) => write!(f, "CALL {:?}", x0),
             Instr::ADC_r8_d8(x0, x1) => write!(f, "ADC {:?},{:?}", x0, x1),
-            Instr::INVALID => write!(f, "INVALID"),
+            Instr::INVALID(x0) => write!(f, "INVALID 0x{:x}", x0),
             Instr::SUB_d8(x0) => write!(f, "SUB {:?}", x0),
             Instr::RETI => write!(f, "RETI"),
             Instr::SBC_r8_d8(x0, x1) => write!(f, "SBC {:?},{:?}", x0, x1),
@@ -1392,23 +1327,111 @@ impl fmt::Display for Instr {
             Instr::LD_r8_ia16(x0, x1) => write!(f, "LD {:?},({:?})", x0, x1),
             Instr::EI => write!(f, "EI"),
             Instr::CP_d8(x0) => write!(f, "CP {:?}", x0),
+            Instr::RLC_r8(x0) => write!(f, "RLC {:?}", x0),
+            Instr::RLC_ir16(x0) => write!(f, "RLC ({:?})", x0),
+            Instr::RRC_r8(x0) => write!(f, "RRC {:?}", x0),
+            Instr::RRC_ir16(x0) => write!(f, "RRC ({:?})", x0),
+            Instr::RL_r8(x0) => write!(f, "RL {:?}", x0),
+            Instr::RL_ir16(x0) => write!(f, "RL ({:?})", x0),
+            Instr::RR_r8(x0) => write!(f, "RR {:?}", x0),
+            Instr::RR_ir16(x0) => write!(f, "RR ({:?})", x0),
+            Instr::SLA_r8(x0) => write!(f, "SLA {:?}", x0),
+            Instr::SLA_ir16(x0) => write!(f, "SLA ({:?})", x0),
+            Instr::SRA_r8(x0) => write!(f, "SRA {:?}", x0),
+            Instr::SRA_ir16(x0) => write!(f, "SRA ({:?})", x0),
+            Instr::SWAP_r8(x0) => write!(f, "SWAP {:?}", x0),
+            Instr::SWAP_ir16(x0) => write!(f, "SWAP ({:?})", x0),
+            Instr::SRL_r8(x0) => write!(f, "SRL {:?}", x0),
+            Instr::SRL_ir16(x0) => write!(f, "SRL ({:?})", x0),
+            Instr::BIT_l8_r8(x0, x1) => write!(f, "BIT {:?},{:?}", x0, x1),
+            Instr::BIT_l8_ir16(x0, x1) => write!(f, "BIT {:?},({:?})", x0, x1),
+            Instr::RES_l8_r8(x0, x1) => write!(f, "RES {:?},{:?}", x0, x1),
+            Instr::RES_l8_ir16(x0, x1) => write!(f, "RES {:?},({:?})", x0, x1),
+            Instr::SET_l8_r8(x0, x1) => write!(f, "SET {:?},{:?}", x0, x1),
+            Instr::SET_l8_ir16(x0, x1) => write!(f, "SET {:?},({:?})", x0, x1),
+
             _ => write!(f, "Unimplemented!")
         }
     }
 }
 
-fn disasm<R: Read, W: Write> (bytes : &mut R, buf : &mut W) -> io::Result<()> {
-    while let Ok(op) = Instr::disasm(bytes) {
-        writeln!(buf, "{}", op)?;
+fn disasm<R: Read, W: Write, F: Fn(&Instr) -> bool> (mut start :u16, bytes : &mut R, buf : &mut W, filter: &F) -> io::Result<()> {
+    let mut local = [0u8; 3];
+    loop {
+        if bytes.read_exact(&mut local[..1]).is_err() {
+            break;
+        }
+        let opcode = local[0] as u16;
+        let mut size = get_op(opcode).size as usize;
+        let mut bytes = bytes.take((size - 1) as u64);
+        let op : io::Result<Instr> = bytes.read(&mut local[1..size])
+            .and_then(|bytes_read : usize|
+                      match Instr::disasm(&mut local[..bytes_read + 1].as_ref()) {
+                          Err(_) => {
+                              size = bytes_read + 1;
+                              Ok(Instr::INVALID(opcode))
+                          },
+                          Ok((_, op)) => Ok(op),
+                      }
+            ).or_else(|_| {
+                size = 1;
+                Ok(Instr::INVALID(opcode))
+            }
+            );
+
+        let bytes = bytes.into_inner();
+        let op = op?;
+
+        if filter(&op) {
+            write!(buf, "0x{:04x}: ", start);
+            for x in local[0..size].iter() {
+                write!(buf, "{:02x} ", x)?;
+            }
+            for i in size..3 {
+                write!(buf, "   ");
+            }
+            writeln!(buf, "{}", op)?;
+        }
+        start += size as u16;
     };
     Ok(())
 }
 
-fn disasm_file(file : &str) -> io::Result<()> {
+fn disasm_file(file : &str, filter_nops : bool) -> io::Result<()> {
     use std::io::Cursor;
-    let f = File::open(file)?;
-    let mut buf = Cursor::new(f);
-    disasm(buf.get_mut(), &mut std::io::stdout())
+    let mut f = File::open(file)?;
+    let regions = [
+        (0x0000, 8, "Restart"),
+        (0x0008, 8, "Restart"),
+        (0x0010, 8, "Restart"),
+        (0x0018, 8, "Restart"),
+        (0x0020, 8, "Restart"),
+        (0x0028, 8, "Restart"),
+        (0x0030, 8, "Restart"),
+        (0x0038, 8, "Restart"),
+        (0x0040, 8, "VBlank"),
+        (0x0048, 8, "LCDC"),
+        (0x0050, 8, "Timer Overflow"),
+        (0x0058, 8, "Serial Transfer"),
+        (0x0060, (0x100 - 0x60), "P10-P13"),
+        (0x0100, 4, "Start"),
+        (0x0104, (0x134 - 0x104), "GameBoy Logo"),
+        (0x0134, (0x143 - 0x134), "Title"),
+        (0x0143, (0x150 - 0x143), "Other Data"),
+        (0x0150, (0xffff - 0x0150), "The Rest"),
+    ];
+    let mut dst = std::io::stdout();
+    let mut filter =
+        move |i : &Instr| match i { Instr::NOP => !filter_nops, _ => true };
+
+    for r in regions.iter() {
+        let mut taken = f.take(r.1);
+        let mut buf = Cursor::new(taken);
+        writeln!(dst, "{}:", r.2)?;
+        disasm(r.0, buf.get_mut(), &mut dst, &mut filter);
+        f = buf.into_inner().into_inner();
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1416,10 +1439,10 @@ mod tests {
     #[test]
     fn it_works() {
         let mut s = Vec::new();
-        assert_eq!(::Instr::disasm(&mut [0u8].as_ref()).unwrap(), ::Instr::NOP);
+        assert_eq!(::Instr::disasm(&mut [0u8].as_ref()).unwrap(), (0, ::Instr::NOP));
         let mut b = ::std::io::Cursor::new(s);
-        ::disasm(&mut [0u8, 0u8].as_ref(), &mut b).unwrap();
-        assert_eq!(String::from_utf8(b.into_inner()).unwrap(), "NOP\nNOP\n");
-        ::disasm_file("cpu_instrs/cpu_instrs.gb");
+        ::disasm(0, &mut [0u8, 0u8].as_ref(), &mut b, &|_| true).unwrap();
+        assert_eq!(String::from_utf8(b.into_inner()).unwrap(), "0x0000: 00       NOP\n0x0001: 00       NOP\n");
+        ::disasm_file("cpu_instrs/cpu_instrs.gb", true);
     }
 }
