@@ -1,10 +1,167 @@
 #![feature(match_default_bindings)]
-use std::io::{Seek, Read, Write, BufWriter};
+use std::io::{Seek, SeekFrom, Read, Write, BufWriter};
 use std::io;
 use std::fs::File;
 use std::fmt;
 use std::mem;
 use std::marker::Sized;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct Inner {
+    h : u8,
+    l : u8,
+}
+
+#[repr(C)]
+union HighLow {
+    hl : u16,
+    inner : Inner,
+}
+
+struct Registers {
+    af : HighLow,
+    bc : HighLow,
+    de : HighLow,
+    hl : HighLow,
+    sp : u16,
+    pc : u16,
+}
+
+struct GBMemory {
+    ram1 : Vec<u8>,
+    empty1 : Vec<u8>,
+    io : Vec<u8>,
+    empty0 : Vec<u8>,
+    sprites : Vec<u8>,
+    //Echo of ram
+    ram0 : Vec<u8>,
+    swap_ram : Vec<u8>,
+    video : Vec<u8>,
+    rom1 : Vec<u8>,
+    rom0 : Vec<u8>,
+    seek_pos: u16,
+}
+
+impl GBMemory {
+    fn new() -> GBMemory {
+        let mut mem = GBMemory {
+            rom0 : vec![0u8; 16 << 10],
+            rom1 : vec![0u8; 16 << 10],
+            video : vec![0u8; 8 << 10],
+            swap_ram : vec![0u8; 8 << 10],
+            ram0 : vec![0u8; 8 << 10],
+            sprites : vec![0u8; 0xA0],
+            empty0 : vec![0u8; 0xFF00 - 0xFEA0],
+            io: vec![0u8; 0xFF4C - 0xFEA0],
+            empty1 : vec![0u8; 0xFF80 - 0xFF4C],
+            ram1 : vec![0u8; 0xFFFF - 0xFF80],
+            seek_pos: 0,
+        };
+        let bytes = include_bytes!("../boot_rom.gb");
+        mem.seek(SeekFrom::Start(0));
+        mem.write(bytes);
+        mem
+    }
+
+    fn find_byte(&mut self, addr : u16) -> &mut u8 {
+        /* these should really be bitwise operations */
+        println!("{:x} {}", addr, addr);
+        match addr {
+            0x0000...0x3FFF => &mut self.rom0[addr as usize],
+            0x4000...0x7FFF => &mut self.rom1[(addr - 0x4000) as usize],
+            0x8000...0x9FFF => &mut self.video[(addr - 0x8000) as usize],
+            0xA000...0xBFFF => &mut self.swap_ram[(addr - 0xA000) as usize],
+            0xC000...0xDFFF => &mut self.ram0[(addr - 0xC000) as usize],
+            0xE000...0xFDFF => &mut self.ram0[(addr - 0xE000) as usize],
+            0xFE00...0xFE9F => &mut self.sprites[(addr - 0xFE00) as usize],
+            0xFEA0...0xFEFF => &mut self.empty0[(addr - 0xFEA0) as usize],
+            0xFF00...0xFF4B => &mut self.io[(addr - 0xFF00) as usize],
+            0xFF4C...0xFF7F => &mut self.empty1[(addr - 0xFF4C) as usize],
+            0xFF80...0xFFFF => &mut self.ram1[(addr - 0xFF80) as usize],
+            _ => panic!("Memory Access Out Of Range")
+        }
+    }
+
+    fn dump(&mut self) {
+        self.seek(SeekFrom::Start(0));
+        disasm(0, self, &mut std::io::stdout(), &|i| match i {Instr::NOP => false, _ => true});
+    }
+}
+
+impl Write for GBMemory {
+    fn write(&mut self, buf : &[u8]) -> io::Result<usize> {
+        for (i, w) in buf.iter().enumerate() {
+            if self.seek_pos == std::u16::MAX {
+                return Ok(i)
+            }
+            let pos = self.seek_pos;
+            {
+                let b = self.find_byte(pos);
+                *b = *w;
+            }
+            self.seek_pos = self.seek_pos.saturating_add(1);
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Read for GBMemory {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        for (i, b) in buf.iter_mut().enumerate() {
+            if self.seek_pos == std::u16::MAX {
+                return Ok(i)
+            }
+            {
+                let pos = self.seek_pos;
+                let &mut r = self.find_byte(pos);
+                *b = r;
+            }
+            self.seek_pos = self.seek_pos.saturating_add(1);
+        }
+        Ok(buf.len())
+    }
+}
+fn apply_offset(mut pos : u16,  seek : i64) -> io::Result<u64> {
+    let seek = if seek > std::i16::MAX as i64 {
+        std::i16::MAX
+    } else if seek < std::i16::MIN as i64 {
+        std::i16::MIN
+    } else {
+        seek as i16
+    };
+    if seek > 0 {
+        pos = pos.saturating_add(seek as u16);
+    } else if pos.checked_sub(seek as u16).is_some() {
+        pos -= seek as u16;
+    } else {
+        return Err(std::io::Error::new(io::ErrorKind::Other, "seeked before beginning"));
+    }
+    Ok(pos as u64)
+}
+
+
+impl Seek for GBMemory {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        match pos {
+            SeekFrom::Start(x) => {
+                let x = if x > std::u16::MAX as u64{ std::u16::MAX } else { x as u16};
+                self.seek_pos = 0u16.saturating_add(x);
+            },
+            SeekFrom::End(x) => {
+                self.seek_pos = apply_offset(0xffff, x)? as u16;
+            },
+            SeekFrom::Current(x) => {
+                self.seek_pos = apply_offset(self.seek_pos, x)? as u16;
+            }
+        }
+        Ok(self.seek_pos as u64)
+    }
+}
 
 #[derive(Debug,PartialEq)]
 enum Reg8 {
@@ -1443,6 +1600,9 @@ mod tests {
         let mut b = ::std::io::Cursor::new(s);
         ::disasm(0, &mut [0u8, 0u8].as_ref(), &mut b, &|_| true).unwrap();
         assert_eq!(String::from_utf8(b.into_inner()).unwrap(), "0x0000: 00       NOP\n0x0001: 00       NOP\n");
-        ::disasm_file("cpu_instrs/cpu_instrs.gb", true);
+        //::disasm_file("cpu_instrs/cpu_instrs.gb", true);
+
+        let mut mem = ::GBMemory::new();
+        mem.dump();
     }
 }
