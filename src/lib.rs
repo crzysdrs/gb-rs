@@ -1,31 +1,728 @@
 #![feature(match_default_bindings)]
-use std::io::{Seek, SeekFrom, Read, Write, BufWriter};
+#![feature(nll)]
+
+use std::io::{Seek, SeekFrom, Read, Write};
 use std::io;
 use std::fs::File;
 use std::fmt;
-use std::mem;
-use std::marker::Sized;
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-struct Inner {
+macro_rules! flag_u8 {
+    ($x:path, $cond:expr) => {
+        if $cond {
+            $x as u8
+        } else {
+            0
+        }
+    }
+}
+
+macro_rules! mask_u8 {
+    ($($x:path)|* ) => {
+        0
+            $(
+                | flag_u8!($x, true)
+            )*
+    }
+}
+
+#[derive(Debug)]
+struct Registers {
+    a : u8,
+    f : u8,
+    b : u8,
+    c : u8,
+    d : u8,
+    e : u8,
     h : u8,
     l : u8,
-}
-
-#[repr(C)]
-union HighLow {
-    hl : u16,
-    inner : Inner,
-}
-
-struct Registers {
-    af : HighLow,
-    bc : HighLow,
-    de : HighLow,
-    hl : HighLow,
     sp : u16,
     pc : u16,
+}
+
+struct CPU {
+    reg : Registers,
+}
+
+fn make_u16(h : u8, l: u8) -> u16 {
+    ((h as u16) << 8) | (l as u16)
+}
+
+fn split_u16(r : u16) -> (u8, u8) {
+    (((r & 0xff00) >> 8) as u8, (r & 0xff) as u8)
+}
+
+trait RegType<Register> where
+    Self::Output : std::ops::Not<Output=Self::Output> + std::ops::BitAnd<Output=Self::Output> + std::ops::BitOr<Output=Self::Output> + Copy,
+Register : Copy
+{
+    type Output;
+    fn write(&mut self, reg: Register, val : Self::Output);
+    fn write_mask(&mut self, reg: Register, val: Self::Output, mask: Self::Output) {
+        let old = self.read(reg);
+        self.write(reg, (val & mask) | (old & !mask));
+    }
+    fn read(&self, reg: Register) -> Self::Output;
+    fn read_mask(&self, reg: Register, mask : Self::Output) -> Self::Output {
+        self.read(reg) & mask
+    }
+}
+
+impl RegType<Reg8> for Registers {
+    type Output = u8;
+    fn write(&mut self, reg: Reg8, v: u8) {
+        match reg {
+            Reg8::A => {self.a = v;},
+            Reg8::F => {self.f = v;},
+            Reg8::B => {self.b = v;},
+            Reg8::C => {self.c = v;},
+            Reg8::D => {self.d = v;},
+            Reg8::E => {self.e = v;},
+            Reg8::H => {self.h = v;},
+            Reg8::L => {self.l = v;},
+        }
+    }
+    fn read(&self, r: Reg8) -> u8 {
+        match r {
+            Reg8::A => self.a,
+            Reg8::F => self.f,
+            Reg8::B => self.b,
+            Reg8::C => self.c,
+            Reg8::D => self.d,
+            Reg8::E => self.e,
+            Reg8::H => self.h,
+            Reg8::L => self.l,
+        }
+    }
+}
+
+impl RegType<Reg16> for Registers {
+    type Output = u16;
+    fn write(&mut self, r: Reg16, v: u16) {
+        let (hi, lo) = split_u16(v);
+        match r {
+            Reg16::AF => {
+                self.a = hi;
+                self.f = lo;
+            },
+            Reg16::BC => {
+                self.b = hi;
+                self.c = lo;
+            },
+            Reg16::DE => {
+                self.d = hi;
+                self.e = lo;
+            },
+            Reg16::HL => {
+                self.h = hi;
+                self.l = lo;
+            },
+            Reg16::SP => {self.sp = v},
+            Reg16::PC => {self.pc = v},
+        }
+    }
+    fn read(&self, r: Reg16) -> u16 {
+        match r {
+            Reg16::AF => make_u16(self.a, self.f),
+            Reg16::BC => make_u16(self.b, self.c),
+            Reg16::DE => make_u16(self.d, self.e),
+            Reg16::HL => make_u16(self.h, self.l),
+            Reg16::SP => self.sp,
+            Reg16::PC => self.pc,
+        }
+    }
+}
+
+impl Registers {
+     fn new() -> Registers {
+        Registers {
+            a : 0,
+            f : 0,
+            b : 0,
+            c : 0,
+            d : 0,
+            e : 0,
+            h : 0,
+            l : 0,
+            sp : 0,
+            pc : 0,
+        }
+    }
+    fn dump(&self) {
+        println!("{:?}", self);
+    }
+    fn set_flag(&mut self, f: Flag) {
+        self.write_mask(Reg8::F, f as u8, f as u8);
+    }
+    fn clear_flag(&mut self, f: Flag) {
+        self.write_mask(Reg8::F, 0, f as u8);
+    }
+    fn write_flags(&mut self, z: bool, n: bool, h: bool, c: bool, mask: u8) {
+        let mut new_flags = 0;
+        new_flags |= flag_u8!(Flag::Z, z);
+        new_flags |= flag_u8!(Flag::N, n);
+        new_flags |= flag_u8!(Flag::H, h);
+        new_flags |= flag_u8!(Flag::C, c);
+        self.write_mask(Reg8::F, new_flags, mask);
+    }
+    fn get_flag(&self, f : Flag) -> bool {
+        self.read(Reg8::F) & (f as u8) != 0
+    }
+    fn default_mask() -> u8 {
+        mask_u8!(Flag::Z | Flag::N | Flag::H | Flag::C)
+    }
+}
+
+trait AnyReg :Copy {}
+impl AnyReg for Reg8 {}
+impl AnyReg for Reg16 {}
+
+struct ALU {
+
+}
+
+impl ALU {
+    fn and(a : u8, b: u8) -> (u8, u8) {
+        let res = a & b;
+        (res,
+         flag_u8!(Flag::Z, res == 0)
+         | flag_u8!(Flag::H, true)
+        )
+    }
+    fn xor(a : u8, b :u8) -> (u8, u8) {
+        let res = a ^ b;
+        (res, flag_u8!(Flag::Z, res == 0))
+    }
+    fn or(a : u8, b :u8) -> (u8, u8) {
+        let res = a | b;
+        (res, flag_u8!(Flag::Z, res == 0))
+    }
+    fn bit(a : u8, b : u8) -> (u8, u8) {
+        let res = (1 << a) & b;
+        (res,  flag_u8!(Flag::Z, res == 0)
+         | flag_u8!(Flag::N, true)
+         | flag_u8!(Flag::H, false)
+        )
+    }
+    fn adc(a:u8, b: u8, c : bool) -> (u8, u8) {
+        let (mut res, mut c) = a.overflowing_add(b);
+        let mut h = Self::half_carry(a, b);
+        if c {
+            let (res2, c2) = res.overflowing_add(1);
+            h = h || Self::half_carry(res, 1);
+            c = c || c2;
+            res = res2;
+        }
+        (res,
+         flag_u8!(Flag::Z, res == 0)
+         | flag_u8!(Flag::N, false)
+         | flag_u8!(Flag::H, h)
+         | flag_u8!(Flag::C, c)
+        )
+    }
+    fn sbc(a:u8, b: u8, c : bool) -> (u8, u8) {
+        let (mut res, mut c) = a.overflowing_sub(b);
+        let mut h = Self::sub_carry(a, b);
+        if c {
+            let (res2, c2) = res.overflowing_sub(1);
+            h = h || Self::sub_carry(res, 1);
+            c = c || c2;
+            res = res2;
+        }
+        (res,
+         flag_u8!(Flag::Z, res == 0)
+         | flag_u8!(Flag::N, true)
+         | flag_u8!(Flag::H, h)
+         | flag_u8!(Flag::C, c)
+        )
+    }
+
+    fn rlca(a: u8, count: u32, c: bool) -> (u8, u8) {
+        let res = a.rotate_left(count) | if c {1} else {0};
+        (res,
+         flag_u8!(Flag::Z, res == 0)
+         | flag_u8!(Flag::N, false)
+         | flag_u8!(Flag::H, false)
+         | flag_u8!(Flag::C, a & 0b1000_0000 > 0)
+        )
+    }
+    fn rrca(a: u8, count: u32, c: bool) -> (u8, u8) {
+        let res = a.rotate_right(count) | if c {1} else {0};
+        (res,
+         flag_u8!(Flag::Z, res == 0)
+         | flag_u8!(Flag::N, false)
+         | flag_u8!(Flag::H, false)
+         | flag_u8!(Flag::C, a & 0b1000_0000 > 0)
+        )
+    }
+
+    fn sla(a: u8, count: u32) -> (u8, u8) {
+        let res = a << count;
+        (res,
+         flag_u8!(Flag::Z, res == 0)
+         | flag_u8!(Flag::N, false)
+         | flag_u8!(Flag::H, false)
+         | flag_u8!(Flag::C, a & 0b1000_0000 > 0)
+        )
+    }
+    fn sra(a: u8, count: u32) -> (u8, u8) {
+        let res = a >> count;
+        (res,
+         flag_u8!(Flag::Z, res == 0)
+         | flag_u8!(Flag::N, false)
+         | flag_u8!(Flag::H, false)
+         | flag_u8!(Flag::C, a & 0b0000_0001 > 0)
+        )
+    }
+
+    fn swap(a: u8) -> (u8, u8) {
+        let res = a & 0x0f << 4 | a & 0xf0 >> 4;
+        (res,
+         flag_u8!(Flag::Z, res == 0)
+         | flag_u8!(Flag::N, false)
+         | flag_u8!(Flag::H, false)
+         | flag_u8!(Flag::C, false)
+        )
+    }
+}
+trait ALUOps<T> {
+    fn add(a : T, b : T) -> (T, u8);
+    fn sub(a : T, b : T) -> (T, u8);
+    fn dec(a : T) -> (T, u8);
+    fn inc(a : T) -> (T, u8);
+    fn half_carry(a : T, b : T) -> bool;
+    fn sub_carry(a: T, b : T) -> bool;
+}
+
+impl ALUOps<u8> for ALU {
+    fn half_carry(a: u8, b: u8) -> bool {
+        ((a & 0xF) + (b & 0xF)) == 0x10
+    }
+    fn sub_carry(a: u8, b : u8) -> bool {
+        a & 0xf < b & 0xf
+    }
+    fn add(a : u8, b: u8) -> (u8, u8) {
+        let (mut res, mut c) = a.overflowing_add(b);
+        let mut h = Self::half_carry(a, b);
+        (res,
+         flag_u8!(Flag::Z, res == 0)
+         | flag_u8!(Flag::N, false)
+         | flag_u8!(Flag::H, h)
+         | flag_u8!(Flag::C, c)
+        )
+    }
+    fn sub(a : u8, b : u8) -> (u8, u8) {
+        let (mut res, mut c) = a.overflowing_sub(b);
+        let h = Self::sub_carry(a, b);
+        (res,
+         flag_u8!(Flag::Z, res == 0)
+         | flag_u8!(Flag::N, true)
+         | flag_u8!(Flag::H, h)
+         | flag_u8!(Flag::C, c)
+        )
+    }
+    fn dec(a : u8) -> (u8, u8) {
+        let (res, flags) = Self::sub(a, 1);
+        (res, (flags & !(Flag::C as u8)))
+    }
+    fn inc(a : u8) -> (u8, u8) {
+        let (res, flags) = Self::add(a, 1);
+        (res, (flags & !(Flag::C as u8)))
+    }
+}
+
+impl ALUOps<u16> for ALU {
+    fn half_carry(a: u16, b: u16) -> bool {
+        ((a & 0xF) + (b & 0xF)) == 0x10
+    }
+    fn sub_carry(a: u16, b : u16) -> bool {
+        a & 0xf < b & 0xf
+    }
+    fn add(a : u16, b: u16) -> (u16, u8) {
+        let (mut res, mut c) = a.overflowing_add(b);
+        let mut h = Self::half_carry(a, b);
+        (res,
+         flag_u8!(Flag::Z, res == 0)
+         | flag_u8!(Flag::N, false)
+         | flag_u8!(Flag::H, h)
+         | flag_u8!(Flag::C, c)
+        )
+    }
+    fn sub(a : u16, b : u16) -> (u16, u8) {
+        let (mut res, mut c) = a.overflowing_sub(b);
+        let mut h = a & 0xf < b & 0xf;
+        (res,
+         flag_u8!(Flag::Z, res == 0)
+         | flag_u8!(Flag::N, true)
+         | flag_u8!(Flag::H, h)
+         | flag_u8!(Flag::C, c)
+        )
+    }
+    fn dec(a : u16) -> (u16, u8) {
+        let (res, flags) = Self::sub(a, 1);
+        (res, (flags & !(Flag::C as u8)))
+    }
+    fn inc(a : u16) -> (u16, u8) {
+        let (res, flags) = Self::add(a, 1);
+        (res, (flags & !(Flag::C as u8)))
+    }
+}
+
+macro_rules! alu_result {
+    ($s: expr, $r:expr, $v:expr) => {
+        {
+            let (res, flags) = $v;
+            $s.reg.write($r, res);
+            $s.reg.write_mask(Reg8::F, flags, Registers::default_mask());
+        }
+    }
+}
+
+macro_rules! alu_mem{
+    ($s: expr, $mem:expr, $v:expr) => {
+        {
+            let (res, flags) = $v;
+            *$mem = res;
+            $s.reg.write_mask(Reg8::F, flags, Registers::default_mask());
+        }
+    }
+}
+
+
+impl CPU {
+    fn new() -> CPU {
+        CPU { reg : Registers::new() }
+    }
+    fn check_flag(&mut self, cond :Cond) -> bool {
+        match cond {
+            Cond::Z => self.reg.get_flag(Flag::Z),
+            Cond::NZ => !self.reg.get_flag(Flag::Z),
+            Cond::C => self.reg.get_flag(Flag::C),
+            Cond::NC => !self.reg.get_flag(Flag::C),
+            Cond::N => self.reg.get_flag(Flag::N),
+            Cond::NN => !self.reg.get_flag(Flag::N),
+            Cond::H => self.reg.get_flag(Flag::H),
+            Cond::NH => !self.reg.get_flag(Flag::H),
+        }
+    }
+    fn dump(&self) {
+        self.reg.dump();
+    }
+    fn pop16(&mut self, mut mem: &mut GBMemory, t: Reg16) {
+        let mut buf = [0u8; 2];
+        mem.seek(SeekFrom::Start((self.reg.read(Reg16::SP) + 2) as u64));
+        mem.read(&mut buf);
+        self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) + 2);
+        let res = make_u16(buf[0], buf[1]);
+        println!("Pop {} {}", self.reg.read(Reg16::SP), res);
+        self.reg.write(t, res);
+    }
+    fn push16(&mut self, mut mem: &mut GBMemory, v: Reg16) {
+        let item = self.reg.read(v);
+        println!("Push {} {}", self.reg.read(Reg16::SP), item);
+        let (hi, lo) = split_u16(item);
+        mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64));
+        mem.write(&[hi, lo]);
+        self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) - 2);
+    }
+    fn execute(&mut self, mut mem: &mut GBMemory) {
+        mem.seek(SeekFrom::Start(self.reg.read(Reg16::PC) as u64));
+        let i = match Instr::disasm(&mut mem) {
+            Ok((_, Instr::INVALID(_))) => panic!("Invalid instruction"),
+            Ok((opcode, i)) => i,
+            Err(_) => panic!("Unable to read Instruction"),
+        };
+        self.reg.write(Reg16::PC, mem.seek_pos);
+        match i {
+            Instr::ADC_r8_d8(x0, x1) => alu_result!(self, x0, ALU::adc(self.reg.read(x0), x1, self.reg.get_flag(Flag::C))),
+            Instr::ADC_r8_ir16(x0, x1) => alu_result!(self, x0, ALU::adc(self.reg.read(x0), *mem.find_byte(self.reg.read(x1)), self.reg.get_flag(Flag::C))),
+            Instr::ADC_r8_r8(x0, x1) => alu_result!(self, x0, ALU::adc(self.reg.read(x0), self.reg.read(x1), self.reg.get_flag(Flag::C))),
+            Instr::ADD_r16_r16(x0, x1) => alu_result!(self, x0, ALU::add(self.reg.read(x0), self.reg.read(x1))),
+            Instr::ADD_r16_r8(x0, x1) => alu_result!(self, x0, ALU::add(self.reg.read(x0), x1 as i16 as u16)),
+            Instr::ADD_r8_r8(x0, x1) => alu_result!(self, x0, ALU::add(self.reg.read(x0), self.reg.read(x1))),
+            Instr::ADD_r8_d8(x0, x1) => alu_result!(self, x0, ALU::add(self.reg.read(x0), x1)),
+            Instr::ADD_r8_ir16(x0, x1) => alu_result!(self, x0, ALU::add(self.reg.read(x0), *mem.find_byte(self.reg.read(x1)))),
+            Instr::AND_d8(x0) => alu_result!(self, Reg8::A, ALU::and(self.reg.read(Reg8::A), x0)),
+            Instr::AND_ir16(x0) => alu_result!(self, Reg8::A, ALU::and(self.reg.read(Reg8::A), *mem.find_byte(self.reg.read(x0)))),
+            Instr::AND_r8(x0) => alu_result!(self, Reg8::A, ALU::and(self.reg.read(Reg8::A), self.reg.read(x0))),
+            Instr::BIT_l8_ir16(x0, x1) => self.reg.write(Reg8::F, ALU::bit(x0, *mem.find_byte(self.reg.read(x1))).1),
+            Instr::BIT_l8_r8(x0, x1) => self.reg.write(Reg8::F, ALU::bit(x0, self.reg.read(x1)).1),
+            Instr::CALL_COND_a16(x0, x1) => {
+                if self.check_flag(x0) {
+                    self.push16(mem, Reg16::PC);
+                    self.reg.write(Reg16::PC, x1);
+                }
+            },
+            Instr::CALL_a16(x0) => {
+                self.push16(mem, Reg16::PC);
+                self.reg.write(Reg16::PC, x0);
+            },
+            Instr::CCF => {
+                if self.check_flag(Cond::C) {
+                    self.reg.clear_flag(Flag::C);
+                } else {
+                    self.reg.set_flag(Flag::C);
+                }
+                self.reg.clear_flag(Flag::N);
+                self.reg.clear_flag(Flag::H);
+            },
+            Instr::CPL => {
+                self.reg.write(Reg8::A, !self.reg.read(Reg8::A));
+                self.reg.set_flag(Flag::N);
+                self.reg.set_flag(Flag::H);
+            },
+            Instr::CP_d8(x0) => {
+                let (_, flags) = ALU::sub(self.reg.read(Reg8::A), x0);
+                self.reg.write(Reg8::F, flags);
+            },
+            Instr::CP_ir16(x0) => {
+                let (_, flags) = ALU::sub(self.reg.read(Reg8::A), *mem.find_byte(self.reg.read(x0)));
+                self.reg.write(Reg8::F, flags);
+            },
+            Instr::CP_r8(x0) => {
+                let (_, flags) = ALU::sub(self.reg.read(Reg8::A), self.reg.read(x0));
+                self.reg.write(Reg8::F, flags);
+            },
+            Instr::DAA => {
+                let mut value = self.reg.read(Reg8::A) as i8;
+                let mut adjust = 0;
+                if self.check_flag(Cond::H) || (!self.check_flag(Cond::N) && (value & 0xf) > 0x9) {
+                    adjust |= 0x6;
+                }
+                if self.check_flag(Cond::H) || (!self.check_flag(Cond::N) && value > 0x99) {
+                    adjust |= 0x60;
+                    self.reg.set_flag(Flag::C);
+                } else {
+                    self.reg.clear_flag(Flag::C);
+                }
+
+                value += if self.check_flag(Cond::N) {
+                    -adjust
+                } else {
+                    adjust
+                };
+                value &= 0xff;
+                if value == 0 {
+                    self.reg.set_flag(Flag::Z);
+                } else {
+                    self.reg.clear_flag(Flag::Z);
+                }
+                self.reg.clear_flag(Flag::H);
+            },
+            Instr::DEC_ir16(x0) => {
+                let (res, flags) = ALU::dec(*mem.find_byte(self.reg.read(x0)));
+                *mem.find_byte(self.reg.read(x0)) = res;
+                self.reg.write(Reg8::F, flags);
+            },
+            Instr::DEC_r16(x0) => alu_result!(self, x0, ALU::dec(self.reg.read(x0))),
+            Instr::DEC_r8(x0) => alu_result!(self, x0, ALU::dec(self.reg.read(x0))),
+            /* disable interrupts */
+            Instr::DI => unimplemented!("Missing DI"),
+            /* enable interrupts */
+            Instr::EI => unimplemented!("Missing EI"),
+            /* halt until next interrupt */
+            Instr::HALT => unimplemented!("Missing HALT"),
+            Instr::INC_ir16(x0) => {
+                let (res, flags) = ALU::inc(*mem.find_byte(self.reg.read(x0)));
+                *mem.find_byte(self.reg.read(x0)) = res;
+                self.reg.write(Reg8::F, flags);
+            },
+            Instr::INC_r16(x0) => alu_result!(self, x0, ALU::inc(self.reg.read(x0))),
+            Instr::INC_r8(x0) => alu_result!(self, x0, ALU::inc(self.reg.read(x0))),
+            Instr::JP_COND_a16(x0, x1) => {
+                if self.check_flag(x0) {
+                    self.reg.write(Reg16::PC, x1)
+                }
+            },
+            Instr::JP_a16(x0) => {
+                self.reg.write(Reg16::PC, x0);
+            },
+            Instr::JP_ir16(x0) => {
+                let mut buf = [0u8; 2];
+                mem.seek(SeekFrom::Start(self.reg.read(x0) as u64));
+                mem.read(&mut buf);
+                self.reg.write(Reg16::PC, make_u16(buf[1], buf[0]));
+            },
+            Instr::JR_COND_r8(x0, x1) => {
+                if self.check_flag(x0) {
+                    self.reg.write(Reg16::PC, ALU::add(self.reg.read(Reg16::PC), x1 as i16 as u16).0);
+                }
+            },
+            Instr::JR_r8(x0) => {
+                self.reg.write(Reg16::PC, ALU::add(self.reg.read(Reg16::PC), x0 as i16 as u16).0);
+            },
+            Instr::LDH_ia8_r8(x0, x1) => {
+                let b = mem.find_byte(0xff00 + x0 as u16);
+                *b = self.reg.read(x1);
+            },
+            Instr::LDH_r8_ia8(x0, x1) => {
+                let b = mem.find_byte(0xff00 + x1 as u16);
+                self.reg.write(x0, *b);
+            },
+            Instr::LD_ia16_r16(x0, x1) => {
+                mem.seek(SeekFrom::Start(x0 as u64));
+                let (hi, lo) = split_u16(self.reg.read(x1));
+                mem.write(&[hi, lo]);
+            },
+            Instr::LD_ia16_r8(x0, x1) => {
+                let b = mem.find_byte(x0);
+                *b = self.reg.read(x1);
+            },
+            Instr::LD_ir16_d8(x0, x1) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                *b = x1;
+            },
+            Instr::LD_ir16_r8(x0, x1) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                *b = self.reg.read(x1);
+            },
+            Instr::LD_iir16_r8(x0, x1) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                *b = self.reg.read(x1);
+                self.reg.write(x0, ALU::inc(self.reg.read(x0)).0)
+            },
+            Instr::LD_dir16_r8(x0, x1) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                *b = self.reg.read(x1);
+                self.reg.write(x0, ALU::dec(self.reg.read(x0)).0)
+            },
+            Instr::LD_ir8_r8(x0, x1) => {
+                let b = mem.find_byte(0xff00 + self.reg.read(x0) as u16);
+                *b = self.reg.read(x1);
+            },
+            Instr::LD_r16_d16(x0, x1) => {
+                self.reg.write(x0, x1);
+            },
+            Instr::LD_r16_r16(x0, x1) => {
+                self.reg.write(x0, self.reg.read(x1));
+            }
+            Instr::LD_r16_r16_r8(x0, x1, x2) => {
+                self.reg.write(x0, (self.reg.read(x1) as i16 + x2 as i16) as u16);
+            },
+            Instr::LD_r8_d8(x0, x1) => {
+                self.reg.write(x0, x1);
+            },
+            Instr::LD_r8_ia16(x0, x1) => {
+                let b = mem.find_byte(x1);
+                self.reg.write(x0, *b);
+            },
+            Instr::LD_r8_ir16(x0, x1) => {
+                let b = mem.find_byte(self.reg.read(x1));
+                self.reg.write(x0, *b);
+            },
+            Instr::LD_r8_iir16(x0, x1) => {
+                let b = mem.find_byte(self.reg.read(x1));
+                self.reg.write(x0, *b);
+                self.reg.write(x1, ALU::inc(self.reg.read(x1)).0)
+            },
+            Instr::LD_r8_dir16(x0, x1) => {
+                let b = mem.find_byte(self.reg.read(x1));
+                self.reg.write(x0, *b);
+                self.reg.write(x1, ALU::dec(self.reg.read(x1)).0)
+            },
+            Instr::LD_r8_ir8(x0, x1) => {
+                let b = mem.find_byte(0xff00 + self.reg.read(x1) as u16);
+                self.reg.write(x0, *b)
+            },
+            Instr::LD_r8_r8(x0, x1) => {
+                self.reg.write(x0, self.reg.read(x1));
+            },
+            Instr::NOP => {},
+            Instr::OR_d8(x0) => alu_result!(self, Reg8::A, ALU::or(self.reg.read(Reg8::A), x0)),
+            Instr::OR_ir16(x0) => alu_result!(self, Reg8::A, ALU::or(self.reg.read(Reg8::A), *mem.find_byte(self.reg.read(x0)))),
+            Instr::OR_r8(x0) => alu_result!(self, Reg8::A, ALU::or(self.reg.read(Reg8::A), self.reg.read(x0))),
+            Instr::POP_r16(x0) => self.pop16(&mut mem, x0),
+            Instr::PUSH_r16(x0) => self.push16(&mut mem, x0),
+            Instr::RES_l8_ir16(x0, x1) => {
+                let b = mem.find_byte(self.reg.read(x1));
+                *b = (*b & !(1 << x0)) | (1 << x0);
+            },
+            Instr::RES_l8_r8(x0, x1) => self.reg.write(x1, (self.reg.read(x1) & !(1 << x0)) | (1 << x0)),
+            Instr::RET => {
+                self.pop16(&mut mem, Reg16::PC)
+            },
+            Instr::RETI => {
+                self.pop16(&mut mem, Reg16::PC);
+                /* TODO: and enable interrupts */
+            },
+            Instr::RET_COND(x0) => {
+                if self.check_flag(x0) {
+                    self.pop16(&mut mem, Reg16::PC);
+                }
+            },
+            Instr::RLA => alu_result!(self, Reg8::A, ALU::rlca(self.reg.read(Reg8::A), 1, false)),
+            Instr::RLCA => alu_result!(self, Reg8::A, ALU::rlca(self.reg.read(Reg8::A), 1, true)),
+            Instr::RLC_ir16(x0) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                alu_mem!(self, b, ALU::rlca(*b, 1, true));
+            },
+            Instr::RLC_r8(x0) => alu_result!(self, x0, ALU::rlca(self.reg.read(x0), 1, true)),
+            Instr::RL_ir16(x0) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                alu_mem!(self, b, ALU::rlca(*b, 1, false));
+            },
+            Instr::RL_r8(x0) => alu_result!(self, x0, ALU::rlca(self.reg.read(x0), 1, false)),
+            Instr::RRA => alu_result!(self, Reg8::A, ALU::rrca(self.reg.read(Reg8::A), 1, false)),
+            Instr::RRCA => alu_result!(self, Reg8::A, ALU::rrca(self.reg.read(Reg8::A), 1, true)),
+            Instr::RRC_ir16(x0) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                alu_mem!(self, b,  ALU::rrca(*b, 1, true));
+            },
+            Instr::RRC_r8(x0) => alu_result!(self, x0, ALU::rrca(self.reg.read(x0), 1, true)),
+            Instr::RR_ir16(x0) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                alu_mem!(self, b,ALU::rrca(*b, 1, false));
+            },
+            Instr::RR_r8(x0) => alu_result!(self, x0, ALU::rrca(self.reg.read(x0), 1, false)),
+            Instr::RST_LIT(x0) => {
+                self.push16(&mut mem, Reg16::PC);
+                self.reg.write(Reg16::PC, x0 as u16);
+            }
+            Instr::SBC_r8_d8(x0, x1) =>  alu_result!(self, x0, ALU::sbc(self.reg.read(x0), x1, self.reg.get_flag(Flag::C))),
+            Instr::SBC_r8_ir16(x0, x1) => alu_result!(self, x0, ALU::sbc(self.reg.read(x0), *mem.find_byte(self.reg.read(x1)), self.reg.get_flag(Flag::C))),
+            Instr::SBC_r8_r8(x0, x1) =>  alu_result!(self, x0, ALU::sbc(self.reg.read(x0), self.reg.read(x1), self.reg.get_flag(Flag::C))),
+            Instr::SCF => self.reg.set_flag(Flag::C),
+            Instr::SET_l8_ir16(x0, x1) => {
+                let b = mem.find_byte(self.reg.read(x1));
+                *b = *b | 1 << x0;
+            },
+            Instr::SET_l8_r8(x0, x1) => self.reg.write(x1, self.reg.read(x1) | 1 << x0),
+            Instr::SLA_ir16(x0) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                alu_mem!(self, b,  ALU::sla(*b, 1));
+            },
+            Instr::SLA_r8(x0) => alu_result!(self, x0, ALU::sla(self.reg.read(x0), 1)),
+            Instr::SRA_ir16(x0) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                alu_mem!(self, b,  ALU::sra(*b, 1));
+            },
+            Instr::SRA_r8(x0) => alu_result!(self, x0, ALU::sra(self.reg.read(x0), 1)),
+            Instr::SRL_ir16(x0) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                alu_mem!(self, b,  ALU::sra(*b, 1));
+            },
+            Instr::SRL_r8(x0) => alu_result!(self, x0, ALU::sla(self.reg.read(x0), 1)),
+            /* halt cpu and lcd display until button press */
+            Instr::STOP_0(x0) => unimplemented!("Missing STOP"),
+            Instr::SUB_d8(x0) => alu_result!(self, Reg8::A, ALU::sub(self.reg.read(Reg8::A), x0)),
+            Instr::SUB_ir16(x0) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                alu_mem!(self, b, ALU::sub(self.reg.read(Reg8::A), *b));
+            },
+            Instr::SUB_r8(x0) => alu_result!(self, Reg8::A, ALU::sub(self.reg.read(Reg8::A), self.reg.read(x0))),
+            Instr::SWAP_ir16(x0) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                alu_mem!(self, b, ALU::swap(*b));
+            },
+            Instr::SWAP_r8(x0) => alu_result!(self, x0, ALU::swap(self.reg.read(x0))),
+            Instr::XOR_d8(x0) => alu_result!(self, Reg8::A, ALU::xor(self.reg.read(Reg8::A), x0)),
+            Instr::XOR_ir16(x0) => {
+                let b = mem.find_byte(self.reg.read(x0));
+                alu_mem!(self, b, ALU::xor(self.reg.read(Reg8::A), *b));
+            },
+            Instr::XOR_r8(x0) => alu_result!(self, Reg8::A, ALU::xor(self.reg.read(Reg8::A), self.reg.read(x0))),
+            Instr::INVALID(i) => panic!("Invalid Instruction {}", i),
+        }
+    }
 }
 
 struct GBMemory {
@@ -55,7 +752,7 @@ impl GBMemory {
             empty0 : vec![0u8; 0xFF00 - 0xFEA0],
             io: vec![0u8; 0xFF4C - 0xFEA0],
             empty1 : vec![0u8; 0xFF80 - 0xFF4C],
-            ram1 : vec![0u8; 0xFFFF - 0xFF80],
+            ram1 : vec![0u8; 0x10000 - 0xFF80],
             seek_pos: 0,
         };
         let bytes = include_bytes!("../boot_rom.gb");
@@ -66,7 +763,6 @@ impl GBMemory {
 
     fn find_byte(&mut self, addr : u16) -> &mut u8 {
         /* these should really be bitwise operations */
-        println!("{:x} {}", addr, addr);
         match addr {
             0x0000...0x3FFF => &mut self.rom0[addr as usize],
             0x4000...0x7FFF => &mut self.rom1[(addr - 0x4000) as usize],
@@ -92,13 +788,13 @@ impl GBMemory {
 impl Write for GBMemory {
     fn write(&mut self, buf : &[u8]) -> io::Result<usize> {
         for (i, w) in buf.iter().enumerate() {
-            if self.seek_pos == std::u16::MAX {
-                return Ok(i)
-            }
             let pos = self.seek_pos;
             {
                 let b = self.find_byte(pos);
                 *b = *w;
+            }
+            if self.seek_pos == std::u16::MAX {
+                return Ok(i)
             }
             self.seek_pos = self.seek_pos.saturating_add(1);
         }
@@ -113,13 +809,13 @@ impl Write for GBMemory {
 impl Read for GBMemory {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         for (i, b) in buf.iter_mut().enumerate() {
-            if self.seek_pos == std::u16::MAX {
-                return Ok(i)
-            }
             {
                 let pos = self.seek_pos;
                 let &mut r = self.find_byte(pos);
                 *b = r;
+            }
+            if self.seek_pos == std::u16::MAX {
+                return Ok(i)
             }
             self.seek_pos = self.seek_pos.saturating_add(1);
         }
@@ -163,7 +859,7 @@ impl Seek for GBMemory {
     }
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Copy,Clone)]
 enum Reg8 {
     A, F,
     B, C,
@@ -171,17 +867,17 @@ enum Reg8 {
     H, L,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Copy,Clone)]
 enum Reg16 {
     AF,
     BC,
     DE,
-    HL, HLS, HLP,
+    HL,
     SP,
     PC
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Copy,Clone)]
 enum Register {
     A, F, AF,
     B, C, BC,
@@ -199,126 +895,135 @@ enum Immed {
     Offset(i8),
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Copy,Clone)]
 enum Flag {
-    Z, N, H, C
+    Z = 1 << 7,
+    N = 1 << 6,
+    H = 1 << 5,
+    C = 1 << 4,
 }
 
 #[derive(Debug,PartialEq)]
 enum Cond {
     Z, NZ,
     C, NC,
+    H, NH,
+    N, NN,
 }
-#[derive(Debug,PartialEq)]
-enum Term {
-    Register,
-    Immed,
-}
+// #[derive(Debug,PartialEq)]
+// enum Term {
+//     Register,
+//     Immed,
+// }
 
-#[derive(Debug,PartialEq)]
-enum Operand {
-    Op(Term),
-    OpIndirect(Term),
-}
+// #[derive(Debug,PartialEq)]
+// enum Operand {
+//     Op(Term),
+//     OpIndirect(Term),
+// }
 
 #[derive(Debug,PartialEq)]
 enum Instr {
-    NOP,
-    LD_r16_d16(Reg16, u16),
-    LD_ir16_r8(Reg16, Reg8),
+    ADC_r8_d8(Reg8, u8),
+    ADC_r8_ir16(Reg8, Reg16),
+    ADC_r8_r8(Reg8, Reg8),
+    ADD_r16_r16(Reg16, Reg16),
+    ADD_r16_r8(Reg16, i8),
+    ADD_r8_d8(Reg8, u8),
+    ADD_r8_ir16(Reg8, Reg16),
+    ADD_r8_r8(Reg8, Reg8),
+    AND_d8(u8),
+    AND_ir16(Reg16),
+    AND_r8(Reg8),
+    BIT_l8_ir16(u8, Reg16),
+    BIT_l8_r8(u8, Reg8),
+    CALL_COND_a16(Cond, u16),
+    CALL_a16(u16),
+    CCF,
+    CPL,
+    CP_d8(u8),
+    CP_ir16(Reg16),
+    CP_r8(Reg8),
+    DAA,
+    DEC_ir16(Reg16),
+    DEC_r16(Reg16),
+    DEC_r8(Reg8),
+    DI,
+    EI,
+    HALT,
+    INC_ir16(Reg16),
     INC_r16(Reg16),
     INC_r8(Reg8),
-    DEC_r8(Reg8),
-    LD_r8_d8(Reg8, u8),
-    RLCA,
-    LD_ia16_r16(u16, Reg16),
-    ADD_r16_r16(Reg16, Reg16),
-    LD_r8_ir16(Reg8, Reg16),
-    DEC_r16(Reg16),
-    RRCA,
-    STOP_0(u8),
-    RLA,
-    JR_r8(i8),
-    RRA,
-    JR_COND_r8(Cond, i8),
-    DAA,
-    CPL,
-    INC_ir16(Reg16),
-    DEC_ir16(Reg16),
-    LD_ir16_d8(Reg16, u8),
-    SCF,
-    CCF,
-    LD_r8_r8(Reg8, Reg8),
-    HALT,
-    ADD_r8_r8(Reg8, Reg8),
-    ADD_r8_ir16(Reg8, Reg16),
-    ADC_r8_r8(Reg8, Reg8),
-    ADC_r8_ir16(Reg8, Reg16),
-    SUB_r8(Reg8),
-    SUB_ir16(Reg16),
-    SBC_r8_r8(Reg8, Reg8),
-    SBC_r8_ir16(Reg8, Reg16),
-    AND_r8(Reg8),
-    AND_ir16(Reg16),
-    XOR_r8(Reg8),
-    XOR_ir16(Reg16),
-    OR_r8(Reg8),
-    OR_ir16(Reg16),
-    CP_r8(Reg8),
-    CP_ir16(Reg16),
-    RET_COND(Cond),
-    POP_r16(Reg16),
+    INVALID(u16),
     JP_COND_a16(Cond, u16),
     JP_a16(u16),
-    CALL_COND_a16(Cond, u16),
-    PUSH_r16(Reg16),
-    ADD_r8_d8(Reg8, u8),
-    RST_LIT(u8),
-    RET,
-    CALL_a16(u16),
-    ADC_r8_d8(Reg8, u8),
-    INVALID(u16),
-    SUB_d8(u8),
-    RETI,
-    SBC_r8_d8(Reg8, u8),
-    LDH_ia8_r8(u8, Reg8),
-    LD_ir8_r8(Reg8, Reg8),
-    AND_d8(u8),
-    ADD_r16_r8(Reg16, i8),
     JP_ir16(Reg16),
-    LD_ia16_r8(u16, Reg8),
-    XOR_d8(u8),
+    JR_COND_r8(Cond, i8),
+    JR_r8(i8),
+    LDH_ia8_r8(u8, Reg8),
     LDH_r8_ia8(Reg8, u8),
-    LD_r8_ir8(Reg8, Reg8),
-    DI,
-    OR_d8(u8),
-    LD_r16_r16_r8(Reg16, Reg16, i8),
+    LD_ia16_r16(u16, Reg16),
+    LD_ia16_r8(u16, Reg8),
+    LD_ir16_d8(Reg16, u8),
+    LD_ir16_r8(Reg16, Reg8),
+    LD_iir16_r8(Reg16, Reg8),
+    LD_dir16_r8(Reg16, Reg8),
+    LD_ir8_r8(Reg8, Reg8),
+    LD_r16_d16(Reg16, u16),
     LD_r16_r16(Reg16, Reg16),
+    LD_r16_r16_r8(Reg16, Reg16, i8),
+    LD_r8_d8(Reg8, u8),
     LD_r8_ia16(Reg8, u16),
-    EI,
-    CP_d8(u8),
-    RLC_r8(Reg8),
-    RLC_ir16(Reg16),
-    RRC_r8(Reg8),
-    RRC_ir16(Reg16),
-    RL_r8(Reg8),
-    RL_ir16(Reg16),
-    RR_r8(Reg8),
-    RR_ir16(Reg16),
-    SLA_r8(Reg8),
-    SLA_ir16(Reg16),
-    SRA_r8(Reg8),
-    SRA_ir16(Reg16),
-    SWAP_r8(Reg8),
-    SWAP_ir16(Reg16),
-    SRL_r8(Reg8),
-    SRL_ir16(Reg16),
-    BIT_l8_r8(u8, Reg8),
-    BIT_l8_ir16(u8, Reg16),
-    RES_l8_r8(u8, Reg8),
+    LD_r8_ir16(Reg8, Reg16),
+    LD_r8_iir16(Reg8, Reg16),
+    LD_r8_dir16(Reg8, Reg16),
+    LD_r8_ir8(Reg8, Reg8),
+    LD_r8_r8(Reg8, Reg8),
+    NOP,
+    OR_d8(u8),
+    OR_ir16(Reg16),
+    OR_r8(Reg8),
+    POP_r16(Reg16),
+    PUSH_r16(Reg16),
     RES_l8_ir16(u8, Reg16),
-    SET_l8_r8(u8, Reg8),
+    RES_l8_r8(u8, Reg8),
+    RET,
+    RETI,
+    RET_COND(Cond),
+    RLA,
+    RLCA,
+    RLC_ir16(Reg16),
+    RLC_r8(Reg8),
+    RL_ir16(Reg16),
+    RL_r8(Reg8),
+    RRA,
+    RRCA,
+    RRC_ir16(Reg16),
+    RRC_r8(Reg8),
+    RR_ir16(Reg16),
+    RR_r8(Reg8),
+    RST_LIT(u8),
+    SBC_r8_d8(Reg8, u8),
+    SBC_r8_ir16(Reg8, Reg16),
+    SBC_r8_r8(Reg8, Reg8),
+    SCF,
     SET_l8_ir16(u8, Reg16),
+    SET_l8_r8(u8, Reg8),
+    SLA_ir16(Reg16),
+    SLA_r8(Reg8),
+    SRA_ir16(Reg16),
+    SRA_r8(Reg8),
+    SRL_ir16(Reg16),
+    SRL_r8(Reg8),
+    STOP_0(u8),
+    SUB_d8(u8),
+    SUB_ir16(Reg16),
+    SUB_r8(Reg8),
+    SWAP_ir16(Reg16),
+    SWAP_r8(Reg8),
+    XOR_d8(u8),
+    XOR_ir16(Reg16),
+    XOR_r8(Reg8),
 }
 
 struct OpCode {
@@ -869,7 +1574,7 @@ impl Instr {
     fn prefix_cb_disasm<R: Read>(bytes : &mut R) -> io::Result<(u16, Instr)> {
         let mut opcode = [0u8; 1];
         bytes.read_exact(&mut opcode)?;
-        let real = ((0xCB as u16) << 8 | (opcode[0] as u16));
+        let real = (0xCB as u16) << 8 | (opcode[0] as u16);
         let i = match opcode[0] {
             0x00 => Instr::RLC_r8(Reg8::B),
             0x01 => Instr::RLC_r8(Reg8::C),
@@ -1173,7 +1878,7 @@ impl Instr {
             0x1f => Instr::RRA,
             0x20 => Instr::JR_COND_r8(Cond::NZ, read_u8(&mut instr[1..2].as_ref())? as i8),
             0x21 => Instr::LD_r16_d16(Reg16::HL, read_u16(&mut instr[1..3].as_ref())?),
-            0x22 => Instr::LD_ir16_r8(Reg16::HLP, Reg8::A),
+            0x22 => Instr::LD_iir16_r8(Reg16::HL, Reg8::A),
             0x23 => Instr::INC_r16(Reg16::HL),
             0x24 => Instr::INC_r8(Reg8::H),
             0x25 => Instr::DEC_r8(Reg8::H),
@@ -1181,7 +1886,7 @@ impl Instr {
             0x27 => Instr::DAA,
             0x28 => Instr::JR_COND_r8(Cond::Z, read_u8(&mut instr[1..2].as_ref())? as i8),
             0x29 => Instr::ADD_r16_r16(Reg16::HL, Reg16::HL),
-            0x2a => Instr::LD_r8_ir16(Reg8::A, Reg16::HLP),
+            0x2a => Instr::LD_r8_iir16(Reg8::A, Reg16::HL),
             0x2b => Instr::DEC_r16(Reg16::HL),
             0x2c => Instr::INC_r8(Reg8::L),
             0x2d => Instr::DEC_r8(Reg8::L),
@@ -1189,7 +1894,7 @@ impl Instr {
             0x2f => Instr::CPL,
             0x30 => Instr::JR_COND_r8(Cond::NC, read_u8(&mut instr[1..2].as_ref())? as i8),
             0x31 => Instr::LD_r16_d16(Reg16::SP, read_u16(&mut instr[1..3].as_ref())?),
-            0x32 => Instr::LD_ir16_r8(Reg16::HLS, Reg8::A),
+            0x32 => Instr::LD_dir16_r8(Reg16::HL, Reg8::A),
             0x33 => Instr::INC_r16(Reg16::SP),
             0x34 => Instr::INC_ir16(Reg16::HL),
             0x35 => Instr::DEC_ir16(Reg16::HL),
@@ -1197,7 +1902,7 @@ impl Instr {
             0x37 => Instr::SCF,
             0x38 => Instr::JR_COND_r8(Cond::C, read_u8(&mut instr[1..2].as_ref())? as i8),
             0x39 => Instr::ADD_r16_r16(Reg16::HL, Reg16::SP),
-            0x3a => Instr::LD_r8_ir16(Reg8::A, Reg16::HLS),
+            0x3a => Instr::LD_r8_dir16(Reg8::A, Reg16::HL),
             0x3b => Instr::DEC_r16(Reg16::SP),
             0x3c => Instr::INC_r8(Reg8::A),
             0x3d => Instr::DEC_r8(Reg8::A),
@@ -1407,107 +2112,110 @@ impl Instr {
     }
 }
 
+
 impl fmt::Display for Instr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Instr::NOP => write!(f, "NOP"),
-            Instr::LD_r16_d16(x0, x1) => write!(f, "LD {:?},{:?}", x0, x1),
-            Instr::LD_ir16_r8(x0, x1) => write!(f, "LD ({:?}),{:?}", x0, x1),
+            Instr::ADC_r8_d8(x0, x1) => write!(f, "ADC {:?},{:?}", x0, x1),
+            Instr::ADC_r8_ir16(x0, x1) => write!(f, "ADC {:?},({:?})", x0, x1),
+            Instr::ADC_r8_r8(x0, x1) => write!(f, "ADC {:?},{:?}", x0, x1),
+            Instr::ADD_r16_r16(x0, x1) => write!(f, "ADD {:?},{:?}", x0, x1),
+            Instr::ADD_r16_r8(x0, x1) => write!(f, "ADD {:?},{:?}", x0, x1),
+            Instr::ADD_r8_d8(x0, x1) => write!(f, "ADD {:?},{:?}", x0, x1),
+            Instr::ADD_r8_ir16(x0, x1) => write!(f, "ADD {:?},({:?})", x0, x1),
+            Instr::ADD_r8_r8(x0, x1) => write!(f, "ADD {:?},{:?}", x0, x1),
+            Instr::AND_d8(x0) => write!(f, "AND {:?}", x0),
+            Instr::AND_ir16(x0) => write!(f, "AND ({:?})", x0),
+            Instr::AND_r8(x0) => write!(f, "AND {:?}", x0),
+            Instr::BIT_l8_ir16(x0, x1) => write!(f, "BIT {:?},({:?})", x0, x1),
+            Instr::BIT_l8_r8(x0, x1) => write!(f, "BIT {:?},{:?}", x0, x1),
+            Instr::CALL_COND_a16(x0, x1) => write!(f, "CALL {:?},{:?}", x0, x1),
+            Instr::CALL_a16(x0) => write!(f, "CALL {:?}", x0),
+            Instr::CCF => write!(f, "CCF"),
+            Instr::CPL => write!(f, "CPL"),
+            Instr::CP_d8(x0) => write!(f, "CP {:?}", x0),
+            Instr::CP_ir16(x0) => write!(f, "CP ({:?})", x0),
+            Instr::CP_r8(x0) => write!(f, "CP {:?}", x0),
+            Instr::DAA => write!(f, "DAA"),
+            Instr::DEC_ir16(x0) => write!(f, "DEC ({:?})", x0),
+            Instr::DEC_r16(x0) => write!(f, "DEC {:?}", x0),
+            Instr::DEC_r8(x0) => write!(f, "DEC {:?}", x0),
+            Instr::DI => write!(f, "DI"),
+            Instr::EI => write!(f, "EI"),
+            Instr::HALT => write!(f, "HALT"),
+            Instr::INC_ir16(x0) => write!(f, "INC ({:?})", x0),
             Instr::INC_r16(x0) => write!(f, "INC {:?}", x0),
             Instr::INC_r8(x0) => write!(f, "INC {:?}", x0),
-            Instr::DEC_r8(x0) => write!(f, "DEC {:?}", x0),
-            Instr::LD_r8_d8(x0, x1) => write!(f, "LD {:?},{:?}", x0, x1),
-            Instr::RLCA => write!(f, "RLCA"),
-            Instr::LD_ia16_r16(x0, x1) => write!(f, "LD ({:?}),{:?}", x0, x1),
-            Instr::ADD_r16_r16(x0, x1) => write!(f, "ADD {:?},{:?}", x0, x1),
-            Instr::LD_r8_ir16(x0, x1) => write!(f, "LD {:?},({:?})", x0, x1),
-            Instr::DEC_r16(x0) => write!(f, "DEC {:?}", x0),
-            Instr::RRCA => write!(f, "RRCA"),
-            Instr::STOP_0(x0) => write!(f, "STOP {:?}", x0),
-            Instr::RLA => write!(f, "RLA"),
-            Instr::JR_r8(x0) => write!(f, "JR {:?}", x0),
-            Instr::RRA => write!(f, "RRA"),
-            Instr::JR_COND_r8(x0, x1) => write!(f, "JR {:?},{:?}", x0, x1),
-            Instr::DAA => write!(f, "DAA"),
-            Instr::CPL => write!(f, "CPL"),
-            Instr::INC_ir16(x0) => write!(f, "INC ({:?})", x0),
-            Instr::DEC_ir16(x0) => write!(f, "DEC ({:?})", x0),
-            Instr::LD_ir16_d8(x0, x1) => write!(f, "LD ({:?}),{:?}", x0, x1),
-            Instr::SCF => write!(f, "SCF"),
-            Instr::CCF => write!(f, "CCF"),
-            Instr::LD_r8_r8(x0, x1) => write!(f, "LD {:?},{:?}", x0, x1),
-            Instr::HALT => write!(f, "HALT"),
-            Instr::ADD_r8_r8(x0, x1) => write!(f, "ADD {:?},{:?}", x0, x1),
-            Instr::ADD_r8_ir16(x0, x1) => write!(f, "ADD {:?},({:?})", x0, x1),
-            Instr::ADC_r8_r8(x0, x1) => write!(f, "ADC {:?},{:?}", x0, x1),
-            Instr::ADC_r8_ir16(x0, x1) => write!(f, "ADC {:?},({:?})", x0, x1),
-            Instr::SUB_r8(x0) => write!(f, "SUB {:?}", x0),
-            Instr::SUB_ir16(x0) => write!(f, "SUB ({:?})", x0),
-            Instr::SBC_r8_r8(x0, x1) => write!(f, "SBC {:?},{:?}", x0, x1),
-            Instr::SBC_r8_ir16(x0, x1) => write!(f, "SBC {:?},({:?})", x0, x1),
-            Instr::AND_r8(x0) => write!(f, "AND {:?}", x0),
-            Instr::AND_ir16(x0) => write!(f, "AND ({:?})", x0),
-            Instr::XOR_r8(x0) => write!(f, "XOR {:?}", x0),
-            Instr::XOR_ir16(x0) => write!(f, "XOR ({:?})", x0),
-            Instr::OR_r8(x0) => write!(f, "OR {:?}", x0),
-            Instr::OR_ir16(x0) => write!(f, "OR ({:?})", x0),
-            Instr::CP_r8(x0) => write!(f, "CP {:?}", x0),
-            Instr::CP_ir16(x0) => write!(f, "CP ({:?})", x0),
-            Instr::RET_COND(x0) => write!(f, "RET {:?}", x0),
-            Instr::POP_r16(x0) => write!(f, "POP {:?}", x0),
+            Instr::INVALID(x0) => write!(f, "INVALID 0x{:x}", x0),
             Instr::JP_COND_a16(x0, x1) => write!(f, "JP {:?},{:?}", x0, x1),
             Instr::JP_a16(x0) => write!(f, "JP {:?}", x0),
-            Instr::CALL_COND_a16(x0, x1) => write!(f, "CALL {:?},{:?}", x0, x1),
-            Instr::PUSH_r16(x0) => write!(f, "PUSH {:?}", x0),
-            Instr::ADD_r8_d8(x0, x1) => write!(f, "ADD {:?},{:?}", x0, x1),
-            Instr::RST_LIT(x0) => write!(f, "RST {:?}", x0),
-            Instr::RET => write!(f, "RET"),
-            Instr::CALL_a16(x0) => write!(f, "CALL {:?}", x0),
-            Instr::ADC_r8_d8(x0, x1) => write!(f, "ADC {:?},{:?}", x0, x1),
-            Instr::INVALID(x0) => write!(f, "INVALID 0x{:x}", x0),
-            Instr::SUB_d8(x0) => write!(f, "SUB {:?}", x0),
-            Instr::RETI => write!(f, "RETI"),
-            Instr::SBC_r8_d8(x0, x1) => write!(f, "SBC {:?},{:?}", x0, x1),
-            Instr::LDH_ia8_r8(x0, x1) => write!(f, "LDH ({:?}),{:?}", x0, x1),
-            Instr::LD_ir8_r8(x0, x1) => write!(f, "LD ({:?}),{:?}", x0, x1),
-            Instr::AND_d8(x0) => write!(f, "AND {:?}", x0),
-            Instr::ADD_r16_r8(x0, x1) => write!(f, "ADD {:?},{:?}", x0, x1),
             Instr::JP_ir16(x0) => write!(f, "JP ({:?})", x0),
-            Instr::LD_ia16_r8(x0, x1) => write!(f, "LD ({:?}),{:?}", x0, x1),
-            Instr::XOR_d8(x0) => write!(f, "XOR {:?}", x0),
+            Instr::JR_COND_r8(x0, x1) => write!(f, "JR {:?},{:?}", x0, x1),
+            Instr::JR_r8(x0) => write!(f, "JR {:?}", x0),
+            Instr::LDH_ia8_r8(x0, x1) => write!(f, "LDH ({:?}),{:?}", x0, x1),
             Instr::LDH_r8_ia8(x0, x1) => write!(f, "LDH {:?},({:?})", x0, x1),
-            Instr::LD_r8_ir8(x0, x1) => write!(f, "LD {:?},({:?})", x0, x1),
-            Instr::DI => write!(f, "DI"),
-            Instr::OR_d8(x0) => write!(f, "OR {:?}", x0),
-            Instr::LD_r16_r16_r8(x0, x1, x2) => write!(f, "LD {:?},{:?},{:?}", x0, x1, x2),
+            Instr::LD_ia16_r16(x0, x1) => write!(f, "LD ({:?}),{:?}", x0, x1),
+            Instr::LD_ia16_r8(x0, x1) => write!(f, "LD ({:?}),{:?}", x0, x1),
+            Instr::LD_ir16_d8(x0, x1) => write!(f, "LD ({:?}),{:?}", x0, x1),
+            Instr::LD_ir16_r8(x0, x1) => write!(f, "LD ({:?}),{:?}", x0, x1),
+            Instr::LD_iir16_r8(x0, x1) => write!(f, "LD ({:?}+),{:?}", x0, x1),
+            Instr::LD_dir16_r8(x0, x1) => write!(f, "LD ({:?}-),{:?}", x0, x1),
+            Instr::LD_ir8_r8(x0, x1) => write!(f, "LD ({:?}),{:?}", x0, x1),
+            Instr::LD_r16_d16(x0, x1) => write!(f, "LD {:?},{:?}", x0, x1),
             Instr::LD_r16_r16(x0, x1) => write!(f, "LD {:?},{:?}", x0, x1),
+            Instr::LD_r16_r16_r8(x0, x1, x2) => write!(f, "LD {:?},{:?},{:?}", x0, x1, x2),
+            Instr::LD_r8_d8(x0, x1) => write!(f, "LD {:?},{:?}", x0, x1),
             Instr::LD_r8_ia16(x0, x1) => write!(f, "LD {:?},({:?})", x0, x1),
-            Instr::EI => write!(f, "EI"),
-            Instr::CP_d8(x0) => write!(f, "CP {:?}", x0),
-            Instr::RLC_r8(x0) => write!(f, "RLC {:?}", x0),
-            Instr::RLC_ir16(x0) => write!(f, "RLC ({:?})", x0),
-            Instr::RRC_r8(x0) => write!(f, "RRC {:?}", x0),
-            Instr::RRC_ir16(x0) => write!(f, "RRC ({:?})", x0),
-            Instr::RL_r8(x0) => write!(f, "RL {:?}", x0),
-            Instr::RL_ir16(x0) => write!(f, "RL ({:?})", x0),
-            Instr::RR_r8(x0) => write!(f, "RR {:?}", x0),
-            Instr::RR_ir16(x0) => write!(f, "RR ({:?})", x0),
-            Instr::SLA_r8(x0) => write!(f, "SLA {:?}", x0),
-            Instr::SLA_ir16(x0) => write!(f, "SLA ({:?})", x0),
-            Instr::SRA_r8(x0) => write!(f, "SRA {:?}", x0),
-            Instr::SRA_ir16(x0) => write!(f, "SRA ({:?})", x0),
-            Instr::SWAP_r8(x0) => write!(f, "SWAP {:?}", x0),
-            Instr::SWAP_ir16(x0) => write!(f, "SWAP ({:?})", x0),
-            Instr::SRL_r8(x0) => write!(f, "SRL {:?}", x0),
-            Instr::SRL_ir16(x0) => write!(f, "SRL ({:?})", x0),
-            Instr::BIT_l8_r8(x0, x1) => write!(f, "BIT {:?},{:?}", x0, x1),
-            Instr::BIT_l8_ir16(x0, x1) => write!(f, "BIT {:?},({:?})", x0, x1),
-            Instr::RES_l8_r8(x0, x1) => write!(f, "RES {:?},{:?}", x0, x1),
+            Instr::LD_r8_ir16(x0, x1) => write!(f, "LD {:?},({:?})", x0, x1),
+            Instr::LD_r8_iir16(x0, x1) => write!(f, "LD {:?},({:?}+)", x0, x1),
+            Instr::LD_r8_dir16(x0, x1) => write!(f, "LD {:?},({:?}-)", x0, x1),
+            Instr::LD_r8_ir8(x0, x1) => write!(f, "LD {:?},({:?})", x0, x1),
+            Instr::LD_r8_r8(x0, x1) => write!(f, "LD {:?},{:?}", x0, x1),
+            Instr::NOP => write!(f, "NOP"),
+            Instr::OR_d8(x0) => write!(f, "OR {:?}", x0),
+            Instr::OR_ir16(x0) => write!(f, "OR ({:?})", x0),
+            Instr::OR_r8(x0) => write!(f, "OR {:?}", x0),
+            Instr::POP_r16(x0) => write!(f, "POP {:?}", x0),
+            Instr::PUSH_r16(x0) => write!(f, "PUSH {:?}", x0),
             Instr::RES_l8_ir16(x0, x1) => write!(f, "RES {:?},({:?})", x0, x1),
-            Instr::SET_l8_r8(x0, x1) => write!(f, "SET {:?},{:?}", x0, x1),
+            Instr::RES_l8_r8(x0, x1) => write!(f, "RES {:?},{:?}", x0, x1),
+            Instr::RET => write!(f, "RET"),
+            Instr::RETI => write!(f, "RETI"),
+            Instr::RET_COND(x0) => write!(f, "RET {:?}", x0),
+            Instr::RLA => write!(f, "RLA"),
+            Instr::RLCA => write!(f, "RLCA"),
+            Instr::RLC_ir16(x0) => write!(f, "RLC ({:?})", x0),
+            Instr::RLC_r8(x0) => write!(f, "RLC {:?}", x0),
+            Instr::RL_ir16(x0) => write!(f, "RL ({:?})", x0),
+            Instr::RL_r8(x0) => write!(f, "RL {:?}", x0),
+            Instr::RRA => write!(f, "RRA"),
+            Instr::RRCA => write!(f, "RRCA"),
+            Instr::RRC_ir16(x0) => write!(f, "RRC ({:?})", x0),
+            Instr::RRC_r8(x0) => write!(f, "RRC {:?}", x0),
+            Instr::RR_ir16(x0) => write!(f, "RR ({:?})", x0),
+            Instr::RR_r8(x0) => write!(f, "RR {:?}", x0),
+            Instr::RST_LIT(x0) => write!(f, "RST {:?}", x0),
+            Instr::SBC_r8_d8(x0, x1) => write!(f, "SBC {:?},{:?}", x0, x1),
+            Instr::SBC_r8_ir16(x0, x1) => write!(f, "SBC {:?},({:?})", x0, x1),
+            Instr::SBC_r8_r8(x0, x1) => write!(f, "SBC {:?},{:?}", x0, x1),
+            Instr::SCF => write!(f, "SCF"),
             Instr::SET_l8_ir16(x0, x1) => write!(f, "SET {:?},({:?})", x0, x1),
-
-            _ => write!(f, "Unimplemented!")
+            Instr::SET_l8_r8(x0, x1) => write!(f, "SET {:?},{:?}", x0, x1),
+            Instr::SLA_ir16(x0) => write!(f, "SLA ({:?})", x0),
+            Instr::SLA_r8(x0) => write!(f, "SLA {:?}", x0),
+            Instr::SRA_ir16(x0) => write!(f, "SRA ({:?})", x0),
+            Instr::SRA_r8(x0) => write!(f, "SRA {:?}", x0),
+            Instr::SRL_ir16(x0) => write!(f, "SRL ({:?})", x0),
+            Instr::SRL_r8(x0) => write!(f, "SRL {:?}", x0),
+            Instr::STOP_0(x0) => write!(f, "STOP {:?}", x0),
+            Instr::SUB_d8(x0) => write!(f, "SUB {:?}", x0),
+            Instr::SUB_ir16(x0) => write!(f, "SUB ({:?})", x0),
+            Instr::SUB_r8(x0) => write!(f, "SUB {:?}", x0),
+            Instr::SWAP_ir16(x0) => write!(f, "SWAP ({:?})", x0),
+            Instr::SWAP_r8(x0) => write!(f, "SWAP {:?}", x0),
+            Instr::XOR_d8(x0) => write!(f, "XOR {:?}", x0),
+            Instr::XOR_ir16(x0) => write!(f, "XOR ({:?})", x0),
+            Instr::XOR_r8(x0) => write!(f, "XOR {:?}", x0),
         }
     }
 }
@@ -1604,5 +2312,16 @@ mod tests {
 
         let mut mem = ::GBMemory::new();
         mem.dump();
+    }
+}
+
+
+fn main() {
+    let mut mem = GBMemory::new();
+    let mut cpu = CPU::new();
+
+    loop {
+        cpu.execute(&mut mem);
+        cpu.dump();
     }
 }

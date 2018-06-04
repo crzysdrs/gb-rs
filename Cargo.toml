@@ -3,4 +3,8 @@ name = "gb"
 version = "0.1.0"
 authors = ["Mitch Souders <mitch.souders@gmail.com>"]
 
+[[bin]]
+name = "gb-rs"
+path = "src/lib.rs"
+
 [dependencies]
