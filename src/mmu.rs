@@ -123,7 +123,7 @@ impl <'a> MMU<'a> {
     pub fn disableBios(&mut self) {
         self.bios_exists = false;
     }
-    pub fn find_byte(&mut self, addr : u16) -> &mut u8 {
+    pub fn find_byte(&mut self, mut addr : u16) -> &mut u8 {
         /* these should really be bitwise operations */
         let x : &mut Peripheral = match addr {
             0x0000...0x00ff => if self.bios_exists {
@@ -135,6 +135,11 @@ impl <'a> MMU<'a> {
             0x8000...0x9FFF => &mut self.display,
             0xA000...0xBFFF => &mut self.swap_ram,
             0xC000...0xDFFF => &mut self.ram0,
+            0xE000...0xFDFF => {
+                /* echo of ram0 */
+                addr -= 0x2000;
+                &mut self.ram0
+            },
             0xFE00...0xFE9F => &mut self.display,
             //0xFEA0...0xFEFF => &mut self.empty0[(addr - 0xFEA0) as usize],
             //0xFF00...0xFF4B => &mut self.io[(addr - 0xFF00) as usize],

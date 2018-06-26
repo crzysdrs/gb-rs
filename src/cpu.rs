@@ -230,8 +230,8 @@ impl CPU {
         self.reg.dump();
     }
     fn pop16(&mut self, mut mem: &mut MMU, t: Reg16) {
-        let lo = self.pop8(&mut mem);
         let hi = self.pop8(&mut mem);
+        let lo = self.pop8(&mut mem);
         let res = make_u16(hi, lo);
         //println!("Popping PC: {:04x} SP: {:04x} Val: {:04x}",  self.reg.read(Reg16::PC),  self.reg.sp, res);
         self.reg.write(t, res);
@@ -253,8 +253,8 @@ impl CPU {
         let item = self.reg.read(v);
         let (hi, lo) = split_u16(item);
         //println!("Pushing PC: {:04x} SP: {:04x} Val: {:04x}", self.reg.read(Reg16::PC), self.reg.sp, item);
-        self.push8(&mut mem, hi);
         self.push8(&mut mem, lo);
+        self.push8(&mut mem, hi);
     }
 
     pub fn execute_instr(&mut self, mut mem: &mut MMU, instr : Instr) {
@@ -263,7 +263,11 @@ impl CPU {
             Instr::ADC_r8_ir16(x0, x1) => alu_result!(self, x0, ALU::adc(self.reg.read(x0), *mem.find_byte(self.reg.read(x1)), self.reg.get_flag(Flag::C))),
             Instr::ADC_r8_r8(x0, x1) => alu_result!(self, x0, ALU::adc(self.reg.read(x0), self.reg.read(x1), self.reg.get_flag(Flag::C))),
             Instr::ADD_r16_r16(x0, x1) => alu_result_mask!(self, x0, ALU::add(self.reg.read(x0), self.reg.read(x1)), mask_u8!(Flag::N | Flag::H | Flag::C)), /*TODO: Half Carry Not Being Set Correctly */
-            Instr::ADD_r16_r8(x0, x1) => alu_result!(self, x0, ALU::add(self.reg.read(x0), x1 as i16 as u16)),
+            Instr::ADD_r16_r8(x0, x1) => {
+                let (res, _) = ALU::add(self.reg.read(x0), x1 as i16 as u16);
+                let (_, flags) = ALU::add(self.reg.read(x0) as u8, x1 as i16 as u8);
+                alu_result!(self, x0, (res, flags & !mask_u8!(Flag::Z | Flag::N)))
+            },
             Instr::ADD_r8_r8(x0, x1) => alu_result!(self, x0, ALU::add(self.reg.read(x0), self.reg.read(x1))),
             Instr::ADD_r8_d8(x0, x1) => alu_result!(self, x0, ALU::add(self.reg.read(x0), x1)),
             Instr::ADD_r8_ir16(x0, x1) => alu_result!(self, x0, ALU::add(self.reg.read(x0), *mem.find_byte(self.reg.read(x1)))),
@@ -382,7 +386,7 @@ impl CPU {
             Instr::LD_ia16_r16(x0, x1) => {
                 mem.seek(SeekFrom::Start(x0 as u64));
                 let (hi, lo) = split_u16(self.reg.read(x1));
-                mem.write(&[hi, lo]);
+                mem.write(&[lo, hi]);
             },
             Instr::LD_ia16_r8(x0, x1) => {
                 let b = mem.find_byte(x0);
@@ -417,7 +421,9 @@ impl CPU {
                 self.reg.write(x0, self.reg.read(x1));
             }
             Instr::LD_r16_r16_r8(x0, x1, x2) => {
-                self.reg.write(x0, (self.reg.read(x1) as i16 + x2 as i16) as u16);
+                let (res, _) = ALU::add(self.reg.read(x1), x2 as i16 as u16);
+                let (_, flags) = ALU::add(self.reg.read(x1) as u8, x2 as i16 as u8);
+                alu_result!(self, x0, (res, flags & !mask_u8!(Flag::Z | Flag::N)))
             },
             Instr::LD_r8_d8(x0, x1) => {
                 self.reg.write(x0, x1);
