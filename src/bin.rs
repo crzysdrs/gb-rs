@@ -86,7 +86,7 @@ fn main() -> Result<(), std::io::Error>  {
             }
         );
 
-    let mut gb = GB::new(rom_vec, Some(&mut *serial), matches.value_of("trace").is_some());
+    let mut gb = GB::new(rom_vec, Some(&mut *serial), matches.occurrences_of("trace") > 0);
     let mut event_pump = sdl_context.event_pump().unwrap();
     let mut frame : u32 = 0;
 
@@ -120,7 +120,9 @@ fn main() -> Result<(), std::io::Error>  {
         frame += 1;
         //};
         {
-            gb.step(1_000u64 / 60, &mut Some(&mut canvas));
+            if gb.step(1_000u64 / 60, &mut Some(&mut canvas)) {
+                break 'running;
+            }
         }
         canvas.present();
         ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));

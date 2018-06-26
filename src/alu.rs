@@ -60,27 +60,35 @@ impl ALU {
         )
     }
 
-    pub fn rlca(a: u8, count: u32, c: bool, with_zero : bool) -> (u8, u8) {
-        let res = a.rotate_left(count) & !0x01 | if c {0x01} else {0};
+    pub fn rlca(a: u8, c: bool, thru_carry: bool, with_zero : bool) -> (u8, u8) {
+        let res = if thru_carry {
+            a.rotate_left(1) & !0x1 | if c {0x1} else {0}
+        } else {
+            a.rotate_left(1)
+        };
         (res,
          flag_u8!(Flag::Z, with_zero && res == 0)
          | flag_u8!(Flag::N, false)
          | flag_u8!(Flag::H, false)
-         | flag_u8!(Flag::C, a & 0b1000_0000 > 0)
+         | flag_u8!(Flag::C, (a & 0b1000_0000 > 0))
         )
     }
-    pub fn rrca(a: u8, count: u32, c: bool, with_zero: bool) -> (u8, u8) {
-        let res = a.rotate_right(count) & !0x80 | if c {0x80} else {0};
+    pub fn rrca(a: u8, c: bool, thru_carry : bool, with_zero: bool) -> (u8, u8) {
+        let res = if thru_carry {
+            a.rotate_right(1) & !0x80 | if c {0x80} else {0}
+        } else {
+            a.rotate_right(1)
+        };
         (res,
          flag_u8!(Flag::Z, with_zero && res == 0)
          | flag_u8!(Flag::N, false)
          | flag_u8!(Flag::H, false)
-         | flag_u8!(Flag::C, a & 0b0000_0001 > 0)
+         | flag_u8!(Flag::C, (a & 0b0000_0001 > 0))
         )
     }
 
-    pub fn sla(a: u8, count: u32) -> (u8, u8) {
-        let res = a << count;
+    pub fn sla(a: u8) -> (u8, u8) {
+        let res = a << 1;
         (res,
          flag_u8!(Flag::Z, res == 0)
          | flag_u8!(Flag::N, false)
@@ -88,8 +96,8 @@ impl ALU {
          | flag_u8!(Flag::C, a & 0b1000_0000 > 0)
         )
     }
-    pub fn sr(a: u8, count: u32, arith : bool) -> (u8, u8) {
-        let res = a >> count | if arith {a & 0x80} else {0};
+    pub fn sr(a: u8, arith : bool) -> (u8, u8) {
+        let res = a >> 1 | if arith {a & 0x80} else {0};
         (res,
          flag_u8!(Flag::Z, res == 0)
          | flag_u8!(Flag::N, false)
@@ -120,7 +128,7 @@ pub trait ALUOps<T> {
 
 impl ALUOps<u8> for ALU {
     fn half_carry(a: u8, b: u8) -> bool {
-        ((a & 0xF) + (b & 0xF)) == 0x10
+        ((a & 0xF) + (b & 0xF)) & 0x10 != 0
     }
     fn sub_carry(a: u8, b : u8) -> bool {
         a & 0xf < b & 0xf
@@ -157,10 +165,10 @@ impl ALUOps<u8> for ALU {
 
 impl ALUOps<u16> for ALU {
     fn half_carry(a: u16, b: u16) -> bool {
-        ((a & 0xF) + (b & 0xF)) == 0x10
+        ((a & 0xFFF) + (b & 0xFFF)) & 0x1000 != 0
     }
     fn sub_carry(a: u16, b : u16) -> bool {
-        a & 0xf < b & 0xf
+        a & 0xfff < b & 0xfff
     }
     fn add(a : u16, b: u16) -> (u16, u8) {
         let (mut res, mut c) = a.overflowing_add(b);
@@ -174,7 +182,7 @@ impl ALUOps<u16> for ALU {
     }
     fn sub(a : u16, b : u16) -> (u16, u8) {
         let (mut res, mut c) = a.overflowing_sub(b);
-        let mut h = a & 0xf < b & 0xf;
+        let mut h = Self::sub_carry(a, b);
         (res,
          flag_u8!(Flag::Z, res == 0)
          | flag_u8!(Flag::N, true)

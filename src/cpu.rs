@@ -470,30 +470,30 @@ impl CPU {
                     self.pop16(&mut mem, Reg16::PC);
                 }
             },
-            Instr::RLA => alu_result!(self, Reg8::A, ALU::rlca(self.reg.read(Reg8::A), 1, self.reg.get_flag(Flag::C), false)),
-            Instr::RLCA => alu_result!(self, Reg8::A, ALU::rlca(self.reg.read(Reg8::A), 1, self.reg.get_flag(Flag::C), false)),
+            Instr::RLA => alu_result!(self, Reg8::A, ALU::rlca(self.reg.read(Reg8::A), self.reg.get_flag(Flag::C), true, false)),
+            Instr::RLCA => alu_result!(self, Reg8::A, ALU::rlca(self.reg.read(Reg8::A), self.reg.get_flag(Flag::C), false, false)),
             Instr::RLC_ir16(x0) => {
                 let b = mem.find_byte(self.reg.read(x0));
-                alu_mem!(self, b, ALU::rlca(*b, 1, self.reg.get_flag(Flag::C), true));
+                alu_mem!(self, b, ALU::rlca(*b, self.reg.get_flag(Flag::C), false, true));
             },
-            Instr::RLC_r8(x0) => alu_result!(self, x0, ALU::rlca(self.reg.read(x0), 1, self.reg.get_flag(Flag::C), true)),
+            Instr::RLC_r8(x0) => alu_result!(self, x0, ALU::rlca(self.reg.read(x0),self.reg.get_flag(Flag::C), false, true)),
             Instr::RL_ir16(x0) => {
                 let b = mem.find_byte(self.reg.read(x0));
-                alu_mem!(self, b, ALU::rlca(*b, 1, self.reg.get_flag(Flag::C), true));
+                alu_mem!(self, b, ALU::rlca(*b, self.reg.get_flag(Flag::C), true, true));
             },
-            Instr::RL_r8(x0) => alu_result!(self, x0, ALU::rlca(self.reg.read(x0), 1, self.reg.get_flag(Flag::C), true)),
-            Instr::RRA => alu_result!(self, Reg8::A, ALU::rrca(self.reg.read(Reg8::A), 1, self.reg.get_flag(Flag::C), false)),
-            Instr::RRCA => alu_result!(self, Reg8::A, ALU::rrca(self.reg.read(Reg8::A), 1, self.reg.get_flag(Flag::C), false)),
+            Instr::RL_r8(x0) => alu_result!(self, x0, ALU::rlca(self.reg.read(x0), self.reg.get_flag(Flag::C), true, true)),
+            Instr::RRA => alu_result!(self, Reg8::A, ALU::rrca(self.reg.read(Reg8::A), self.reg.get_flag(Flag::C), true, false)),
+            Instr::RRCA => alu_result!(self, Reg8::A, ALU::rrca(self.reg.read(Reg8::A), self.reg.get_flag(Flag::C), false, false)),
             Instr::RRC_ir16(x0) => {
                 let b = mem.find_byte(self.reg.read(x0));
-                alu_mem!(self, b,  ALU::rrca(*b, 1, self.reg.get_flag(Flag::C), true));
+                alu_mem!(self, b,  ALU::rrca(*b, self.reg.get_flag(Flag::C), false, true));
             },
-            Instr::RRC_r8(x0) => alu_result!(self, x0, ALU::rrca(self.reg.read(x0), 1, self.reg.get_flag(Flag::C), true)),
+            Instr::RRC_r8(x0) => alu_result!(self, x0, ALU::rrca(self.reg.read(x0), self.reg.get_flag(Flag::C), false, true)),
             Instr::RR_ir16(x0) => {
                 let b = mem.find_byte(self.reg.read(x0));
-                alu_mem!(self, b, ALU::rrca(*b, 1, self.reg.get_flag(Flag::C), true));
+                alu_mem!(self, b, ALU::rrca(*b, self.reg.get_flag(Flag::C), true, true));
             },
-            Instr::RR_r8(x0) => alu_result!(self, x0, ALU::rrca(self.reg.read(x0), 1, self.reg.get_flag(Flag::C), true)),
+            Instr::RR_r8(x0) => alu_result!(self, x0, ALU::rrca(self.reg.read(x0), self.reg.get_flag(Flag::C), true, true)),
             Instr::RST_LIT(x0) => {
                 self.push16(&mut mem, Reg16::PC);
                 self.reg.write(Reg16::PC, x0 as u16);
@@ -501,7 +501,7 @@ impl CPU {
             Instr::SBC_r8_d8(x0, x1) =>  alu_result!(self, Reg8::A, ALU::sbc(self.reg.read(x0), x1, self.reg.get_flag(Flag::C))),
             Instr::SBC_r8_ir16(x0, x1) => alu_result!(self, Reg8::A, ALU::sbc(self.reg.read(x0), *mem.find_byte(self.reg.read(x1)), self.reg.get_flag(Flag::C))),
             Instr::SBC_r8_r8(x0, x1) =>  alu_result!(self, Reg8::A, ALU::sbc(self.reg.read(x0), self.reg.read(x1), self.reg.get_flag(Flag::C))),
-            Instr::SCF => self.reg.set_flag(Flag::C),
+            Instr::SCF => self.reg.write_mask(Reg8::F, mask_u8!(Flag::C), mask_u8!(Flag::C | Flag::N | Flag::H)),
             Instr::SET_l8_ir16(x0, x1) => {
                 let b = mem.find_byte(self.reg.read(x1));
                 *b = *b | 1 << x0;
@@ -509,19 +509,19 @@ impl CPU {
             Instr::SET_l8_r8(x0, x1) => self.reg.write(x1, self.reg.read(x1) | 1 << x0),
             Instr::SLA_ir16(x0) => {
                 let b = mem.find_byte(self.reg.read(x0));
-                alu_mem!(self, b,  ALU::sla(*b, 1));
+                alu_mem!(self, b,  ALU::sla(*b));
             },
-            Instr::SLA_r8(x0) => alu_result!(self, x0, ALU::sla(self.reg.read(x0), 1)),
+            Instr::SLA_r8(x0) => alu_result!(self, x0, ALU::sla(self.reg.read(x0))),
             Instr::SRA_ir16(x0) => {
                 let b = mem.find_byte(self.reg.read(x0));
-                alu_mem!(self, b,  ALU::sr(*b, 1, true));
+                alu_mem!(self, b,  ALU::sr(*b, true));
             },
-            Instr::SRA_r8(x0) => alu_result!(self, x0, ALU::sr(self.reg.read(x0), 1, true)),
+            Instr::SRA_r8(x0) => alu_result!(self, x0, ALU::sr(self.reg.read(x0), true)),
             Instr::SRL_ir16(x0) => {
                 let b = mem.find_byte(self.reg.read(x0));
-                alu_mem!(self, b,  ALU::sr(*b, 1, false));
+                alu_mem!(self, b,  ALU::sr(*b, false));
             },
-            Instr::SRL_r8(x0) => alu_result!(self, x0, ALU::sr(self.reg.read(x0), 1, false)),
+            Instr::SRL_r8(x0) => alu_result!(self, x0, ALU::sr(self.reg.read(x0), false)),
             /* halt cpu and lcd display until button press */
             Instr::STOP_0(x0) => unimplemented!("Missing STOP"),
             Instr::SUB_d8(x0) => alu_result!(self, Reg8::A, ALU::sub(self.reg.read(Reg8::A), x0)),
@@ -616,5 +616,13 @@ mod tests {
         test_state!(vec![Instr::ADD_r8_d8(Reg8::A, 0x17), Instr::SUB_d8(0x09), Instr::DAA], Reg8::A, 0x08);
         test_state!(vec![Instr::ADD_r8_d8(Reg8::A, 0x32), Instr::SUB_d8(0x09), Instr::DAA], Reg8::A, 0x23);
         test_state!(vec![Instr::ADD_r8_d8(Reg8::A, 0x05), Instr::SUB_d8(0x04), Instr::DAA], Reg8::A, 0x01);
+
+        /* why does the opcode having C not go through the carry? How confusing. */
+        test_state!(vec![Instr::LD_r8_d8(Reg8::A, 0x05), Instr::RRA], Reg8::A, 0x05u8 >> 1);
+        test_state!(vec![Instr::LD_r8_d8(Reg8::A, 0x05), Instr::RRCA], Reg8::A, 0x05u8.rotate_right(1));
+        test_state!(vec![Instr::LD_r8_d8(Reg8::A, 0x05), Instr::SCF, Instr::RRA], Reg8::A, 0x80 | 0x05u8 >> 1);
+        test_state!(vec![Instr::LD_r8_d8(Reg8::A, 0x80), Instr::RLA], Reg8::A, 0x80u8 << 1);
+        test_state!(vec![Instr::LD_r8_d8(Reg8::A, 0x80), Instr::RLCA], Reg8::A, 0x80u8.rotate_left(1));
+        test_state!(vec![Instr::LD_r8_d8(Reg8::A, 0x80), Instr::SCF, Instr::RLA], Reg8::A, 0x80u8 << 1 | 1);
     }
 }

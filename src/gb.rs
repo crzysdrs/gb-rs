@@ -15,7 +15,7 @@ impl <'a> GB<'a> {
             mem : MMU::new(rom, serial),
         }
     }
-    pub fn step<C,P>(&mut self, time : u64, display : &mut Option<&mut LCD<C,P>>)
+    pub fn step<C,P>(&mut self, time : u64, display : &mut Option<&mut LCD<C,P>>) -> bool
     where P: std::convert::From<(i32, i32)>, C : std::convert::From<(u8,u8,u8,u8)> {
         let mut cpu_cycles = 0;
         //time in ms
@@ -32,6 +32,7 @@ impl <'a> GB<'a> {
                 break;
             }
         }
+        self.cpu.is_dead(&mut self.mem)
     }
     // #[cfg(test)]
     // pub fn run_instrs(&mut self, instrs: &[Instr]) {
