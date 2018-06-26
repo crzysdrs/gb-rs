@@ -97,7 +97,7 @@ impl RegType<Reg8> for Registers {
     fn write(&mut self, reg: Reg8, v: u8) {
         match reg {
             Reg8::A => {self.a = v;},
-            Reg8::F => {self.f = v;},
+            Reg8::F => {self.f = v & Registers::default_mask();},
             Reg8::B => {self.b = v;},
             Reg8::C => {self.c = v;},
             Reg8::D => {self.d = v;},
@@ -126,20 +126,20 @@ impl RegType<Reg16> for Registers {
         let (hi, lo) = split_u16(v);
         match r {
             Reg16::AF => {
-                self.a = hi;
-                self.f = lo;
+                self.write(Reg8::A, hi);
+                self.write(Reg8::F, lo);
             },
             Reg16::BC => {
-                self.b = hi;
-                self.c = lo;
+                self.write(Reg8::B, hi);
+                self.write(Reg8::C, lo);
             },
             Reg16::DE => {
-                self.d = hi;
-                self.e = lo;
+                self.write(Reg8::D, hi);
+                self.write(Reg8::E, lo);
             },
             Reg16::HL => {
-                self.h = hi;
-                self.l = lo;
+                self.write(Reg8::H, hi);
+                self.write(Reg8::L, lo);
             },
             Reg16::SP => {self.sp = v},
             Reg16::PC => {self.pc = v},
@@ -365,6 +365,10 @@ impl CPU {
                 }
             },
             Instr::JR_r8(x0) => {
+                if x0 == -2 && (self.reg.ime == 0 || *mem.find_byte(0xffff) == 0) {
+                    /* effectively dead */
+                    self.halted = true;
+                }
                 self.reg.write(Reg16::PC, ALU::add(self.reg.read(Reg16::PC), x0 as i16 as u16).0);
             },
             Instr::LDH_ia8_r8(x0, x1) => {
