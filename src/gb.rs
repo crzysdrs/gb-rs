@@ -3,7 +3,6 @@ use super::mmu::*;
 use display::{LCD};
 
 use std::io::{Read, Write};
-
 pub struct GB<'a> {
     cpu : CPU,
     mem : MMU<'a>,
@@ -34,4 +33,10 @@ impl <'a> GB<'a> {
             }
         }
     }
+    // #[cfg(test)]
+    // pub fn run_instrs(&mut self, instrs: &[Instr]) {
+    //     for i in instrs.iter_mut() {
+    //         self.cpu.execute_instr(&mut self.mem, i);
+    //     }
+    // }
 }

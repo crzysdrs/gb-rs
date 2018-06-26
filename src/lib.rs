@@ -131,6 +131,7 @@ mod tests {
         // let mut mem = ::MMU::::new();
         // mem.dump();
     }
+
     #[test]
     fn rom_test01() {
         rom_test!("01-special");

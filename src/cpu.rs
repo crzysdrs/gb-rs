@@ -256,49 +256,9 @@ impl CPU {
         self.push8(&mut mem, hi);
         self.push8(&mut mem, lo);
     }
-    pub fn execute(&mut self, mut mem: &mut MMU, cycles: u64) -> u32 {
-        let pc = self.reg.read(Reg16::PC);
-        if pc == 0x100 {
-            mem.disableBios();
-        }
-        mem.seek(SeekFrom::Start(pc as u64));
-        let (op, i) = match Instr::disasm(&mut mem) {
-            Ok((_, Instr::INVALID(op))) => panic!("PC Invalid instruction {:x} @ {:x}", op, self.reg.pc),
-            Ok((opcode, i)) => (opcode, i),
-            Err(_) => panic!("Unable to read Instruction"),
-        };
-        if self.trace {
-            mem.seek(SeekFrom::Start(pc as u64));
-            let mut taken = mem.take(get_op(op).size as u64);
-            let mut buf = std::io::Cursor::new(taken);
-            let mut disasm_out = std::io::Cursor::new(Vec::new());
-            disasm(pc, buf.get_mut(), &mut disasm_out, &|_| true);
-            let vec = disasm_out.into_inner();
-            let disasm_str = std::str::from_utf8(vec.as_ref()).unwrap();
-            let f = self.reg.read(Reg8::F);
-            let flag_str = format!("{z}{n}{h}{c}",
-                                   z = if self.reg.get_flag(Flag::Z) {"Z"} else {"-"},
-                                   n = if self.reg.get_flag(Flag::N) {"N"} else {"-"},
-                                   h = if self.reg.get_flag(Flag::H) {"H"} else {"-"},
-                                   c = if self.reg.get_flag(Flag::C) {"C"} else {"-"},
-            );
 
-            print!("A:{a:02X} F:{f} BC:{bc:04X} DE:{de:04x} HL:{hl:04x} SP:{sp:04x} PC:{pc:04x} (cy: {cycles}) ppu:+{ppu} |[??]{disasm}",
-                     a=self.reg.read(Reg8::A),
-                     f=flag_str,
-                     bc=self.reg.read(Reg16::BC),
-                     de=self.reg.read(Reg16::DE),
-                     hl=self.reg.read(Reg16::HL),
-                     sp=self.reg.read(Reg16::SP),
-                     pc=self.reg.read(Reg16::PC),
-                     cycles=cycles,
-                     ppu=0,
-                     disasm=disasm_str,
-            );
-            mem = buf.into_inner().into_inner();
-        }
-        self.reg.write(Reg16::PC, mem.get_current_pos());
-        match i {
+    pub fn execute_instr(&mut self, mut mem: &mut MMU, instr : Instr) {
+        match instr {
             Instr::ADC_r8_d8(x0, x1) => alu_result!(self, x0, ALU::adc(self.reg.read(x0), x1, self.reg.get_flag(Flag::C))),
             Instr::ADC_r8_ir16(x0, x1) => alu_result!(self, x0, ALU::adc(self.reg.read(x0), *mem.find_byte(self.reg.read(x1)), self.reg.get_flag(Flag::C))),
             Instr::ADC_r8_r8(x0, x1) => alu_result!(self, x0, ALU::adc(self.reg.read(x0), self.reg.read(x1), self.reg.get_flag(Flag::C))),
@@ -349,19 +309,19 @@ impl CPU {
                 self.reg.write_mask(Reg8::F, flags, Registers::default_mask());
             },
             Instr::DAA => {
-                let mut value = self.reg.read(Reg8::A) as i8;
+                let mut value = self.reg.read(Reg8::A) as u32 as i32;
                 let mut adjust = 0;
-                if self.check_flag(Cond::H) || (!self.check_flag(Cond::N) && (value & 0xf) > 0x9) {
+                if self.reg.get_flag(Flag::H) || (!self.reg.get_flag(Flag::N) && (value & 0xf) > 0x9) {
                     adjust |= 0x6;
                 }
-                if self.check_flag(Cond::H) || (!self.check_flag(Cond::N) && value > 0x99) {
+                if self.reg.get_flag(Flag::C) || (!self.reg.get_flag(Flag::N) && value > 0x99) {
                     adjust |= 0x60;
                     self.reg.set_flag(Flag::C);
                 } else {
                     self.reg.clear_flag(Flag::C);
                 }
 
-                value += if self.check_flag(Cond::N) {
+                value += if self.reg.get_flag(Flag::N) {
                     -adjust
                 } else {
                     adjust
@@ -373,6 +333,8 @@ impl CPU {
                     self.reg.clear_flag(Flag::Z);
                 }
                 self.reg.clear_flag(Flag::H);
+
+                self.reg.write(Reg8::A, value as u8);
             },
             Instr::DEC_ir16(x0) => alu_mem_mask!(self, mem.find_byte(self.reg.read(x0)), ALU::dec(*mem.find_byte(self.reg.read(x0))), mask_u8!(Flag::Z | Flag::N | Flag::H)),
             Instr::DEC_r16(x0) => alu_result_mask!(self, x0, ALU::dec(self.reg.read(x0)), 0),
@@ -575,8 +537,80 @@ impl CPU {
                 alu_result!(self, Reg8::A, ALU::xor(self.reg.read(Reg8::A), *b));
             },
             Instr::XOR_r8(x0) => alu_result!(self, Reg8::A, ALU::xor(self.reg.read(Reg8::A), self.reg.read(x0))),
-            Instr::INVALID(i) => panic!("Invalid Instruction {}", i),
+            Instr::INVALID(instr) => panic!("Invalid Instruction {}", instr),
         }
+    }
+    pub fn execute(&mut self, mut mem: &mut MMU, cycles: u64) -> u32 {
+        let pc = self.reg.read(Reg16::PC);
+        if pc == 0x100 {
+            mem.disableBios();
+        }
+        mem.seek(SeekFrom::Start(pc as u64));
+        let (op, i) = match Instr::disasm(&mut mem) {
+            Ok((_, Instr::INVALID(op))) => panic!("PC Invalid instruction {:x} @ {:x}", op, self.reg.pc),
+            Ok((opcode, i)) => (opcode, i),
+            Err(_) => panic!("Unable to read Instruction"),
+        };
+        if self.trace {
+            mem.seek(SeekFrom::Start(pc as u64));
+            let mut taken = mem.take(get_op(op).size as u64);
+            let mut buf = std::io::Cursor::new(taken);
+            let mut disasm_out = std::io::Cursor::new(Vec::new());
+            disasm(pc, buf.get_mut(), &mut disasm_out, &|_| true);
+            let vec = disasm_out.into_inner();
+            let disasm_str = std::str::from_utf8(vec.as_ref()).unwrap();
+            let f = self.reg.read(Reg8::F);
+            let flag_str = format!("{z}{n}{h}{c}",
+                                   z = if self.reg.get_flag(Flag::Z) {"Z"} else {"-"},
+                                   n = if self.reg.get_flag(Flag::N) {"N"} else {"-"},
+                                   h = if self.reg.get_flag(Flag::H) {"H"} else {"-"},
+                                   c = if self.reg.get_flag(Flag::C) {"C"} else {"-"},
+            );
+
+            print!("A:{a:02X} F:{f} BC:{bc:04X} DE:{de:04x} HL:{hl:04x} SP:{sp:04x} PC:{pc:04x} (cy: {cycles}) ppu:+{ppu} |[??]{disasm}",
+                     a=self.reg.read(Reg8::A),
+                     f=flag_str,
+                     bc=self.reg.read(Reg16::BC),
+                     de=self.reg.read(Reg16::DE),
+                     hl=self.reg.read(Reg16::HL),
+                     sp=self.reg.read(Reg16::SP),
+                     pc=self.reg.read(Reg16::PC),
+                     cycles=cycles,
+                     ppu=0,
+                     disasm=disasm_str,
+            );
+            mem = buf.into_inner().into_inner();
+        }
+        self.reg.write(Reg16::PC, mem.get_current_pos());
+        self.execute_instr(&mut mem, i);
         get_op(op).cycles as u32
+    }
+}
+
+macro_rules! test_state {
+    ($instr:expr, $reg:expr, $val:expr) => {
+        let mut mem = MMU::new(Vec::new(), None);
+        let mut cpu = CPU::new(false);
+        for mut i in $instr {
+            cpu.execute_instr(&mut mem, i)
+        }
+        assert_eq!(cpu.reg.read($reg), $val);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use instr::Instr;
+    use mmu::MMU;
+    use cpu::{Reg8, Reg16, CPU, RegType};
+    #[test]
+    fn targeted() {
+        test_state!(vec![Instr::ADD_r8_d8(Reg8::A, 0x05), Instr::DAA], Reg8::A, 0x05);
+        test_state!(vec![Instr::ADD_r8_d8(Reg8::A, 0x05), Instr::ADD_r8_d8(Reg8::A, 0x05), Instr::DAA], Reg8::A, 0x10);
+        test_state!(vec![Instr::ADD_r8_d8(Reg8::A, 0x05), Instr::ADD_r8_d8(Reg8::A, 0x15), Instr::DAA], Reg8::A, 0x20);
+        test_state!(vec![Instr::ADD_r8_d8(Reg8::A, 0x17), Instr::ADD_r8_d8(Reg8::A, 0x39), Instr::DAA], Reg8::A, 0x56);
+        test_state!(vec![Instr::ADD_r8_d8(Reg8::A, 0x17), Instr::SUB_d8(0x09), Instr::DAA], Reg8::A, 0x08);
+        test_state!(vec![Instr::ADD_r8_d8(Reg8::A, 0x32), Instr::SUB_d8(0x09), Instr::DAA], Reg8::A, 0x23);
+        test_state!(vec![Instr::ADD_r8_d8(Reg8::A, 0x05), Instr::SUB_d8(0x04), Instr::DAA], Reg8::A, 0x01);
     }
 }
