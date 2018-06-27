@@ -38,6 +38,7 @@ fn main() -> Result<(), std::io::Error>  {
     use sdl2::mouse::MouseButton;
     use sdl2::keyboard::Keycode;
     use sdl2::video::{Window, WindowContext};
+    use sdl2::gfx::framerate::FPSManager;
     use sdl2::render::{Canvas, Texture, TextureCreator};
     use std::time::Duration;
 
@@ -89,6 +90,8 @@ fn main() -> Result<(), std::io::Error>  {
     let mut gb = GB::new(rom_vec, Some(&mut *serial), matches.occurrences_of("trace") > 0);
     let mut event_pump = sdl_context.event_pump().unwrap();
     let mut frame : u32 = 0;
+    let mut fps = FPSManager::new();
+    fps.set_framerate(60);
 
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
@@ -101,22 +104,13 @@ fn main() -> Result<(), std::io::Error>  {
                     break 'running
                 },
                 Event::KeyDown { keycode: Some(Keycode::Space), repeat: false, .. } => {
-                    //game.toggle_state();
                 },
                 Event::MouseButtonDown { x, y, mouse_btn: MouseButton::Left, .. } => {
-                    // let x = (x as u32) / SQUARE_SIZE;
-                    // let y = (y as u32) / SQUARE_SIZE;
-                    // match game.get_mut(x as i32, y as i32) {
-                    //     Some(square) => {*square = !(*square);},
-                    //     None => {panic!()}
-                    // };
                 },
                 _ => {}
             }
         }
 
-
-        //if let game_of_life::State::Playing = game.state() {
         frame += 1;
         //};
         {
@@ -125,7 +119,7 @@ fn main() -> Result<(), std::io::Error>  {
             }
         }
         canvas.present();
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+        fps.delay();
     }
 
     Ok(())

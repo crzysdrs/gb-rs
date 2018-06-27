@@ -12,10 +12,15 @@ debug = true
 
 [dependencies]
 enum_primitive = "*"
-sdl2 = { git = "https://github.com/Rust-SDL2/rust-sdl2"}
 clap = "2.31"
+
 
 [features]
 match_default_bindings = []
 nll = []
 extern_prelude = []
+
+[dependencies.sdl2]
+git = "https://github.com/Rust-SDL2/rust-sdl2"
+default-features = false
+features = ["gfx"]

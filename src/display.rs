@@ -71,22 +71,28 @@ impl Display {
             }
         }
     }
-    fn tile_color(&mut self, x: u8) -> u8 {
+    fn tile_color(&mut self, x: u8) -> (u8, u8) {
         let true_x = self.wx.wrapping_add(x.wrapping_add(self.scx) % 160);
         let true_y = self.wy.wrapping_add(self.ly.wrapping_add(self.scy) % 144);
-
         //println!("X: {}, Y: {}, True X: {}, True Y: {}", x, self.ly, true_x, true_y);
         let tile_idx = self.get_bg_tile(true_x / 8, true_y / 8);
 
-        self.tile_8_8(tile_idx, true_x % 8, true_y % 8)
+        self.tile_8_8(tile_idx, true_y % 8)
     }
     fn tile_offset(&mut self, t :u8) -> u16 {
-        t as u16 * 32
+        t as u16 * 16
     }
 
-    fn tile_8_8(&mut self, t : u8, x : u8, y : u8) -> u8
+    fn tile_8_8(&mut self, t : u8, y : u8) -> (u8, u8)
     {
-        (self.vram[self.tile_offset(t) as usize + y as usize  * 2 + x as usize / 4] >> ((x % 4) * 2)) & 0b11
+        let t_off :usize = self.tile_offset(t) as usize;
+        let line_off = y as usize * 2;
+
+        (self.vram[t_off + line_off], self.vram[t_off + line_off + 1])
+    }
+
+    fn bit_color(c_hi : u8, c_lo : u8) -> u8 {
+        (((c_hi & 0x80) >> 6) | ((c_lo & 0x80) >> 7))
     }
 
     fn get_bg_tile(&mut self, x: u8, y: u8) -> u8 {
@@ -106,11 +112,14 @@ impl Display {
             println!("");
         }
 
-        for t in 0..=255 {
+        for t in 0..=0x20 {
             println!("Tile {}", t);
             for y in 0..8 {
+                let (mut c_hi, mut c_lo) = self.tile_8_8(t, y);
                 for x in 0..8 {
-                    print!("{:02b} ", self.tile_8_8(t, x, y));
+                    print!("{} ", Display::bit_color(c_hi, c_lo));
+                    c_hi <<= 1;
+                    c_lo <<= 1;
                 }
                 println!("");
             }
@@ -160,19 +169,19 @@ impl Peripheral for Display
 
                 if self.unused_cycles >= 43 {
                     /* do work */
-                    for x in 0..40 {
-                        for sub_x in 0..4 {
-                            let mut c = self.tile_color(x * 4 + sub_x);
-                            let color : (u8, u8, u8, u8) = match (c & 0b11) {
+                    for x in 0..(160 / 8) {
+                        let (mut c_hi, mut c_lo) = self.tile_color(x * 8);
+                        for sub_x in 0..8 {
+                            let color : (u8, u8, u8, u8) = match Display::bit_color(c_hi, c_lo) {
                                 0b00 => (0xff, 0xff, 0xff, 0xff),
-                                0b01 => (0xff, 0, 0, 0xff),
-                                0b10 => (0x00, 0xff, 0, 0xff),
-                                0b11 => (0x00, 0x00, 0xff, 0xff),
-                                _ => panic!("invalid pixel color {:b}", c & 0b11)
+                                0b01 => (0, 0, 0, 0xff),
+                                0b10 => (0, 0, 0, 0xff),
+                                0b11 => (0, 0, 0, 0xff),
+                                c => panic!("invalid pixel color {:b}", c)
                             };
-                            //c >>= 2;
-
-                            self.rendered.push((color , ((x * 4 + sub_x) as i32, self.ly as i32)));
+                            c_hi <<= 1;
+                            c_lo <<= 1;
+                            self.rendered.push((color , ((x * 8 + sub_x) as i32, self.ly as i32)));
                             //println!("{:?}", self.rendered[self.rendered.len() - 1])
                         }
                     }

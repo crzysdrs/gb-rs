@@ -143,7 +143,7 @@ impl <'a> MMU<'a> {
             0xFE00...0xFE9F => &mut self.display,
             //0xFEA0...0xFEFF => &mut self.empty0[(addr - 0xFEA0) as usize],
             //0xFF00...0xFF4B => &mut self.io[(addr - 0xFF00) as usize],
-            0xfe00..=0xfea0 => &mut self.display,
+            0xfe00..=0xfe9f => &mut self.display,
             0xff40..=0xff45 => &mut self.display,
             0xff47..=0xff4b => &mut self.display,
             0xff01..=0xff02 => &mut self.serial,
