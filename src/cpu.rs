@@ -618,5 +618,8 @@ mod tests {
         test_state!(vec![Instr::LD_r8_d8(Reg8::A, 0x80), Instr::RLA], Reg8::A, 0x80u8 << 1);
         test_state!(vec![Instr::LD_r8_d8(Reg8::A, 0x80), Instr::RLCA], Reg8::A, 0x80u8.rotate_left(1));
         test_state!(vec![Instr::LD_r8_d8(Reg8::A, 0x80), Instr::SCF, Instr::RLA], Reg8::A, 0x80u8 << 1 | 1);
+
+        test_state!(vec![Instr::ADD_r8_d8(Reg8::A, 0x23), Instr::SWAP_r8(Reg8::A)], Reg8::A, 0x32);
+        test_state!(vec![Instr::ADD_r8_d8(Reg8::A, 0x71), Instr::SWAP_r8(Reg8::A)], Reg8::A, 0x17);
     }
 }

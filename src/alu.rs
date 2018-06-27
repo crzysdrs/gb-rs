@@ -107,7 +107,7 @@ impl ALU {
     }
 
     pub fn swap(a: u8) -> (u8, u8) {
-        let res = a & 0x0f << 4 | a & 0xf0 >> 4;
+        let res = ((a & 0x0f) << 4) | ((a & 0xf0) >> 4);
         (res,
          flag_u8!(Flag::Z, res == 0)
          | flag_u8!(Flag::N, false)
