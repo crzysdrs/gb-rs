@@ -230,31 +230,19 @@ impl CPU {
         self.reg.dump();
     }
     fn pop16(&mut self, mut mem: &mut MMU, t: Reg16) {
-        let hi = self.pop8(&mut mem);
-        let lo = self.pop8(&mut mem);
-        let res = make_u16(hi, lo);
-        //println!("Popping PC: {:04x} SP: {:04x} Val: {:04x}",  self.reg.read(Reg16::PC),  self.reg.sp, res);
-        self.reg.write(t, res);
-    }
-    fn pop8(&mut self, mut mem: &mut MMU) -> u8 {
-        let mut buf = [0u8; 1];
-        let rloc = self.reg.read(Reg16::SP) + 1;
-        mem.seek(SeekFrom::Start(rloc as u64));
-        mem.read(&mut buf);
-        self.reg.write(Reg16::SP, rloc);
-        buf[0]
-    }
-    fn push8(&mut self, mut mem: &mut MMU, v: u8) {
         mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64));
-        mem.write(&[v]);
-        self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) - 1);
+        let mut buf = [0u8; 2];
+        mem.read(&mut buf);
+        let res = make_u16(buf[1], buf[0]);
+        self.reg.write(t, res);
+        self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) + 2);
     }
     fn push16(&mut self, mut mem: &mut MMU, v: Reg16) {
         let item = self.reg.read(v);
         let (hi, lo) = split_u16(item);
-        //println!("Pushing PC: {:04x} SP: {:04x} Val: {:04x}", self.reg.read(Reg16::PC), self.reg.sp, item);
-        self.push8(&mut mem, lo);
-        self.push8(&mut mem, hi);
+        self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) - 2);
+        mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64));
+        mem.write(&[lo, hi]);
     }
 
     pub fn execute_instr(&mut self, mut mem: &mut MMU, instr : Instr) {
@@ -501,7 +489,7 @@ impl CPU {
             },
             Instr::RR_r8(x0) => alu_result!(self, x0, ALU::rrca(self.reg.read(x0), self.reg.get_flag(Flag::C), true, true)),
             Instr::RST_LIT(x0) => {
-                self.push16(&mut mem, Reg16::PC);
+                //self.push16(&mut mem, Reg16::PC);
                 self.reg.write(Reg16::PC, x0 as u16);
             }
             Instr::SBC_r8_d8(x0, x1) =>  alu_result!(self, Reg8::A, ALU::sbc(self.reg.read(x0), x1, self.reg.get_flag(Flag::C))),
