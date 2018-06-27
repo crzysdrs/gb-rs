@@ -489,7 +489,7 @@ impl CPU {
             },
             Instr::RR_r8(x0) => alu_result!(self, x0, ALU::rrca(self.reg.read(x0), self.reg.get_flag(Flag::C), true, true)),
             Instr::RST_LIT(x0) => {
-                //self.push16(&mut mem, Reg16::PC);
+                self.push16(&mut mem, Reg16::PC);
                 self.reg.write(Reg16::PC, x0 as u16);
             }
             Instr::SBC_r8_d8(x0, x1) =>  alu_result!(self, Reg8::A, ALU::sbc(self.reg.read(x0), x1, self.reg.get_flag(Flag::C))),
