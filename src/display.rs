@@ -1,6 +1,8 @@
 use peripherals::{Peripheral};
 
+#[derive(PartialEq)]
 enum DisplayState {
+    Off,
     OAMSearch, //20 Clocks
     PixelTransfer, //43 + Clocks
     HBlank, //51 Clocks
@@ -30,15 +32,25 @@ pub struct Display {
 
 pub trait LCD<C,P>{
     fn draw_point(&mut self, c: C, point: P);
+    fn screen_power(&mut self, on: bool);
 }
+
 
 impl <T> LCD<sdl2::pixels::Color, sdl2::rect::Point>  for sdl2::render::Canvas<T> where T: sdl2::render::RenderTarget {
     fn draw_point (&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
         self.set_draw_color(c);
         self.draw_point(point);
-
+    }
+    fn screen_power(&mut self, on : bool) {
+        if on {
+            self.set_draw_color(sdl2::pixels::Color::RGB(0xff, 0xff, 0xff));
+        } else {
+            self.set_draw_color(sdl2::pixels::Color::RGB(0, 0, 0));
+        }
+        self.clear();
     }
 }
+
 
 impl Display {
     pub fn new() -> Display {
@@ -63,8 +75,11 @@ impl Display {
         }
     }
     pub fn render<C : From<(u8, u8, u8, u8)>,P : From<(i32, i32)>>(&mut self, lcd : &mut Option<&mut LCD<C,P>>) {
-        let print = std::mem::replace(&mut self.rendered, Vec::new());
-        if let Some(lcd) = lcd {
+        if self.state == DisplayState::Off {
+            /* no display */
+            self.rendered.clear();
+        } else if let Some(lcd) = lcd {
+            let print = std::mem::replace(&mut self.rendered, Vec::new());
             for (c, p) in print.into_iter() {
                 //println!("Drawing Point {:?} {:?}", c, p);
                 lcd.draw_point(c.into(), p.into());
@@ -208,7 +223,9 @@ impl Peripheral for Display
                 self.stat &= !0b11;
                 self.stat |= 0b01;
 
-                if self.unused_cycles >= (43 + 51 + 20) {
+                if self.lcdc & 0x80 == 0 {
+                    self.state = DisplayState::Off
+                } else if self.unused_cycles >= (43 + 51 + 20) {
                     /* do work */
                     self.unused_cycles -= (43 + 51 + 20);
                     self.ly += 1;
@@ -218,6 +235,11 @@ impl Peripheral for Display
                     }
                 }
             },
+            DisplayState::Off => {
+                if self.lcdc & 0x80 != 0 {
+                    self.state = DisplayState::VBlank;
+                }
+            }
         }
 
         if self.ly == self.lyc {

@@ -42,7 +42,7 @@ macro_rules! alu_result_mask {
 
 mod alu;
 mod cpu;
-mod display;
+pub mod display;
 mod emptymem;
 mod fakemem;
 pub mod gb;

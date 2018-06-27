@@ -5,6 +5,8 @@ use std::fs::File;
 use gb::gb::{GB};
 
 use std::io::{Read, Write};
+use gb::display::LCD;
+use sdl2::pixels::Color;
 
 fn main() -> Result<(), std::io::Error>  {
     use clap::{Arg, App, SubCommand};
@@ -33,7 +35,7 @@ fn main() -> Result<(), std::io::Error>  {
         .get_matches();
 
     use sdl2::rect::{Point, Rect};
-    use sdl2::pixels::Color;
+
     use sdl2::event::Event;
     use sdl2::mouse::MouseButton;
     use sdl2::keyboard::Keycode;
@@ -112,7 +114,7 @@ fn main() -> Result<(), std::io::Error>  {
         }
 
         frame += 1;
-        //};
+
         {
             if gb.step(1_000u64 / 60, &mut Some(&mut canvas)) {
                 break 'running;
