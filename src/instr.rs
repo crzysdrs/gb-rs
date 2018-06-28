@@ -1,10 +1,10 @@
 use std::fmt;
-use std::fs::File;
 use std::io;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Write};
 
 use cpu::{Cond, Reg16, Reg8};
 
+#[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq)]
 pub enum Instr {
     ADC_r8_d8(Reg8, u8),
@@ -3475,7 +3475,7 @@ impl Instr {
             0xfd => Instr::SET_l8_r8(7, Reg8::L),
             0xfe => Instr::SET_l8_ir16(7, Reg16::HL),
             0xff => Instr::SET_l8_r8(7, Reg8::A),
-            i => Instr::INVALID(real),
+            _ => Instr::INVALID(real),
         };
         Ok((real, i))
     }
@@ -3894,16 +3894,15 @@ pub fn disasm<R: Read, W: Write, F: Fn(&Instr) -> bool>(
                 Ok(Instr::INVALID(opcode))
             });
 
-        let bytes = bytes.into_inner();
         let op = op?;
 
         if filter(&op) {
-            write!(buf, "0x{:04x}: ", start);
+            write!(buf, "0x{:04x}: ", start)?;
             for x in local[0..size].iter() {
                 write!(buf, "{:02x} ", x)?;
             }
-            for i in size..3 {
-                write!(buf, "   ");
+            for _ in size..3 {
+                write!(buf, "   ")?;
             }
             writeln!(buf, "{}", op)?;
         }

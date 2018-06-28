@@ -1,8 +1,9 @@
 #![feature(nll)]
 #![feature(extern_prelude)]
+#![cfg_attr(feature = "strict", deny(warnings))]
 #[macro_use]
 extern crate enum_primitive;
-use std::io::{Read, Write};
+
 
 macro_rules! flag_u8 {
     ($x:path, $cond:expr) => {
@@ -50,12 +51,6 @@ mod peripherals;
 mod serial;
 mod timer;
 
-use std::fmt;
-use std::fs::File;
-use std::io;
-
-use gb::*;
-
 fn make_u16(h: u8, l: u8) -> u16 {
     ((h as u16) << 8) | (l as u16)
 }
@@ -64,8 +59,11 @@ fn split_u16(r: u16) -> (u8, u8) {
     (((r & 0xff00) >> 8) as u8, (r & 0xff) as u8)
 }
 
-fn disasm_file(file: &str, filter_nops: bool) -> io::Result<()> {
+#[cfg(test)]
+fn disasm_file(file: &str, filter_nops: bool) -> std::io::Result<()> {
     use std::io::Cursor;
+    use std::fs::File;
+    use std::io::{Read, Write};
     let mut f = File::open(file)?;
     let regions = [
         (0x0000, 8, "Restart"),
@@ -94,38 +92,40 @@ fn disasm_file(file: &str, filter_nops: bool) -> io::Result<()> {
     };
 
     for r in regions.iter() {
-        let mut taken = f.take(r.1);
+        let taken = f.take(r.1);
         let mut buf = Cursor::new(taken);
         writeln!(dst, "{}:", r.2)?;
-        instr::disasm(r.0, buf.get_mut(), &mut dst, &mut filter);
+        instr::disasm(r.0, buf.get_mut(), &mut dst, &mut filter).unwrap();
         f = buf.into_inner().into_inner();
     }
     Ok(())
 }
 
-macro_rules! rom_test {
-    ($name:expr) => {
-        let mut buf = ::std::io::BufWriter::new(Vec::new());
-        {
-            let mut gb = ::gb::GB::new(
-                include_bytes!(concat!("../cpu_instrs/individual/", $name, ".gb")).to_vec(),
-                Some(&mut buf),
-                false,
-            );
-            gb.step::<(u8, u8, u8, u8), (i32, i32)>(30 * 1000, &mut None);
-        }
-        assert_eq!(
-            ::std::str::from_utf8(&buf.into_inner().unwrap()).unwrap(),
-            concat!($name, "\n\n\nPassed\n")
-        );
-    };
-}
+
 
 #[cfg(test)]
 mod tests {
+    macro_rules! rom_test {
+        ($name:expr) => {
+            let mut buf = ::std::io::BufWriter::new(Vec::new());
+            {
+                let mut gb = ::gb::GB::new(
+                    include_bytes!(concat!("../cpu_instrs/individual/", $name, ".gb")).to_vec(),
+                    Some(&mut buf),
+                    false,
+                );
+                gb.step::<(u8, u8, u8, u8), (i32, i32)>(30 * 1000, &mut None);
+            }
+            assert_eq!(
+                ::std::str::from_utf8(&buf.into_inner().unwrap()).unwrap(),
+                concat!($name, "\n\n\nPassed\n")
+            );
+        };
+    }
+
     #[test]
     fn it_works() {
-        let mut s = Vec::new();
+        let s = Vec::new();
         assert_eq!(
             ::instr::Instr::disasm(&mut [0u8].as_ref()).unwrap(),
             (0, ::instr::Instr::NOP)
@@ -137,7 +137,7 @@ mod tests {
             "0x0000: 00       NOP\n0x0001: 00       NOP\n"
         );
         //::disasm_file("cpu_instrs/cpu_instrs.gb", true);
-        ::disasm_file("cpu_instrs/individual/10-bit ops.gb", true);
+        ::disasm_file("cpu_instrs/individual/10-bit ops.gb", true).unwrap();
         // let mut mem = ::MMU::::new();
         // mem.dump();
     }

@@ -2,6 +2,7 @@ use super::mmu::MemRegister;
 use enum_primitive::FromPrimitive;
 use peripherals::Peripheral;
 
+#[allow(non_camel_case_types)]
 enum TimerFlags {
     ICS_4096khz = 0b00,
     ICS_262144khz = 0b01,
@@ -10,10 +11,12 @@ enum TimerFlags {
     START = 0b100,
 }
 
+#[allow(non_snake_case)]
 pub struct Timer {
     TIMA: u8,
     TMA: u8,
     TAC: u8,
+    unused_cycles : u64,
 }
 
 impl Peripheral for Timer {
@@ -27,18 +30,21 @@ impl Peripheral for Timer {
     }
     fn step(&mut self, time: u64) {
         if self.TMA & (TimerFlags::START as u8) != 0 {
-            let n = 1;
-            let (res, overflow) = match self.freq() {
-                TimerFlags::ICS_4096khz => self.TIMA.overflowing_add(n),
-                TimerFlags::ICS_262144khz => self.TIMA.overflowing_add(n),
-                TimerFlags::ICS_65536khz => self.TIMA.overflowing_add(n),
-                TimerFlags::ICS_16384khz => self.TIMA.overflowing_add(n),
+            self.unused_cycles += time;
+            //TODO: Put correct timer counts
+            let div = match self.freq() {
+                TimerFlags::ICS_4096khz => 100,
+                TimerFlags::ICS_262144khz => 200,
+                TimerFlags::ICS_65536khz => 300,
+                TimerFlags::ICS_16384khz => 400,
                 _ => panic!("Invalid Clock divider frequency"),
             };
-            self.TIMA = res;
+            let add = self.unused_cycles / div;
+            self.unused_cycles -= add;
+            let (new_tima, overflow) = self.TIMA.overflowing_add(add as u8);
+            self.TIMA = new_tima;
             if overflow {
-                let (new_tma, overflow) = self.TMA.overflowing_add(1);
-                self.TMA = new_tma;
+                self.TMA = self.TMA.wrapping_add(1);
                 //TODO: generate interrupt
             }
         }
@@ -51,11 +57,8 @@ impl Timer {
             TIMA: 0,
             TMA: 0,
             TAC: 0,
+            unused_cycles : 0,
         }
-    }
-    fn next_interrupt(&self) -> Option<u64> {
-        /* inform when the next interrupt should happen, so main process can sleep */
-        Some(1)
     }
     fn freq(&self) -> TimerFlags {
         match self.TIMA & 0b11 {

@@ -68,7 +68,7 @@ impl ALU {
             flag_u8!(Flag::Z, with_zero && res == 0)
                 | flag_u8!(Flag::N, false)
                 | flag_u8!(Flag::H, false)
-                | flag_u8!(Flag::C, (a & 0b1000_0000 > 0)),
+                | flag_u8!(Flag::C, a & 0b1000_0000 > 0),
         )
     }
     pub fn rrca(a: u8, c: bool, thru_carry: bool, with_zero: bool) -> (u8, u8) {
@@ -82,7 +82,7 @@ impl ALU {
             flag_u8!(Flag::Z, with_zero && res == 0)
                 | flag_u8!(Flag::N, false)
                 | flag_u8!(Flag::H, false)
-                | flag_u8!(Flag::C, (a & 0b0000_0001 > 0)),
+                | flag_u8!(Flag::C, a & 0b0000_0001 > 0),
         )
     }
 
@@ -136,8 +136,8 @@ impl ALUOps<u8> for ALU {
         a & 0xf < b & 0xf
     }
     fn add(a: u8, b: u8) -> (u8, u8) {
-        let (mut res, mut c) = a.overflowing_add(b);
-        let mut h = Self::half_carry(a, b);
+        let (res, c) = a.overflowing_add(b);
+        let h = Self::half_carry(a, b);
         (
             res,
             flag_u8!(Flag::Z, res == 0)
@@ -147,7 +147,7 @@ impl ALUOps<u8> for ALU {
         )
     }
     fn sub(a: u8, b: u8) -> (u8, u8) {
-        let (mut res, mut c) = a.overflowing_sub(b);
+        let (res, c) = a.overflowing_sub(b);
         let h = Self::sub_carry(a, b);
         (
             res,
@@ -175,8 +175,8 @@ impl ALUOps<u16> for ALU {
         a & 0xfff < b & 0xfff
     }
     fn add(a: u16, b: u16) -> (u16, u8) {
-        let (mut res, mut c) = a.overflowing_add(b);
-        let mut h = Self::half_carry(a, b);
+        let (res, c) = a.overflowing_add(b);
+        let h = Self::half_carry(a, b);
         (
             res,
             flag_u8!(Flag::Z, res == 0)
@@ -186,8 +186,8 @@ impl ALUOps<u16> for ALU {
         )
     }
     fn sub(a: u16, b: u16) -> (u16, u8) {
-        let (mut res, mut c) = a.overflowing_sub(b);
-        let mut h = Self::sub_carry(a, b);
+        let (res, c) = a.overflowing_sub(b);
+        let h = Self::sub_carry(a, b);
         (
             res,
             flag_u8!(Flag::Z, res == 0)

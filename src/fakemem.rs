@@ -24,5 +24,5 @@ impl Peripheral for FakeMem {
         println!("Attempting read from unhandled address {:x}", addr);
         0
     }
-    fn step(&mut self, time: u64) {}
+    fn step(&mut self, _time: u64) {}
 }

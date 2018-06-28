@@ -2,7 +2,7 @@ use super::cpu::*;
 use super::mmu::*;
 use display::LCD;
 
-use std::io::{Read, Write};
+use std::io::{Write};
 pub struct GB<'a> {
     cpu: CPU,
     mem: MMU<'a>,

@@ -32,5 +32,5 @@ impl Peripheral for Mem {
             *self.lookup(addr) = val;
         }
     }
-    fn step(&mut self, time: u64) {}
+    fn step(&mut self, _time: u64) {}
 }

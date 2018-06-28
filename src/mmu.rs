@@ -91,7 +91,7 @@ impl<'a> MMU<'a> {
         let ram0 = Mem::new(false, 0xc000, vec![0; 8 << 10]);
         let swap_ram = Mem::new(false, 0xa000, vec![0; 8 << 10]);
         let ram1 = Mem::new(false, 0xff80, vec![0; 0xffff - 0xff80 + 1]);
-        let mut mem = MMU {
+        let mem = MMU {
             seek_pos: 0,
             bios_exists: true,
             bios,
@@ -107,8 +107,7 @@ impl<'a> MMU<'a> {
         };
         mem
     }
-
-    pub fn disableBios(&mut self) {
+    pub fn disable_bios(&mut self) {
         self.bios_exists = false;
     }
     pub fn find_byte(&mut self, mut addr: u16) -> &mut u8 {
@@ -131,7 +130,6 @@ impl<'a> MMU<'a> {
             0xFE00...0xFE9F => &mut self.display,
             //0xFEA0...0xFEFF => &mut self.empty0[(addr - 0xFEA0) as usize],
             //0xFF00...0xFF4B => &mut self.io[(addr - 0xFF00) as usize],
-            0xfe00..=0xfe9f => &mut self.display,
             0xff40..=0xff45 => &mut self.display,
             0xff47..=0xff4b => &mut self.display,
             0xff00 => &mut self.controller,

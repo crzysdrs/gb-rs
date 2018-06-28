@@ -16,9 +16,7 @@ clap = "2.31"
 
 
 [features]
-match_default_bindings = []
-nll = []
-extern_prelude = []
+strict = []
 
 [dependencies.sdl2]
 git = "https://github.com/Rust-SDL2/rust-sdl2"

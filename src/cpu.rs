@@ -53,11 +53,7 @@ pub enum Cond {
     Z,
     NZ,
     C,
-    NC,
-    H,
-    NH,
-    N,
-    NN,
+    NC
 }
 
 #[derive(Debug, PartialEq)]
@@ -198,6 +194,7 @@ impl Registers {
             ime: 0,
         }
     }
+    #[allow(dead_code)]
     fn dump(&self) {
         println!("{:?}", self);
     }
@@ -206,14 +203,6 @@ impl Registers {
     }
     fn clear_flag(&mut self, f: Flag) {
         self.write_mask(Reg8::F, 0, f as u8);
-    }
-    fn write_flags(&mut self, z: bool, n: bool, h: bool, c: bool, mask: u8) {
-        let mut new_flags = 0;
-        new_flags |= flag_u8!(Flag::Z, z);
-        new_flags |= flag_u8!(Flag::N, n);
-        new_flags |= flag_u8!(Flag::H, h);
-        new_flags |= flag_u8!(Flag::C, c);
-        self.write_mask(Reg8::F, new_flags, mask);
     }
     fn get_flag(&self, f: Flag) -> bool {
         self.read(Reg8::F) & (f as u8) != 0
@@ -235,7 +224,7 @@ impl CPU {
             trace,
         }
     }
-    pub fn is_dead(&mut self, mut mem: &mut MMU) -> bool {
+    pub fn is_dead(&mut self, mem: &mut MMU) -> bool {
         self.halted && (self.reg.ime == 0 || *mem.find_byte(0xffff) == 0)
     }
     fn check_flag(&mut self, cond: Cond) -> bool {
@@ -244,29 +233,26 @@ impl CPU {
             Cond::NZ => !self.reg.get_flag(Flag::Z),
             Cond::C => self.reg.get_flag(Flag::C),
             Cond::NC => !self.reg.get_flag(Flag::C),
-            Cond::N => self.reg.get_flag(Flag::N),
-            Cond::NN => !self.reg.get_flag(Flag::N),
-            Cond::H => self.reg.get_flag(Flag::H),
-            Cond::NH => !self.reg.get_flag(Flag::H),
         }
     }
+    #[allow(dead_code)]
     fn dump(&self) {
         self.reg.dump();
     }
-    fn pop16(&mut self, mut mem: &mut MMU, t: Reg16) {
-        mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64));
+    fn pop16(&mut self, mem: &mut MMU, t: Reg16) {
+        mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64)).expect("Can't request outside of memory");
         let mut buf = [0u8; 2];
-        mem.read(&mut buf);
+        mem.read(&mut buf).expect("Memory wraps");
         let res = make_u16(buf[1], buf[0]);
         self.reg.write(t, res);
         self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) + 2);
     }
-    fn push16(&mut self, mut mem: &mut MMU, v: Reg16) {
+    fn push16(&mut self, mem: &mut MMU, v: Reg16) {
         let item = self.reg.read(v);
         let (hi, lo) = split_u16(item);
         self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) - 2);
-        mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64));
-        mem.write(&[lo, hi]);
+        mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64)).expect("Can't request outside of memory");
+        mem.write(&[lo, hi]).expect("Memory wraps");
     }
 
     pub fn execute_instr(&mut self, mut mem: &mut MMU, instr: Instr) {
@@ -481,9 +467,9 @@ impl CPU {
                 self.reg.write(x0, *b);
             }
             Instr::LD_ia16_r16(x0, x1) => {
-                mem.seek(SeekFrom::Start(x0 as u64));
+                mem.seek(SeekFrom::Start(x0 as u64)).expect("All addresses valid");
                 let (hi, lo) = split_u16(self.reg.read(x1));
-                mem.write(&[lo, hi]);
+                mem.write(&[lo, hi]).expect("Memory wraps");
             }
             Instr::LD_ia16_r8(x0, x1) => {
                 let b = mem.find_byte(x0);
@@ -566,9 +552,9 @@ impl CPU {
             Instr::PUSH_r16(x0) => self.push16(&mut mem, x0),
             Instr::RES_l8_ir16(x0, x1) => {
                 let b = mem.find_byte(self.reg.read(x1));
-                *b = (*b & !(1 << x0));
+                *b = *b & !(1 << x0);
             }
-            Instr::RES_l8_r8(x0, x1) => self.reg.write(x1, (self.reg.read(x1) & !(1 << x0))),
+            Instr::RES_l8_r8(x0, x1) => self.reg.write(x1, self.reg.read(x1) & !(1 << x0)),
             Instr::RET => self.pop16(&mut mem, Reg16::PC),
             Instr::RETI => {
                 self.pop16(&mut mem, Reg16::PC);
@@ -724,7 +710,7 @@ impl CPU {
             }
             Instr::SRL_r8(x0) => alu_result!(self, x0, ALU::sr(self.reg.read(x0), false)),
             /* halt cpu and lcd display until button press */
-            Instr::STOP_0(x0) => unimplemented!("Missing STOP"),
+            Instr::STOP_0(_x0) => unimplemented!("Missing STOP"),
             Instr::SUB_d8(x0) => alu_result!(self, Reg8::A, ALU::sub(self.reg.read(Reg8::A), x0)),
             Instr::SUB_ir16(x0) => {
                 let b = mem.find_byte(self.reg.read(x0));
@@ -756,9 +742,9 @@ impl CPU {
     pub fn execute(&mut self, mut mem: &mut MMU, cycles: u64) -> u32 {
         let pc = self.reg.read(Reg16::PC);
         if pc == 0x100 {
-            mem.disableBios();
+            mem.disable_bios();
         }
-        mem.seek(SeekFrom::Start(pc as u64));
+        mem.seek(SeekFrom::Start(pc as u64)).expect("All memory valid");
         let (op, i) = match Instr::disasm(&mut mem) {
             Ok((_, Instr::INVALID(op))) => {
                 panic!("PC Invalid instruction {:x} @ {:x}", op, self.reg.pc)
@@ -767,14 +753,13 @@ impl CPU {
             Err(_) => panic!("Unable to read Instruction"),
         };
         if self.trace {
-            mem.seek(SeekFrom::Start(pc as u64));
-            let mut taken = mem.take(get_op(op).size as u64);
+            mem.seek(SeekFrom::Start(pc as u64)).expect("All memory valid");
+            let taken = mem.take(get_op(op).size as u64);
             let mut buf = std::io::Cursor::new(taken);
             let mut disasm_out = std::io::Cursor::new(Vec::new());
-            disasm(pc, buf.get_mut(), &mut disasm_out, &|_| true);
+            disasm(pc, buf.get_mut(), &mut disasm_out, &|_| true).expect("Memory is all valid");
             let vec = disasm_out.into_inner();
             let disasm_str = std::str::from_utf8(vec.as_ref()).unwrap();
-            let f = self.reg.read(Reg8::F);
             let flag_str = format!(
                 "{z}{n}{h}{c}",
                 z = if self.reg.get_flag(Flag::Z) { "Z" } else { "-" },
@@ -803,22 +788,24 @@ impl CPU {
     }
 }
 
-macro_rules! test_state {
-    ($instr:expr, $reg:expr, $val:expr) => {
-        let mut mem = MMU::new(Vec::new(), None);
-        let mut cpu = CPU::new(false);
-        for mut i in $instr {
-            cpu.execute_instr(&mut mem, i)
-        }
-        assert_eq!(cpu.reg.read($reg), $val);
-    };
-}
-
 #[cfg(test)]
 mod tests {
-    use cpu::{Reg16, Reg8, RegType, CPU};
+    use cpu::{Reg8, RegType, CPU};
     use instr::Instr;
     use mmu::MMU;
+
+    macro_rules! test_state {
+        ($instr:expr, $reg:expr, $val:expr) => {
+            let mut mem = MMU::new(Vec::new(), None);
+            let mut cpu = CPU::new(false);
+            for i in $instr {
+                cpu.execute_instr(&mut mem, i)
+            }
+            assert_eq!(cpu.reg.read($reg), $val);
+        };
+    }
+
+
     #[test]
     fn targeted() {
         test_state!(

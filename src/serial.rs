@@ -1,7 +1,7 @@
 use super::mmu::MemRegister;
 use enum_primitive::FromPrimitive;
 use peripherals::Peripheral;
-use std::io::{Read, Write};
+use std::io::{Write};
 
 pub struct Serial<'a> {
     sb: u8,
@@ -22,7 +22,8 @@ impl<'a> Peripheral for Serial<'a> {
             _ => panic!("Unhandled register in serial"),
         }
     }
-    fn step(&mut self, time: u64) {
+    fn step(&mut self, _time: u64) {
+        //TODO: Wait appropriate amount of time to send serial data.
         if (self.sc & 0x80) != 0 {
             if let Some(ref mut o) = self.out {
                 o.write_all(&[self.sb])

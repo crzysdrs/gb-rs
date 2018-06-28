@@ -24,7 +24,7 @@ pub struct Display {
     wy: u8,
     wx: u8,
 
-    ppu: [u8; 16],
+    //ppu: [u8; 16],
     rendered: Vec<((u8, u8, u8, u8), (i32, i32))>,
     unused_cycles: u64,
     state: DisplayState,
@@ -41,7 +41,7 @@ where
 {
     fn draw_point(&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
         self.set_draw_color(c);
-        self.draw_point(point);
+        self.draw_point(point).expect("Couldn't draw a point");
     }
     fn screen_power(&mut self, on: bool) {
         if on {
@@ -69,7 +69,7 @@ impl Display {
             obp1: 0,
             wy: 0,
             wx: 0,
-            ppu: [0u8; 16],
+            //ppu: [0u8; 16],
             rendered: Vec::with_capacity(160),
             state: DisplayState::OAMSearch,
             unused_cycles: 0,
@@ -133,7 +133,7 @@ impl Display {
             println!("Tile {}", t);
             for y in 0..8 {
                 let (mut c_hi, mut c_lo) = self.tile_8_8(t, y);
-                for x in 0..8 {
+                for _x in 0..8 {
                     print!("{} ", Display::bit_color(c_hi, c_lo));
                     c_hi <<= 1;
                     c_lo <<= 1;
@@ -228,7 +228,7 @@ impl Peripheral for Display {
                     self.state = DisplayState::Off
                 } else if self.unused_cycles >= (43 + 51 + 20) {
                     /* do work */
-                    self.unused_cycles -= (43 + 51 + 20);
+                    self.unused_cycles -= 43 + 51 + 20;
                     self.ly += 1;
                     if self.ly == 153 {
                         self.state = DisplayState::OAMSearch;

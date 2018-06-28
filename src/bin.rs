@@ -4,19 +4,14 @@ extern crate sdl2;
 use gb::gb::GB;
 use std::fs::File;
 
-use gb::display::LCD;
 use sdl2::pixels::Color;
-use std::io::{Read, Write};
+use std::io::{Write};
 
 fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
     use sdl2::event::Event;
     use sdl2::gfx::framerate::FPSManager;
     use sdl2::keyboard::Keycode;
     use sdl2::mouse::MouseButton;
-    use sdl2::rect::{Point, Rect};
-    use sdl2::render::{Canvas, Texture, TextureCreator};
-    use sdl2::video::{Window, WindowContext};
-    use std::time::Duration;
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -51,9 +46,8 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
     canvas.present();
 
     let mut event_pump = sdl_context.event_pump().unwrap();
-    let mut frame: u32 = 0;
     let mut fps = FPSManager::new();
-    fps.set_framerate(60);
+    fps.set_framerate(60).expect("Unable to set framerate");
 
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
@@ -73,8 +67,8 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                     ..
                 } => {}
                 Event::MouseButtonDown {
-                    x,
-                    y,
+                    x : _,
+                    y : _,
                     mouse_btn: MouseButton::Left,
                     ..
                 } => {}
@@ -82,12 +76,8 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
             }
         }
 
-        frame += 1;
-
-        {
-            if gb.step(1_000u64 / 60, &mut Some(&mut canvas)) {
-                break 'running;
-            }
+        if gb.step(1_000u64 / 60, &mut Some(&mut canvas)) {
+            break 'running;
         }
         canvas.present();
         fps.delay();
@@ -97,7 +87,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
 }
 
 fn main() -> Result<(), std::io::Error> {
-    use clap::{App, Arg, SubCommand};
+    use clap::{App, Arg};
 
     let matches = App::new("GB Rom Emulator")
         .version("0.0.1")
