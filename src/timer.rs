@@ -1,6 +1,6 @@
-use super::mmu::{MemRegister};
-use peripherals::{Peripheral};
+use super::mmu::MemRegister;
 use enum_primitive::FromPrimitive;
+use peripherals::Peripheral;
 
 enum TimerFlags {
     ICS_4096khz = 0b00,
@@ -10,23 +10,22 @@ enum TimerFlags {
     START = 0b100,
 }
 
-
 pub struct Timer {
-    TIMA : u8,
-    TMA : u8,
-    TAC : u8,
+    TIMA: u8,
+    TMA: u8,
+    TAC: u8,
 }
 
 impl Peripheral for Timer {
-    fn lookup(&mut self, addr : u16) -> &mut u8 {
+    fn lookup(&mut self, addr: u16) -> &mut u8 {
         match MemRegister::from_u64(addr.into()).expect("Valid Register") {
             MemRegister::TIMA => &mut self.TIMA,
             MemRegister::TMA => &mut self.TMA,
             MemRegister::TAC => &mut self.TAC,
-            _ => panic!("invalid timer address")
+            _ => panic!("invalid timer address"),
         }
     }
-    fn step(&mut self, time : u64) {
+    fn step(&mut self, time: u64) {
         if self.TMA & (TimerFlags::START as u8) != 0 {
             let n = 1;
             let (res, overflow) = match self.freq() {
@@ -34,7 +33,7 @@ impl Peripheral for Timer {
                 TimerFlags::ICS_262144khz => self.TIMA.overflowing_add(n),
                 TimerFlags::ICS_65536khz => self.TIMA.overflowing_add(n),
                 TimerFlags::ICS_16384khz => self.TIMA.overflowing_add(n),
-                _ => panic!("Invalid Clock divider frequency")
+                _ => panic!("Invalid Clock divider frequency"),
             };
             self.TIMA = res;
             if overflow {
@@ -49,9 +48,9 @@ impl Peripheral for Timer {
 impl Timer {
     pub fn new() -> Timer {
         Timer {
-            TIMA :0,
-            TMA : 0,
-            TAC : 0,
+            TIMA: 0,
+            TMA: 0,
+            TAC: 0,
         }
     }
     fn next_interrupt(&self) -> Option<u64> {
@@ -64,7 +63,7 @@ impl Timer {
             0b01 => TimerFlags::ICS_262144khz,
             0b10 => TimerFlags::ICS_65536khz,
             0b11 => TimerFlags::ICS_16384khz,
-            _ => panic!("Invalid Freq")
+            _ => panic!("Invalid Freq"),
         }
     }
 }

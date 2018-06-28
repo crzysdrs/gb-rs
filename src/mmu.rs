@@ -1,12 +1,13 @@
-use std::io::{Seek, SeekFrom, Read, Write};
 use std::io;
+use std::io::{Read, Seek, SeekFrom, Write};
 
-use peripherals::{Peripheral};
-use super::mem::{Mem};
-use super::display::{Display};
-use super::timer::{Timer};
-use super::serial::{Serial};
-use super::fakemem::{FakeMem};
+use super::controller::Controller;
+use super::display::Display;
+use super::fakemem::FakeMem;
+use super::mem::Mem;
+use super::serial::Serial;
+use super::timer::Timer;
+use peripherals::Peripheral;
 
 enum_from_primitive! {
     #[derive(Debug, PartialEq)]
@@ -54,22 +55,22 @@ enum_from_primitive! {
     }
 }
 
-
 pub struct MMU<'a> {
     seek_pos: u16,
-    bios_exists : bool,
-    timer :Timer,
-    display : Display,
-    bios : Mem,
-    rom1 : Mem,
-    ram0 : Mem,
-    swap_ram : Mem,
-    fake_mem : FakeMem,
-    serial : Serial<'a>,
-    ram1 : Mem,
+    bios_exists: bool,
+    timer: Timer,
+    display: Display,
+    controller: Controller,
+    bios: Mem,
+    rom1: Mem,
+    ram0: Mem,
+    swap_ram: Mem,
+    fake_mem: FakeMem,
+    serial: Serial<'a>,
+    ram1: Mem,
 }
 
-impl <'a> MMU<'a> {
+impl<'a> MMU<'a> {
     pub fn get_current_pos(&self) -> u16 {
         self.seek_pos
     }
@@ -77,41 +78,28 @@ impl <'a> MMU<'a> {
         &mut self.display
     }
     pub fn peripherals(&mut self) -> Vec<Box<&mut Peripheral>> {
-        vec![ Box::new(&mut self.bios as &mut Peripheral),
-              Box::new(&mut self.timer as &mut Peripheral),
-              Box::new(&mut self.display as &mut Peripheral),
-              Box::new(&mut self.serial as &mut Peripheral),
+        vec![
+            Box::new(&mut self.bios as &mut Peripheral),
+            Box::new(&mut self.timer as &mut Peripheral),
+            Box::new(&mut self.display as &mut Peripheral),
+            Box::new(&mut self.serial as &mut Peripheral),
         ]
     }
-    pub fn new(rom : Vec<u8>, serial : Option<&mut Write> ) -> MMU {
-        let bios = Mem::new(true,
-                            0,
-                            include_bytes!("../boot_rom.gb").to_vec(),
-        );
-        let rom1 = Mem::new(true,
-                            0,
-                            rom
-        );
-        let ram0 = Mem::new(false,
-                            0xc000,
-                            vec![0; 8<< 10],
-        );
-        let swap_ram = Mem::new(false,
-                            0xa000,
-                            vec![0; 8<< 10],
-        );
-        let ram1 = Mem::new(false,
-                             0xff80,
-                             vec![0; 0xffff - 0xff80 + 1]
-        );
+    pub fn new(rom: Vec<u8>, serial: Option<&mut Write>) -> MMU {
+        let bios = Mem::new(true, 0, include_bytes!("../boot_rom.gb").to_vec());
+        let rom1 = Mem::new(true, 0, rom);
+        let ram0 = Mem::new(false, 0xc000, vec![0; 8 << 10]);
+        let swap_ram = Mem::new(false, 0xa000, vec![0; 8 << 10]);
+        let ram1 = Mem::new(false, 0xff80, vec![0; 0xffff - 0xff80 + 1]);
         let mut mem = MMU {
             seek_pos: 0,
-            bios_exists : true,
+            bios_exists: true,
             bios,
             rom1,
-            display : Display::new(),
-            timer : Timer::new(),
-            serial : Serial::new(serial),
+            display: Display::new(),
+            timer: Timer::new(),
+            serial: Serial::new(serial),
+            controller: Controller::new(),
             ram0,
             swap_ram,
             fake_mem: FakeMem::new(),
@@ -123,9 +111,9 @@ impl <'a> MMU<'a> {
     pub fn disableBios(&mut self) {
         self.bios_exists = false;
     }
-    pub fn find_byte(&mut self, mut addr : u16) -> &mut u8 {
+    pub fn find_byte(&mut self, mut addr: u16) -> &mut u8 {
         /* these should really be bitwise operations */
-        let x : &mut Peripheral = match addr {
+        let x: &mut Peripheral = match addr {
             0x0000...0x00ff => if self.bios_exists {
                 &mut self.bios
             } else {
@@ -139,21 +127,19 @@ impl <'a> MMU<'a> {
                 /* echo of ram0 */
                 addr -= 0x2000;
                 &mut self.ram0
-            },
+            }
             0xFE00...0xFE9F => &mut self.display,
             //0xFEA0...0xFEFF => &mut self.empty0[(addr - 0xFEA0) as usize],
             //0xFF00...0xFF4B => &mut self.io[(addr - 0xFF00) as usize],
             0xfe00..=0xfe9f => &mut self.display,
             0xff40..=0xff45 => &mut self.display,
             0xff47..=0xff4b => &mut self.display,
+            0xff00 => &mut self.controller,
             0xff01..=0xff02 => &mut self.serial,
             //0xFF4C...0xFF7F => &mut self.empty1[(addr - 0xFF4C) as usize],
             0xFF80...0xFFFF => &mut self.ram1,
             0xFF04..=0xFF07 => &mut self.timer,
-            _ => {
-                &mut self.fake_mem
-            }
-
+            _ => &mut self.fake_mem,
         };
         x.lookup(addr)
     }
@@ -163,8 +149,8 @@ impl <'a> MMU<'a> {
     // }
 }
 
-impl  <'a> Write for MMU<'a> {
-    fn write(&mut self, buf : &[u8]) -> io::Result<usize> {
+impl<'a> Write for MMU<'a> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         for (i, w) in buf.iter().enumerate() {
             let pos = self.seek_pos;
             {
@@ -172,7 +158,7 @@ impl  <'a> Write for MMU<'a> {
                 *b = *w;
             }
             if self.seek_pos == std::u16::MAX {
-                return Ok(i)
+                return Ok(i);
             }
             self.seek_pos = self.seek_pos.saturating_add(1);
         }
@@ -184,7 +170,7 @@ impl  <'a> Write for MMU<'a> {
     }
 }
 
-impl <'a>Read for MMU<'a> {
+impl<'a> Read for MMU<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         for (i, b) in buf.iter_mut().enumerate() {
             {
@@ -193,7 +179,7 @@ impl <'a>Read for MMU<'a> {
                 *b = r;
             }
             if self.seek_pos == std::u16::MAX {
-                return Ok(i)
+                return Ok(i);
             }
             self.seek_pos = self.seek_pos.saturating_add(1);
         }
@@ -201,8 +187,7 @@ impl <'a>Read for MMU<'a> {
     }
 }
 
-
-fn apply_offset(mut pos : u16,  seek : i64) -> io::Result<u64> {
+fn apply_offset(mut pos: u16, seek: i64) -> io::Result<u64> {
     let seek = if seek > std::i16::MAX as i64 {
         std::i16::MAX
     } else if seek < std::i16::MIN as i64 {
@@ -215,22 +200,28 @@ fn apply_offset(mut pos : u16,  seek : i64) -> io::Result<u64> {
     } else if pos.checked_sub(seek as u16).is_some() {
         pos -= seek as u16;
     } else {
-        return Err(std::io::Error::new(io::ErrorKind::Other, "seeked before beginning"));
+        return Err(std::io::Error::new(
+            io::ErrorKind::Other,
+            "seeked before beginning",
+        ));
     }
     Ok(pos as u64)
 }
 
-
-impl <'a> Seek for MMU<'a> {
+impl<'a> Seek for MMU<'a> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match pos {
             SeekFrom::Start(x) => {
-                let x = if x > std::u16::MAX as u64{ std::u16::MAX } else { x as u16};
+                let x = if x > std::u16::MAX as u64 {
+                    std::u16::MAX
+                } else {
+                    x as u16
+                };
                 self.seek_pos = 0u16.saturating_add(x);
-            },
+            }
             SeekFrom::End(x) => {
                 self.seek_pos = apply_offset(0xffff, x)? as u16;
-            },
+            }
             SeekFrom::Current(x) => {
                 self.seek_pos = apply_offset(self.seek_pos, x)? as u16;
             }

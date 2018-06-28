@@ -11,7 +11,7 @@ macro_rules! flag_u8 {
         } else {
             0
         }
-    }
+    };
 }
 
 macro_rules! mask_u8 {
@@ -23,24 +23,21 @@ macro_rules! mask_u8 {
     }
 }
 
-
 macro_rules! alu_result {
-    ($s: expr, $r:expr, $v:expr) => {
+    ($s:expr, $r:expr, $v:expr) => {
         alu_result_mask!($s, $r, $v, Registers::default_mask())
-    }
+    };
 }
 macro_rules! alu_result_mask {
-    ($s: expr, $r:expr, $v:expr, $m:expr) => {
-        {
-            let (res, flags) = $v;
-            $s.reg.write($r, res);
-            $s.reg.write_mask(Reg8::F, flags, $m);
-        }
-    }
+    ($s:expr, $r:expr, $v:expr, $m:expr) => {{
+        let (res, flags) = $v;
+        $s.reg.write($r, res);
+        $s.reg.write_mask(Reg8::F, flags, $m);
+    }};
 }
 
-
 mod alu;
+mod controller;
 mod cpu;
 pub mod display;
 mod emptymem;
@@ -53,22 +50,21 @@ mod peripherals;
 mod serial;
 mod timer;
 
-
-use std::io;
-use std::fs::File;
 use std::fmt;
+use std::fs::File;
+use std::io;
 
 use gb::*;
 
-fn make_u16(h : u8, l: u8) -> u16 {
+fn make_u16(h: u8, l: u8) -> u16 {
     ((h as u16) << 8) | (l as u16)
 }
 
-fn split_u16(r : u16) -> (u8, u8) {
+fn split_u16(r: u16) -> (u8, u8) {
     (((r & 0xff00) >> 8) as u8, (r & 0xff) as u8)
 }
 
-fn disasm_file(file : &str, filter_nops : bool) -> io::Result<()> {
+fn disasm_file(file: &str, filter_nops: bool) -> io::Result<()> {
     use std::io::Cursor;
     let mut f = File::open(file)?;
     let regions = [
@@ -92,8 +88,10 @@ fn disasm_file(file : &str, filter_nops : bool) -> io::Result<()> {
         (0x0150, (0xffff - 0x0150), "The Rest"),
     ];
     let mut dst = std::io::stdout();
-    let mut filter =
-        move |i : &instr::Instr| match i { instr::Instr::NOP => !filter_nops, _ => true };
+    let mut filter = move |i: &instr::Instr| match i {
+        instr::Instr::NOP => !filter_nops,
+        _ => true,
+    };
 
     for r in regions.iter() {
         let mut taken = f.take(r.1);
@@ -105,16 +103,22 @@ fn disasm_file(file : &str, filter_nops : bool) -> io::Result<()> {
     Ok(())
 }
 
-
 macro_rules! rom_test {
     ($name:expr) => {
         let mut buf = ::std::io::BufWriter::new(Vec::new());
         {
-            let mut gb = ::gb::GB::new(include_bytes!(concat!("../cpu_instrs/individual/", $name, ".gb")).to_vec(), Some(&mut buf), false);
+            let mut gb = ::gb::GB::new(
+                include_bytes!(concat!("../cpu_instrs/individual/", $name, ".gb")).to_vec(),
+                Some(&mut buf),
+                false,
+            );
             gb.step::<(u8, u8, u8, u8), (i32, i32)>(30 * 1000, &mut None);
         }
-        assert_eq!(::std::str::from_utf8(&buf.into_inner().unwrap()).unwrap(), concat!($name, "\n\n\nPassed\n"));
-    }
+        assert_eq!(
+            ::std::str::from_utf8(&buf.into_inner().unwrap()).unwrap(),
+            concat!($name, "\n\n\nPassed\n")
+        );
+    };
 }
 
 #[cfg(test)]
@@ -122,10 +126,16 @@ mod tests {
     #[test]
     fn it_works() {
         let mut s = Vec::new();
-        assert_eq!(::instr::Instr::disasm(&mut [0u8].as_ref()).unwrap(), (0, ::instr::Instr::NOP));
+        assert_eq!(
+            ::instr::Instr::disasm(&mut [0u8].as_ref()).unwrap(),
+            (0, ::instr::Instr::NOP)
+        );
         let mut b = ::std::io::Cursor::new(s);
         ::instr::disasm(0, &mut [0u8, 0u8].as_ref(), &mut b, &|_| true).unwrap();
-        assert_eq!(String::from_utf8(b.into_inner()).unwrap(), "0x0000: 00       NOP\n0x0001: 00       NOP\n");
+        assert_eq!(
+            String::from_utf8(b.into_inner()).unwrap(),
+            "0x0000: 00       NOP\n0x0001: 00       NOP\n"
+        );
         //::disasm_file("cpu_instrs/cpu_instrs.gb", true);
         ::disasm_file("cpu_instrs/individual/10-bit ops.gb", true);
         // let mut mem = ::MMU::::new();

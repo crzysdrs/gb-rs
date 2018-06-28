@@ -1,47 +1,49 @@
-use peripherals::{Peripheral};
+use peripherals::Peripheral;
 
 #[derive(PartialEq)]
 enum DisplayState {
     Off,
-    OAMSearch, //20 Clocks
+    OAMSearch,     //20 Clocks
     PixelTransfer, //43 + Clocks
-    HBlank, //51 Clocks
-    VBlank, //(20 + 43 + 51) * 10
+    HBlank,        //51 Clocks
+    VBlank,        //(20 + 43 + 51) * 10
 }
 
 pub struct Display {
-    vram : [u8; 8 << 10],
-    oam : [u8; 4 * 40],
-    scx : u8,
-    scy : u8,
-    lcdc : u8,
-    stat : u8,
-    ly : u8,
-    lyc : u8,
-    bgp : u8,
+    vram: [u8; 8 << 10],
+    oam: [u8; 4 * 40],
+    scx: u8,
+    scy: u8,
+    lcdc: u8,
+    stat: u8,
+    ly: u8,
+    lyc: u8,
+    bgp: u8,
     obp0: u8,
-    obp1 : u8,
-    wy : u8,
-    wx : u8,
+    obp1: u8,
+    wy: u8,
+    wx: u8,
 
-    ppu : [u8; 16],
-    rendered : Vec<((u8, u8, u8, u8), (i32, i32))>,
-    unused_cycles : u64,
-    state : DisplayState,
+    ppu: [u8; 16],
+    rendered: Vec<((u8, u8, u8, u8), (i32, i32))>,
+    unused_cycles: u64,
+    state: DisplayState,
 }
 
-pub trait LCD<C,P>{
+pub trait LCD<C, P> {
     fn draw_point(&mut self, c: C, point: P);
     fn screen_power(&mut self, on: bool);
 }
 
-
-impl <T> LCD<sdl2::pixels::Color, sdl2::rect::Point>  for sdl2::render::Canvas<T> where T: sdl2::render::RenderTarget {
-    fn draw_point (&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
+impl<T> LCD<sdl2::pixels::Color, sdl2::rect::Point> for sdl2::render::Canvas<T>
+where
+    T: sdl2::render::RenderTarget,
+{
+    fn draw_point(&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
         self.set_draw_color(c);
         self.draw_point(point);
     }
-    fn screen_power(&mut self, on : bool) {
+    fn screen_power(&mut self, on: bool) {
         if on {
             self.set_draw_color(sdl2::pixels::Color::RGB(0xff, 0xff, 0xff));
         } else {
@@ -51,36 +53,37 @@ impl <T> LCD<sdl2::pixels::Color, sdl2::rect::Point>  for sdl2::render::Canvas<T
     }
 }
 
-
 impl Display {
     pub fn new() -> Display {
         Display {
-            vram : [0; 8 << 10],
-            oam : [0; 4 * 40],
-            scx : 0,
-            scy : 0,
-            lcdc : 0,
-            stat : 0,
-            ly : 0,
-            lyc : 0,
-            bgp : 0,
-            obp0 : 0,
-            obp1 : 0,
-            wy : 0,
-            wx : 0,
-            ppu : [0u8; 16],
-            rendered : Vec::new(),
-            state : DisplayState::OAMSearch,
+            vram: [0; 8 << 10],
+            oam: [0; 4 * 40],
+            scx: 0,
+            scy: 0,
+            lcdc: 0,
+            stat: 0,
+            ly: 0,
+            lyc: 0,
+            bgp: 0,
+            obp0: 0,
+            obp1: 0,
+            wy: 0,
+            wx: 0,
+            ppu: [0u8; 16],
+            rendered: Vec::with_capacity(160),
+            state: DisplayState::OAMSearch,
             unused_cycles: 0,
         }
     }
-    pub fn render<C : From<(u8, u8, u8, u8)>,P : From<(i32, i32)>>(&mut self, lcd : &mut Option<&mut LCD<C,P>>) {
+    pub fn render<C: From<(u8, u8, u8, u8)>, P: From<(i32, i32)>>(
+        &mut self,
+        lcd: &mut Option<&mut LCD<C, P>>,
+    ) {
         if self.state == DisplayState::Off {
             /* no display */
             self.rendered.clear();
         } else if let Some(lcd) = lcd {
-            let print = std::mem::replace(&mut self.rendered, Vec::new());
-            for (c, p) in print.into_iter() {
+            for (c, p) in self.rendered.drain(..) {
                 //println!("Drawing Point {:?} {:?}", c, p);
                 lcd.draw_point(c.into(), p.into());
             }
@@ -94,19 +97,18 @@ impl Display {
 
         self.tile_8_8(tile_idx, true_y % 8)
     }
-    fn tile_offset(&mut self, t :u8) -> u16 {
+    fn tile_offset(&mut self, t: u8) -> u16 {
         t as u16 * 16
     }
 
-    fn tile_8_8(&mut self, t : u8, y : u8) -> (u8, u8)
-    {
-        let t_off :usize = self.tile_offset(t) as usize;
+    fn tile_8_8(&mut self, t: u8, y: u8) -> (u8, u8) {
+        let t_off: usize = self.tile_offset(t) as usize;
         let line_off = y as usize * 2;
 
         (self.vram[t_off + line_off], self.vram[t_off + line_off + 1])
     }
 
-    fn bit_color(c_hi : u8, c_lo : u8) -> u8 {
+    fn bit_color(c_hi: u8, c_lo: u8) -> u8 {
         (((c_hi & 0x80) >> 6) | ((c_lo & 0x80) >> 7))
     }
 
@@ -142,10 +144,8 @@ impl Display {
     }
 }
 
-
-impl Peripheral for Display
-{
-    fn lookup(&mut self, addr : u16) -> &mut u8 {
+impl Peripheral for Display {
+    fn lookup(&mut self, addr: u16) -> &mut u8 {
         match addr {
             0x8000...0x9fff => &mut self.vram[(addr - 0x8000) as usize],
             0xFE00...0xFE9F => &mut self.oam[(addr & 0xff) as usize],
@@ -160,11 +160,11 @@ impl Peripheral for Display
             0xff49 => &mut self.obp1,
             0xff4a => &mut self.wy,
             0xff4b => &mut self.wx,
-            _ => panic!("unhandled address in display {:x}", addr)
+            _ => panic!("unhandled address in display {:x}", addr),
         }
     }
 
-    fn step(&mut self, time : u64) {
+    fn step(&mut self, time: u64) {
         self.unused_cycles += time;
 
         match self.state {
@@ -177,7 +177,7 @@ impl Peripheral for Display
                     self.unused_cycles -= 20;
                     self.state = DisplayState::PixelTransfer;
                 }
-            },
+            }
             DisplayState::PixelTransfer => {
                 self.stat &= !0b11;
                 self.stat |= 0b11;
@@ -187,23 +187,24 @@ impl Peripheral for Display
                     for x in 0..(160 / 8) {
                         let (mut c_hi, mut c_lo) = self.tile_color(x * 8);
                         for sub_x in 0..8 {
-                            let color : (u8, u8, u8, u8) = match Display::bit_color(c_hi, c_lo) {
+                            let color: (u8, u8, u8, u8) = match Display::bit_color(c_hi, c_lo) {
                                 0b00 => (0xff, 0xff, 0xff, 0xff),
                                 0b01 => (0, 0, 0, 0xff),
                                 0b10 => (0, 0, 0, 0xff),
                                 0b11 => (0, 0, 0, 0xff),
-                                c => panic!("invalid pixel color {:b}", c)
+                                c => panic!("invalid pixel color {:b}", c),
                             };
                             c_hi <<= 1;
                             c_lo <<= 1;
-                            self.rendered.push((color , ((x * 8 + sub_x) as i32, self.ly as i32)));
+                            self.rendered
+                                .push((color, ((x * 8 + sub_x) as i32, self.ly as i32)));
                             //println!("{:?}", self.rendered[self.rendered.len() - 1])
                         }
                     }
                     self.unused_cycles -= 43;
                     self.state = DisplayState::HBlank;
                 }
-            },
+            }
             DisplayState::HBlank => {
                 self.stat &= !0b11;
                 self.stat |= 0b00;
@@ -218,7 +219,7 @@ impl Peripheral for Display
                         self.state = DisplayState::OAMSearch;
                     }
                 }
-            },
+            }
             DisplayState::VBlank => {
                 self.stat &= !0b11;
                 self.stat |= 0b01;
@@ -234,7 +235,7 @@ impl Peripheral for Display
                         self.ly = 0;
                     }
                 }
-            },
+            }
             DisplayState::Off => {
                 if self.lcdc & 0x80 != 0 {
                     self.state = DisplayState::VBlank;
@@ -247,6 +248,5 @@ impl Peripheral for Display
         } else {
             self.stat &= 1 << 2;
         }
-
     }
 }
