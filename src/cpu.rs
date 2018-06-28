@@ -53,7 +53,7 @@ pub enum Cond {
     Z,
     NZ,
     C,
-    NC
+    NC,
 }
 
 #[derive(Debug, PartialEq)]
@@ -240,7 +240,8 @@ impl CPU {
         self.reg.dump();
     }
     fn pop16(&mut self, mem: &mut MMU, t: Reg16) {
-        mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64)).expect("Can't request outside of memory");
+        mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
+            .expect("Can't request outside of memory");
         let mut buf = [0u8; 2];
         mem.read(&mut buf).expect("Memory wraps");
         let res = make_u16(buf[1], buf[0]);
@@ -251,7 +252,8 @@ impl CPU {
         let item = self.reg.read(v);
         let (hi, lo) = split_u16(item);
         self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) - 2);
-        mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64)).expect("Can't request outside of memory");
+        mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
+            .expect("Can't request outside of memory");
         mem.write(&[lo, hi]).expect("Memory wraps");
     }
 
@@ -467,7 +469,8 @@ impl CPU {
                 self.reg.write(x0, *b);
             }
             Instr::LD_ia16_r16(x0, x1) => {
-                mem.seek(SeekFrom::Start(x0 as u64)).expect("All addresses valid");
+                mem.seek(SeekFrom::Start(x0 as u64))
+                    .expect("All addresses valid");
                 let (hi, lo) = split_u16(self.reg.read(x1));
                 mem.write(&[lo, hi]).expect("Memory wraps");
             }
@@ -744,7 +747,8 @@ impl CPU {
         if pc == 0x100 {
             mem.disable_bios();
         }
-        mem.seek(SeekFrom::Start(pc as u64)).expect("All memory valid");
+        mem.seek(SeekFrom::Start(pc as u64))
+            .expect("All memory valid");
         let (op, i) = match Instr::disasm(&mut mem) {
             Ok((_, Instr::INVALID(op))) => {
                 panic!("PC Invalid instruction {:x} @ {:x}", op, self.reg.pc)
@@ -753,7 +757,8 @@ impl CPU {
             Err(_) => panic!("Unable to read Instruction"),
         };
         if self.trace {
-            mem.seek(SeekFrom::Start(pc as u64)).expect("All memory valid");
+            mem.seek(SeekFrom::Start(pc as u64))
+                .expect("All memory valid");
             let taken = mem.take(get_op(op).size as u64);
             let mut buf = std::io::Cursor::new(taken);
             let mut disasm_out = std::io::Cursor::new(Vec::new());
@@ -804,7 +809,6 @@ mod tests {
             assert_eq!(cpu.reg.read($reg), $val);
         };
     }
-
 
     #[test]
     fn targeted() {

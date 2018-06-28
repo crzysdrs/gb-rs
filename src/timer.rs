@@ -16,7 +16,7 @@ pub struct Timer {
     TIMA: u8,
     TMA: u8,
     TAC: u8,
-    unused_cycles : u64,
+    unused_cycles: u64,
 }
 
 impl Peripheral for Timer {
@@ -57,7 +57,7 @@ impl Timer {
             TIMA: 0,
             TMA: 0,
             TAC: 0,
-            unused_cycles : 0,
+            unused_cycles: 0,
         }
     }
     fn freq(&self) -> TimerFlags {

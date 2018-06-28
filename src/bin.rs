@@ -5,7 +5,7 @@ use gb::gb::GB;
 use std::fs::File;
 
 use sdl2::pixels::Color;
-use std::io::{Write};
+use std::io::Write;
 
 fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
     use sdl2::event::Event;
@@ -67,8 +67,8 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                     ..
                 } => {}
                 Event::MouseButtonDown {
-                    x : _,
-                    y : _,
+                    x: _,
+                    y: _,
                     mouse_btn: MouseButton::Left,
                     ..
                 } => {}

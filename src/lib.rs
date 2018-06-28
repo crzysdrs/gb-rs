@@ -4,7 +4,6 @@
 #[macro_use]
 extern crate enum_primitive;
 
-
 macro_rules! flag_u8 {
     ($x:path, $cond:expr) => {
         if $cond {
@@ -61,8 +60,8 @@ fn split_u16(r: u16) -> (u8, u8) {
 
 #[cfg(test)]
 fn disasm_file(file: &str, filter_nops: bool) -> std::io::Result<()> {
-    use std::io::Cursor;
     use std::fs::File;
+    use std::io::Cursor;
     use std::io::{Read, Write};
     let mut f = File::open(file)?;
     let regions = [
@@ -100,8 +99,6 @@ fn disasm_file(file: &str, filter_nops: bool) -> std::io::Result<()> {
     }
     Ok(())
 }
-
-
 
 #[cfg(test)]
 mod tests {

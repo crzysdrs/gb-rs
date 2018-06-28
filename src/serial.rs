@@ -1,7 +1,7 @@
 use super::mmu::MemRegister;
 use enum_primitive::FromPrimitive;
 use peripherals::Peripheral;
-use std::io::{Write};
+use std::io::Write;
 
 pub struct Serial<'a> {
     sb: u8,
