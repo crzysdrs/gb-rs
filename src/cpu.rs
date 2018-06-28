@@ -756,6 +756,7 @@ impl CPU {
             Ok((opcode, i)) => (opcode, i),
             Err(_) => panic!("Unable to read Instruction"),
         };
+        let next_pc = mem.get_current_pos();
         if self.trace {
             mem.seek(SeekFrom::Start(pc as u64))
                 .expect("All memory valid");
@@ -787,7 +788,7 @@ impl CPU {
             );
             mem = buf.into_inner().into_inner();
         }
-        self.reg.write(Reg16::PC, mem.get_current_pos());
+        self.reg.write(Reg16::PC, next_pc);
         self.execute_instr(&mut mem, i);
         get_op(op).cycles as u32
     }

@@ -1475,7 +1475,7 @@ static OPCODES: [OpCode; 512] = [
     },
     OpCode {
         mnemonic: "LD",
-        size: 2,
+        size: 1,
         cycles: 8,
         cycles_false: None,
     },
@@ -1571,7 +1571,7 @@ static OPCODES: [OpCode; 512] = [
     },
     OpCode {
         mnemonic: "LD",
-        size: 2,
+        size: 1,
         cycles: 8,
         cycles_false: None,
     },

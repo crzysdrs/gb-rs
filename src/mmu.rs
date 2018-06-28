@@ -68,6 +68,7 @@ pub struct MMU<'a> {
     fake_mem: FakeMem,
     serial: Serial<'a>,
     ram1: Mem,
+    ram2: Mem,
 }
 
 impl<'a> MMU<'a> {
@@ -91,6 +92,7 @@ impl<'a> MMU<'a> {
         let ram0 = Mem::new(false, 0xc000, vec![0; 8 << 10]);
         let swap_ram = Mem::new(false, 0xa000, vec![0; 8 << 10]);
         let ram1 = Mem::new(false, 0xff80, vec![0; 0xffff - 0xff80 + 1]);
+        let ram2 = Mem::new(false, 0xfea0, vec![0; 0xff00 - 0xfea0 + 1]);
         let mem = MMU {
             seek_pos: 0,
             bios_exists: true,
@@ -104,6 +106,7 @@ impl<'a> MMU<'a> {
             swap_ram,
             fake_mem: FakeMem::new(),
             ram1,
+            ram2,
         };
         mem
     }
@@ -128,6 +131,7 @@ impl<'a> MMU<'a> {
                 &mut self.ram0
             }
             0xFE00...0xFE9F => &mut self.display,
+            0xFEA0...0xFEFF => &mut self.ram2,
             //0xFEA0...0xFEFF => &mut self.empty0[(addr - 0xFEA0) as usize],
             //0xFF00...0xFF4B => &mut self.io[(addr - 0xFF00) as usize],
             0xff40..=0xff45 => &mut self.display,
