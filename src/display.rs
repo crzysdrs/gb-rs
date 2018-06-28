@@ -79,15 +79,15 @@ impl Display {
         &mut self,
         lcd: &mut Option<&mut LCD<C, P>>,
     ) {
-        if self.state == DisplayState::Off {
+        if self.state == DisplayState::Off || lcd.is_none() {
             /* no display */
-            self.rendered.clear();
         } else if let Some(lcd) = lcd {
             for (c, p) in self.rendered.drain(..) {
                 //println!("Drawing Point {:?} {:?}", c, p);
                 lcd.draw_point(c.into(), p.into());
             }
         }
+        self.rendered.clear();
     }
     fn tile_color(&mut self, x: u8) -> (u8, u8) {
         let true_x = self.wx.wrapping_add(x.wrapping_add(self.scx) % 160);
