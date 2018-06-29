@@ -1,12 +1,25 @@
 use peripherals::Peripheral;
+use cpu::InterruptFlag;
 
-#[derive(PartialEq)]
+#[derive(PartialEq,Copy,Clone)]
 enum DisplayState {
     Off,
     OAMSearch,     //20 Clocks
     PixelTransfer, //43 + Clocks
     HBlank,        //51 Clocks
     VBlank,        //(20 + 43 + 51) * 10
+}
+
+enum StatFlag {
+    CoincidenceInterrupt = 1 << 6,
+    OAMInterrupt = 1 << 5,
+    VBlankInterrupt = 1 << 4,
+    HBlankInterrupt = 1 << 3,
+    Coincidence = 1 << 2,
+    HBlank = 0b00,
+    VBlank = 0b01,
+    OAM = 0b10,
+    PixelTransfer = 0b11,
 }
 
 pub struct Display {
@@ -164,24 +177,19 @@ impl Peripheral for Display {
         }
     }
 
-    fn step(&mut self, time: u64) {
+    fn step(&mut self, time: u64) -> Option<InterruptFlag> {
         self.unused_cycles += time;
-
-        match self.state {
+        let next_state = match self.state {
             DisplayState::OAMSearch => {
-                self.stat &= !0b11;
-                self.stat |= 0b10;
-
                 if self.unused_cycles >= 20 {
                     /* do work */
                     self.unused_cycles -= 20;
-                    self.state = DisplayState::PixelTransfer;
+                    DisplayState::PixelTransfer
+                } else {
+                    self.state
                 }
             }
             DisplayState::PixelTransfer => {
-                self.stat &= !0b11;
-                self.stat |= 0b11;
-
                 if self.unused_cycles >= 43 {
                     /* do work */
                     for x in 0..(160 / 8) {
@@ -202,22 +210,23 @@ impl Peripheral for Display {
                         }
                     }
                     self.unused_cycles -= 43;
-                    self.state = DisplayState::HBlank;
+                    DisplayState::HBlank
+                } else {
+                    self.state
                 }
             }
             DisplayState::HBlank => {
-                self.stat &= !0b11;
-                self.stat |= 0b00;
-
                 if self.unused_cycles >= 51 {
                     /* do work */
                     self.unused_cycles -= 51;
                     self.ly += 1;
                     if self.ly == 144 {
-                        self.state = DisplayState::VBlank;
+                        DisplayState::VBlank
                     } else {
-                        self.state = DisplayState::OAMSearch;
+                        DisplayState::OAMSearch
                     }
+                } else {
+                    self.state
                 }
             }
             DisplayState::VBlank => {
@@ -225,28 +234,60 @@ impl Peripheral for Display {
                 self.stat |= 0b01;
 
                 if self.lcdc & 0x80 == 0 {
-                    self.state = DisplayState::Off
+                    DisplayState::Off
                 } else if self.unused_cycles >= (43 + 51 + 20) {
                     /* do work */
                     self.unused_cycles -= 43 + 51 + 20;
                     self.ly += 1;
                     if self.ly == 153 {
-                        self.state = DisplayState::OAMSearch;
                         self.ly = 0;
+                        DisplayState::OAMSearch
+                    } else {
+                        self.state
                     }
+                } else {
+                    self.state
                 }
             }
             DisplayState::Off => {
                 if self.lcdc & 0x80 != 0 {
-                    self.state = DisplayState::VBlank;
+                    DisplayState::VBlank
+                } else {
+                    self.state
                 }
             }
-        }
+        };
 
-        if self.ly == self.lyc {
-            self.stat |= 1 << 2;
+        let mut triggers = if next_state != self.state {
+            let state_trig =
+                flag_u8!(StatFlag::OAMInterrupt, next_state == DisplayState::OAMSearch)
+                | flag_u8!(StatFlag::VBlankInterrupt, next_state == DisplayState::VBlank)
+                | flag_u8!(StatFlag::HBlankInterrupt, next_state == DisplayState::HBlank);
+            self.state = next_state;
+            state_trig
         } else {
-            self.stat &= 1 << 2;
+            flag_u8!(StatFlag::CoincidenceInterrupt, self.ly == self.lyc)
+        };
+        triggers &= self.stat;
+
+        self.stat &= 0b111;
+        self.stat |= match self.state {
+            DisplayState::OAMSearch => StatFlag::OAM,
+            DisplayState::VBlank => StatFlag::VBlank,
+            DisplayState::HBlank => StatFlag::HBlank,
+            DisplayState::PixelTransfer => StatFlag::PixelTransfer,
+            // Pretend we are in vblank when screen is off, same invariants
+            _ => StatFlag::VBlank,
+        } as u8 & 0b11;
+        self.stat |= if self.ly == self.lyc {mask_u8!(StatFlag::Coincidence)} else {0};
+
+        if triggers & mask_u8!(StatFlag::VBlankInterrupt) != 0 {
+            /* TODO: The LCDC interrupt may also need to be triggered here */
+            Some(InterruptFlag::VBlank)
+        } else if triggers != 0 {
+            Some(InterruptFlag::LCDC)
+        } else {
+            None
         }
     }
 }

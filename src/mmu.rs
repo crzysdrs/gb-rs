@@ -69,6 +69,7 @@ pub struct MMU<'a> {
     serial: Serial<'a>,
     ram1: Mem,
     ram2: Mem,
+    interrupt_flag : Mem,
 }
 
 impl<'a> MMU<'a> {
@@ -93,6 +94,7 @@ impl<'a> MMU<'a> {
         let swap_ram = Mem::new(false, 0xa000, vec![0; 8 << 10]);
         let ram1 = Mem::new(false, 0xff80, vec![0; 0xffff - 0xff80 + 1]);
         let ram2 = Mem::new(false, 0xfea0, vec![0; 0xff00 - 0xfea0 + 1]);
+        let interrupt_flag = Mem::new(false, 0xff0f, vec![0; 1]);
         let mem = MMU {
             seek_pos: 0,
             bios_exists: true,
@@ -107,6 +109,7 @@ impl<'a> MMU<'a> {
             fake_mem: FakeMem::new(),
             ram1,
             ram2,
+            interrupt_flag,
         };
         mem
     }
@@ -139,8 +142,9 @@ impl<'a> MMU<'a> {
             0xff00 => &mut self.controller,
             0xff01..=0xff02 => &mut self.serial,
             //0xFF4C...0xFF7F => &mut self.empty1[(addr - 0xFF4C) as usize],
-            0xFF80...0xFFFF => &mut self.ram1,
             0xFF04..=0xFF07 => &mut self.timer,
+            0xff0f => &mut self.interrupt_flag,
+            0xFF80...0xFFFF => &mut self.ram1,
             _ => &mut self.fake_mem,
         };
         x.lookup(addr)

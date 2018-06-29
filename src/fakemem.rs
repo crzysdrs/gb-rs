@@ -1,4 +1,5 @@
 use peripherals::Peripheral;
+use cpu::InterruptFlag;
 
 pub struct FakeMem {
     byte: u8,
@@ -24,5 +25,7 @@ impl Peripheral for FakeMem {
         println!("Attempting read from unhandled address {:x}", addr);
         0
     }
-    fn step(&mut self, _time: u64) {}
+    fn step(&mut self, _time: u64) -> Option<InterruptFlag> {
+        None
+    }
 }

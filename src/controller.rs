@@ -1,10 +1,12 @@
 use super::mmu::MemRegister;
 use enum_primitive::FromPrimitive;
 use peripherals::Peripheral;
+use cpu::InterruptFlag;
 
 pub struct Controller {
     p1: u8,
     read: u8,
+    old: u8,
 }
 
 impl Controller {
@@ -12,6 +14,7 @@ impl Controller {
         Controller {
             p1: 0x3f,
             read: 0xff,
+            old: 0xff,
         }
     }
     #[allow(dead_code)]
@@ -47,5 +50,13 @@ impl Peripheral for Controller {
             _ => panic!("invalid controller address"),
         }
     }
-    fn step(&mut self, _time: u64) {}
+    fn step(&mut self, _time: u64) -> Option<InterruptFlag> {
+        let res = if (self.old ^ self.read)  & !self.read != 0 {
+            Some(InterruptFlag::HiLo)
+        } else {
+            None
+        };
+        self.old = self.read;
+        res
+    }
 }

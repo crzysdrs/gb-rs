@@ -25,8 +25,19 @@ impl<'a> GB<'a> {
         while time == 0 || cpu_cycles < 4_000_000 / 1_000 * time {
             let cycles: u64 = self.cpu.execute(&mut self.mem, cpu_cycles) as u64;
             let mut ps = self.mem.peripherals();
+            let mut interrupt_flag = 0;
             for p in ps.iter_mut() {
-                p.step(cycles as u64);
+                match p.step(cycles as u64) {
+                    Some(i) => {
+                        interrupt_flag |= mask_u8!(i);
+                    },
+                    None => {},
+                }
+            }
+
+            {
+                let b = self.mem.find_byte(0xff0f);
+                *b = *b | interrupt_flag;
             }
             cpu_cycles += cycles;
             self.mem.get_display().render::<C, P>(display);

@@ -2,6 +2,7 @@ use super::mmu::MemRegister;
 use enum_primitive::FromPrimitive;
 use peripherals::Peripheral;
 use std::io::Write;
+use cpu::InterruptFlag;
 
 pub struct Serial<'a> {
     sb: u8,
@@ -22,14 +23,17 @@ impl<'a> Peripheral for Serial<'a> {
             _ => panic!("Unhandled register in serial"),
         }
     }
-    fn step(&mut self, _time: u64) {
-        //TODO: Wait appropriate amount of time to send serial data.
+    fn step(&mut self, _time: u64) -> Option<InterruptFlag> {
         if (self.sc & 0x80) != 0 {
+            //TODO: Wait appropriate amount of time to send serial data.
             if let Some(ref mut o) = self.out {
                 o.write_all(&[self.sb])
                     .expect("Failed to write to serial output file");
             }
             self.sc &= !0x80;
+            Some(InterruptFlag::Serial)
+        } else {
+            None
         }
     }
 }

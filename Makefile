@@ -5,7 +5,7 @@ all:
 	chmod +x .git/hooks/pre-commit
 
 tmpdiff.log : gold.log run.log
-	sdiff <(cat run.log | cut -d "(" -f 1) <(cat gold.log | cut -d "(" -f 1) > tmpdiff.log
+	nice sdiff <(cat run.log | cut -d "(" -f 1) <(cat gold.log | cut -d "(" -f 1) > tmpdiff.log
 
 diff.log : tmpdiff.log mydiff.py
-	./mydiff.py > diff.log
+	nice ./mydiff.py > diff.log

@@ -74,7 +74,17 @@ struct Registers {
 pub struct CPU {
     reg: Registers,
     halted: bool,
+    dead : bool,
     trace: bool,
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum InterruptFlag {
+    HiLo = 1 << 4,
+    Serial = 1 << 3,
+    Timer = 1 << 2,
+    LCDC = 1 << 1,
+    VBlank = 1 << 0,
 }
 
 trait RegType<Register>
@@ -221,11 +231,12 @@ impl CPU {
         CPU {
             reg: Registers::new(),
             halted: false,
+            dead: false,
             trace,
         }
     }
-    pub fn is_dead(&mut self, mem: &mut MMU) -> bool {
-        self.halted && (self.reg.ime == 0 || *mem.find_byte(0xffff) == 0)
+    pub fn is_dead(&mut self, _mem: &mut MMU) -> bool {
+        self.dead
     }
     fn check_flag(&mut self, cond: Cond) -> bool {
         match cond {
@@ -238,6 +249,39 @@ impl CPU {
     #[allow(dead_code)]
     fn dump(&self) {
         self.reg.dump();
+    }
+    fn manage_interrupt(&mut self, mem: &mut MMU) {
+        let iflag = *mem.find_byte(0xff0f);
+        let ienable = *mem.find_byte(0xffff);
+        let interrupt = iflag & ienable;
+        if interrupt == 0 {
+            return
+        } else if self.reg.ime != 0 {
+            self.reg.ime = 0;
+            let addr =
+                if interrupt & mask_u8!(InterruptFlag::HiLo) != 0 {
+                    0x0060
+                } else if interrupt & mask_u8!(InterruptFlag::Serial) != 0{
+                    0x0058
+                } else if interrupt & mask_u8!(InterruptFlag::Timer) != 0 {
+                    0x0050
+                } else if interrupt & mask_u8!(InterruptFlag::LCDC) != 0 {
+                    0x0048
+                } else if interrupt & mask_u8!(InterruptFlag::VBlank) != 0 {
+                    0x0040
+                } else {
+                    panic!("Unknown interrupt {:b}", interrupt);
+                };
+            let shift = interrupt.leading_zeros();
+            //Clear highest interrupt
+            *mem.find_byte(0xff0f) = iflag & !(0x80 >> shift);
+            self.push16(mem, Reg16::PC);
+            self.reg.write(Reg16::PC, addr);
+            self.halted = false;
+        } else if self.halted {
+            self.halted = false;
+            //TODO: Skip next instruction due to HALT DMG Bug
+        }
     }
     fn pop16(&mut self, mem: &mut MMU, t: Reg16) {
         mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
@@ -452,8 +496,8 @@ impl CPU {
             }
             Instr::JR_r8(x0) => {
                 if x0 == -2 && (self.reg.ime == 0 || *mem.find_byte(0xffff) == 0) {
-                    /* effectively dead */
-                    self.halted = true;
+                    /* infinite loop with no interrupts enabled */
+                    self.dead = true;
                 }
                 self.reg.write(
                     Reg16::PC,
@@ -561,7 +605,7 @@ impl CPU {
             Instr::RET => self.pop16(&mut mem, Reg16::PC),
             Instr::RETI => {
                 self.pop16(&mut mem, Reg16::PC);
-                /* TODO: and enable interrupts */
+                self.reg.ime = 1;
             }
             Instr::RET_COND(x0) => {
                 if self.check_flag(x0) {
@@ -743,10 +787,16 @@ impl CPU {
         }
     }
     pub fn execute(&mut self, mut mem: &mut MMU, cycles: u64) -> u32 {
-        let pc = self.reg.read(Reg16::PC);
+        self.manage_interrupt(mem);
+
+        if self.halted {
+            return 1; /* claim one cycle has passed */
+        }
+        let  pc = self.reg.read(Reg16::PC);
         if pc == 0x100 {
             mem.disable_bios();
         }
+
         mem.seek(SeekFrom::Start(pc as u64))
             .expect("All memory valid");
         let (op, i) = match Instr::disasm(&mut mem) {
@@ -758,6 +808,8 @@ impl CPU {
         };
         let next_pc = mem.get_current_pos();
         if self.trace {
+            let ienable = *mem.find_byte(0xffff);
+            let iflag = *mem.find_byte(0xff0f);
             mem.seek(SeekFrom::Start(pc as u64))
                 .expect("All memory valid");
             let taken = mem.take(get_op(op).size as u64);
@@ -766,26 +818,27 @@ impl CPU {
             disasm(pc, buf.get_mut(), &mut disasm_out, &|_| true).expect("Memory is all valid");
             let vec = disasm_out.into_inner();
             let disasm_str = std::str::from_utf8(vec.as_ref()).unwrap();
-            let flag_str = format!(
-                "{z}{n}{h}{c}",
-                z = if self.reg.get_flag(Flag::Z) { "Z" } else { "-" },
-                n = if self.reg.get_flag(Flag::N) { "N" } else { "-" },
-                h = if self.reg.get_flag(Flag::H) { "H" } else { "-" },
-                c = if self.reg.get_flag(Flag::C) { "C" } else { "-" },
-            );
 
-            print!("A:{a:02X} F:{f} BC:{bc:04X} DE:{de:04x} HL:{hl:04x} SP:{sp:04x} PC:{pc:04x} (cy: {cycles}) ppu:+{ppu} |[??]{disasm}",
-                     a=self.reg.read(Reg8::A),
-                     f=flag_str,
-                     bc=self.reg.read(Reg16::BC),
-                     de=self.reg.read(Reg16::DE),
-                     hl=self.reg.read(Reg16::HL),
-                     sp=self.reg.read(Reg16::SP),
-                     pc=self.reg.read(Reg16::PC),
-                     cycles=cycles,
-                     ppu=0,
-                     disasm=disasm_str,
-            );
+            print!("A:{:02X}", self.reg.read(Reg8::A));
+            print!("F:{z}{n}{h}{c}",
+                   z = if self.reg.get_flag(Flag::Z) { "Z" } else { "-" },
+                   n = if self.reg.get_flag(Flag::N) { "N" } else { "-" },
+                   h = if self.reg.get_flag(Flag::H) { "H" } else { "-" },
+                   c = if self.reg.get_flag(Flag::C) { "C" } else { "-" },
+                   );
+            print!("BC:{:04X} ", self.reg.read(Reg16::BC));
+            print!("DE:{:04x} ", self.reg.read(Reg16::DE));
+            print!("HL:{:04x} ", self.reg.read(Reg16::HL));
+            print!("SP:{:04x} ", self.reg.read(Reg16::SP));
+            print!("PC:{:04x} ", self.reg.read(Reg16::PC));
+            if self.trace && false {
+                print!("IF:{:02x} ", iflag);
+                print!("IE:{:02x} ", ienable);
+                print!("IME:{:01x} ", self.reg.ime);
+            }
+            print!("(cy: {}) ", cycles);
+            print!("ppu:+{} ", 0);
+            print!("|[??]{}",disasm_str);
             mem = buf.into_inner().into_inner();
         }
         self.reg.write(Reg16::PC, next_pc);
