@@ -1,5 +1,5 @@
 use cpu::InterruptFlag;
-use peripherals::{Peripheral};
+use peripherals::Peripheral;
 
 #[derive(PartialEq, Copy, Clone)]
 enum DisplayState {
@@ -176,7 +176,6 @@ impl Display {
             _ => panic!("unhandled address in display {:x}", addr),
         }
     }
-
 }
 
 impl Peripheral for Display {
@@ -206,9 +205,9 @@ impl Peripheral for Display {
                         for sub_x in 0..8 {
                             let color: (u8, u8, u8, u8) = match Display::bit_color(c_hi, c_lo) {
                                 0b00 => (0xff, 0xff, 0xff, 0xff),
-                                0b01 => (0, 0, 0, 0xff),
-                                0b10 => (0, 0, 0, 0xff),
-                                0b11 => (0, 0, 0, 0xff),
+                                0b01 => (0x80, 0x80, 0x80, 0xff),
+                                0b10 => (0xD3, 0xD3, 0xD3, 0xff),
+                                0b11 => (0x00, 0x00, 0x00, 0xff),
                                 c => panic!("invalid pixel color {:b}", c),
                             };
                             c_hi <<= 1;
@@ -285,7 +284,8 @@ impl Peripheral for Display {
         } else {
             flag_u8!(StatFlag::CoincidenceInterrupt, self.ly == self.lyc)
         };
-        triggers &= self.stat;
+        // always let vblank through
+        triggers &= self.stat | mask_u8!(StatFlag::VBlankInterrupt);
 
         self.stat &= 0b111;
         self.stat |= match self.state {

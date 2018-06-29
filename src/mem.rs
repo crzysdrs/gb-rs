@@ -1,4 +1,4 @@
-use peripherals::{Peripheral};
+use peripherals::Peripheral;
 
 pub struct Mem {
     read_only: bool,
@@ -24,7 +24,6 @@ impl Mem {
             );
         }
     }
-
 }
 
 impl Peripheral for Mem {
@@ -36,5 +35,4 @@ impl Peripheral for Mem {
     fn read_byte(&mut self, addr: u16) -> u8 {
         *self.lookup(addr)
     }
-
 }

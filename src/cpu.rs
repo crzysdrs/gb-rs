@@ -282,6 +282,9 @@ impl CPU {
             //TODO: Skip next instruction due to HALT DMG Bug
         }
     }
+    pub fn toggle_trace(&mut self) {
+        self.trace = !self.trace;
+    }
     fn pop16(&mut self, mem: &mut MMU, t: Reg16) {
         mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
             .expect("Can't request outside of memory");
@@ -396,8 +399,7 @@ impl CPU {
                     .write_mask(Reg8::F, flags, Registers::default_mask());
             }
             Instr::CP_ir16(x0) => {
-                let (_, flags) =
-                    ALU::sub(self.reg.read(Reg8::A), mem.read_byte(self.reg.read(x0)));
+                let (_, flags) = ALU::sub(self.reg.read(Reg8::A), mem.read_byte(self.reg.read(x0)));
                 self.reg
                     .write_mask(Reg8::F, flags, Registers::default_mask());
             }
@@ -520,9 +522,7 @@ impl CPU {
             Instr::LD_ia16_r8(x0, x1) => {
                 mem.write_byte(x0, self.reg.read(x1));
             }
-                Instr::LD_ir16_d8(x0, x1) => {
-                    mem.write_byte(self.reg.read(x0), x1)
-            }
+            Instr::LD_ir16_d8(x0, x1) => mem.write_byte(self.reg.read(x0), x1),
             Instr::LD_ir16_r8(x0, x1) => {
                 mem.write_byte(self.reg.read(x0), self.reg.read(x1));
             }
@@ -565,9 +565,9 @@ impl CPU {
                 self.reg.write(x0, mem.read_byte(self.reg.read(x1)));
                 self.reg.write(x1, ALU::dec(self.reg.read(x1)).0)
             }
-            Instr::LD_r8_ir8(x0, x1) => {
-                self.reg.write(x0, mem.read_byte(0xff00 + self.reg.read(x1) as u16))
-            }
+            Instr::LD_r8_ir8(x0, x1) => self
+                .reg
+                .write(x0, mem.read_byte(0xff00 + self.reg.read(x1) as u16)),
             Instr::LD_r8_r8(x0, x1) => {
                 self.reg.write(x0, self.reg.read(x1));
             }
@@ -625,7 +625,12 @@ impl CPU {
                     self,
                     mem,
                     self.reg.read(x0),
-                    ALU::rlca(mem.read_byte(self.reg.read(x0)), self.reg.get_flag(Flag::C), false, true)
+                    ALU::rlca(
+                        mem.read_byte(self.reg.read(x0)),
+                        self.reg.get_flag(Flag::C),
+                        false,
+                        true
+                    )
                 );
             }
             Instr::RLC_r8(x0) => alu_result!(
@@ -638,7 +643,12 @@ impl CPU {
                     self,
                     mem,
                     self.reg.read(x0),
-                    ALU::rlca(mem.read_byte(self.reg.read(x0)), self.reg.get_flag(Flag::C), true, true)
+                    ALU::rlca(
+                        mem.read_byte(self.reg.read(x0)),
+                        self.reg.get_flag(Flag::C),
+                        true,
+                        true
+                    )
                 );
             }
             Instr::RL_r8(x0) => alu_result!(
@@ -671,7 +681,12 @@ impl CPU {
                     self,
                     mem,
                     self.reg.read(x0),
-                    ALU::rrca(mem.read_byte(self.reg.read(x0)), self.reg.get_flag(Flag::C), false, true)
+                    ALU::rrca(
+                        mem.read_byte(self.reg.read(x0)),
+                        self.reg.get_flag(Flag::C),
+                        false,
+                        true
+                    )
                 );
             }
             Instr::RRC_r8(x0) => alu_result!(
@@ -684,7 +699,12 @@ impl CPU {
                     self,
                     mem,
                     self.reg.read(x0),
-                    ALU::rrca(mem.read_byte(self.reg.read(x0)), self.reg.get_flag(Flag::C), true, true)
+                    ALU::rrca(
+                        mem.read_byte(self.reg.read(x0)),
+                        self.reg.get_flag(Flag::C),
+                        true,
+                        true
+                    )
                 );
             }
             Instr::RR_r8(x0) => alu_result!(
@@ -730,22 +750,41 @@ impl CPU {
             }
             Instr::SET_l8_r8(x0, x1) => self.reg.write(x1, self.reg.read(x1) | 1 << x0),
             Instr::SLA_ir16(x0) => {
-                alu_mem!(self, mem, self.reg.read(x0), ALU::sla(mem.read_byte(self.reg.read(x0))));
+                alu_mem!(
+                    self,
+                    mem,
+                    self.reg.read(x0),
+                    ALU::sla(mem.read_byte(self.reg.read(x0)))
+                );
             }
             Instr::SLA_r8(x0) => alu_result!(self, x0, ALU::sla(self.reg.read(x0))),
             Instr::SRA_ir16(x0) => {
-                alu_mem!(self, mem, self.reg.read(x0), ALU::sr(mem.read_byte(self.reg.read(x0)), true));
+                alu_mem!(
+                    self,
+                    mem,
+                    self.reg.read(x0),
+                    ALU::sr(mem.read_byte(self.reg.read(x0)), true)
+                );
             }
             Instr::SRA_r8(x0) => alu_result!(self, x0, ALU::sr(self.reg.read(x0), true)),
             Instr::SRL_ir16(x0) => {
-                alu_mem!(self, mem, self.reg.read(x0), ALU::sr(mem.read_byte(self.reg.read(x0)), false));
+                alu_mem!(
+                    self,
+                    mem,
+                    self.reg.read(x0),
+                    ALU::sr(mem.read_byte(self.reg.read(x0)), false)
+                );
             }
             Instr::SRL_r8(x0) => alu_result!(self, x0, ALU::sr(self.reg.read(x0), false)),
             /* halt cpu and lcd display until button press */
             Instr::STOP_0(_x0) => unimplemented!("Missing STOP"),
             Instr::SUB_d8(x0) => alu_result!(self, Reg8::A, ALU::sub(self.reg.read(Reg8::A), x0)),
             Instr::SUB_ir16(x0) => {
-                alu_result!(self, Reg8::A, ALU::sub(self.reg.read(Reg8::A),  mem.read_byte(self.reg.read(x0))));
+                alu_result!(
+                    self,
+                    Reg8::A,
+                    ALU::sub(self.reg.read(Reg8::A), mem.read_byte(self.reg.read(x0)))
+                );
             }
             Instr::SUB_r8(x0) => alu_result!(
                 self,
@@ -753,12 +792,21 @@ impl CPU {
                 ALU::sub(self.reg.read(Reg8::A), self.reg.read(x0))
             ),
             Instr::SWAP_ir16(x0) => {
-                alu_mem!(self, mem, self.reg.read(x0), ALU::swap( mem.read_byte(self.reg.read(x0))));
+                alu_mem!(
+                    self,
+                    mem,
+                    self.reg.read(x0),
+                    ALU::swap(mem.read_byte(self.reg.read(x0)))
+                );
             }
             Instr::SWAP_r8(x0) => alu_result!(self, x0, ALU::swap(self.reg.read(x0))),
             Instr::XOR_d8(x0) => alu_result!(self, Reg8::A, ALU::xor(self.reg.read(Reg8::A), x0)),
             Instr::XOR_ir16(x0) => {
-                alu_result!(self, Reg8::A, ALU::xor(self.reg.read(Reg8::A), mem.read_byte(self.reg.read(x0))));
+                alu_result!(
+                    self,
+                    Reg8::A,
+                    ALU::xor(self.reg.read(Reg8::A), mem.read_byte(self.reg.read(x0)))
+                );
             }
             Instr::XOR_r8(x0) => alu_result!(
                 self,
@@ -801,7 +849,7 @@ impl CPU {
             let vec = disasm_out.into_inner();
             let disasm_str = std::str::from_utf8(vec.as_ref()).unwrap();
 
-            print!("A:{:02X}", self.reg.read(Reg8::A));
+            print!("A:{:02X} ", self.reg.read(Reg8::A));
             print!(
                 "F:{z}{n}{h}{c}",
                 z = if self.reg.get_flag(Flag::Z) { "Z" } else { "-" },
@@ -814,7 +862,7 @@ impl CPU {
             print!("HL:{:04x} ", self.reg.read(Reg16::HL));
             print!("SP:{:04x} ", self.reg.read(Reg16::SP));
             print!("PC:{:04x} ", self.reg.read(Reg16::PC));
-            if self.trace && false {
+            if self.trace && true {
                 print!("IF:{:02x} ", iflag);
                 print!("IE:{:02x} ", ienable);
                 print!("IME:{:01x} ", self.reg.ime);

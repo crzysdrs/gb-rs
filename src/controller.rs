@@ -28,9 +28,11 @@ impl Peripheral for Controller {
         match MemRegister::from_u64(addr.into()).expect("Valid Register") {
             MemRegister::P1 => {
                 self.p1 &= !0x0f;
-                if self.p1 & 0x10 != 0 {
+                if self.p1 & 0x30 == 0x30 {
+                    self.p1 |= ((self.read >> 4) & 0x0f) | (self.read & 0x0f);
+                } else if self.p1 & 0x10 == 0x10 {
                     self.p1 |= self.read & 0x0f;
-                } else if self.p1 & 0x20 != 0 {
+                } else {
                     self.p1 |= (self.read >> 4) & 0x0f;
                 }
                 self.p1

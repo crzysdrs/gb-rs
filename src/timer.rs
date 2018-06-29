@@ -1,7 +1,7 @@
 use super::mmu::MemRegister;
 use cpu::InterruptFlag;
 use enum_primitive::FromPrimitive;
-use peripherals::{Peripheral};
+use peripherals::Peripheral;
 
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]
@@ -22,7 +22,6 @@ pub struct Timer {
     unused_cycles: u64,
     div_unused_cycles: u64,
 }
-
 
 impl Peripheral for Timer {
     fn read_byte(&mut self, addr: u16) -> u8 {

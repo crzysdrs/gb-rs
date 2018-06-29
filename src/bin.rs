@@ -66,6 +66,13 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                     repeat: false,
                     ..
                 } => {}
+                Event::KeyDown {
+                    keycode: Some(Keycode::T),
+                    repeat: false,
+                    ..
+                } => {
+                    gb.toggle_trace()
+                }
                 Event::MouseButtonDown {
                     x: _,
                     y: _,

@@ -1,7 +1,7 @@
 use super::mmu::MemRegister;
 use cpu::InterruptFlag;
 use enum_primitive::FromPrimitive;
-use peripherals::{Peripheral};
+use peripherals::Peripheral;
 use std::io::Write;
 
 pub struct Serial<'a> {
@@ -38,6 +38,7 @@ impl<'a> Peripheral for Serial<'a> {
                     .expect("Failed to write to serial output file");
             }
             self.sc &= !0x80;
+            self.sb = 0;
             Some(InterruptFlag::Serial)
         } else {
             None

@@ -1,12 +1,11 @@
 use cpu::InterruptFlag;
 use peripherals::Peripheral;
 
-pub struct FakeMem {
-}
+pub struct FakeMem {}
 
 impl FakeMem {
     pub fn new() -> FakeMem {
-        FakeMem {  }
+        FakeMem {}
     }
 }
 impl Peripheral for FakeMem {

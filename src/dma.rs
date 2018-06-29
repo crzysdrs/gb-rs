@@ -1,23 +1,43 @@
 use super::mmu::MemRegister;
 use enum_primitive::FromPrimitive;
 use peripherals::Peripheral;
-use cpu::InterruptFlag;
+use mmu::MMU;
 
 pub struct DMA {
     active : bool,
-    cur_addr : u16,
     dma : u8,
 }
 
+impl DMA {
+    pub fn is_active(&mut self) -> bool {
+        self.active
+    }
+    pub fn run(&mut self, mem : &mut MMU) {
+        if self.active {
+            let source = (self.dma as u16) << 8;
+            let target = 0xfe00;
+            let len = 0xA0;
+            for (s, t) in (source..source + len).zip(target..target + len)  {
+                let b = mem.read_byte(s);
+                mem.write_byte(t, b);
+            }
+        }
+        self.active = false;
+    }
+}
+
 impl Peripheral for DMA {
-    fn lookup(&mut self, addr: u16) -> &mut u8 {
+    fn write_byte(&mut self, addr: u16, val: u8)  {
         match MemRegister::from_u64(addr.into()).expect("Valid Register") {
-            MemRegister::DMA => &mut self.dma,
+            MemRegister::DMA => {
+                self.dma = val;
+                self.active = true;
+            },
             _ => panic!("invalid dma address"),
         }
     }
-    fn step(&mut self, time: u64) -> Option<InterruptFlag> {
-
+    fn read_byte(&mut self, _addr: u16) -> u8 {
+        0
     }
 }
 
@@ -25,7 +45,6 @@ impl DMA {
     pub fn new() -> DMA {
         DMA {
             active: false,
-            start_addr : 0,
             dma : 0,
         }
     }

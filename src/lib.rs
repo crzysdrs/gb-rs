@@ -28,6 +28,7 @@ macro_rules! alu_result {
         alu_result_mask!($s, $r, $v, Registers::default_mask())
     };
 }
+
 macro_rules! alu_result_mask {
     ($s:expr, $r:expr, $v:expr, $m:expr) => {{
         let (res, flags) = $v;
@@ -49,6 +50,7 @@ mod mmu;
 mod peripherals;
 mod serial;
 mod timer;
+mod dma;
 
 fn make_u16(h: u8, l: u8) -> u16 {
     ((h as u16) << 8) | (l as u16)

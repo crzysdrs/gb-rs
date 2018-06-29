@@ -8,6 +8,7 @@ use super::mem::Mem;
 use super::serial::Serial;
 use super::timer::Timer;
 use peripherals::Peripheral;
+use dma::DMA;
 
 enum_from_primitive! {
     #[derive(Debug, PartialEq)]
@@ -61,6 +62,7 @@ pub struct MMU<'a> {
     timer: Timer,
     display: Display,
     controller: Controller,
+    dma: DMA,
     bios: Mem,
     rom1: Mem,
     ram0: Mem,
@@ -78,6 +80,12 @@ impl<'a> MMU<'a> {
     }
     pub fn get_display(&mut self) -> &mut Display {
         &mut self.display
+    }
+    pub fn dma_active(&mut self) -> bool {
+        self.dma.is_active()
+    }
+    pub fn swap_dma(&mut self, new_dma : DMA) -> DMA {
+        std::mem::replace(&mut self.dma, new_dma)
     }
     pub fn peripherals(&mut self) -> Vec<Box<&mut Peripheral>> {
         vec![
@@ -109,6 +117,7 @@ impl<'a> MMU<'a> {
             fake_mem: FakeMem::new(),
             ram1,
             ram2,
+            dma : DMA::new(),
             interrupt_flag,
         };
         mem
@@ -116,36 +125,41 @@ impl<'a> MMU<'a> {
     pub fn disable_bios(&mut self) {
         self.bios_exists = false;
     }
+    fn breakbreakbreak() {}
 
     fn lookup_peripheral(&mut self, addr: &mut u16) -> &mut Peripheral {
-        match addr  {
+        if *addr == 0xff85 {
+            MMU::breakbreakbreak();
+        }
+        match addr {
             0x0000...0x00ff => if self.bios_exists {
                 &mut self.bios as &mut Peripheral
             } else {
                 &mut self.rom1 as &mut Peripheral
             },
-            0x0100...0x7FFF =>  &mut self.rom1 as &mut Peripheral,
-            0x8000...0x9FFF =>  &mut self.display as &mut Peripheral,
-            0xA000...0xBFFF =>  &mut self.swap_ram as &mut Peripheral,
-            0xC000...0xDFFF =>  &mut  self.ram0 as &mut Peripheral,
+            0x0100...0x7FFF => &mut self.rom1 as &mut Peripheral,
+            0x8000...0x9FFF => &mut self.display as &mut Peripheral,
+            0xA000...0xBFFF => &mut self.swap_ram as &mut Peripheral,
+            0xC000...0xDFFF => &mut self.ram0 as &mut Peripheral,
             0xE000...0xFDFF => {
                 /* echo of ram0 */
                 *addr -= 0x2000;
                 &mut self.ram0 as &mut Peripheral
             }
-            0xFE00...0xFE9F =>  &mut self.display as &mut Peripheral,
-            0xFEA0...0xFEFF =>  &mut self.ram2 as &mut Peripheral,
+            0xFE00...0xFE9F => &mut self.display as &mut Peripheral,
+            0xFEA0...0xFEFF => &mut self.ram2 as &mut Peripheral,
             //0xFEA0...0xFEFF =>  self.empty0[($addr - 0xFEA0) as usize],
             //0xFF00...0xFF4B =>  self.io[($addr - 0xFF00) as usize],
-            0xff40..=0xff45 =>  &mut self.display as &mut Peripheral,
-            0xff47..=0xff4b =>  &mut self.display as &mut Peripheral,
-            0xff00 =>  &mut self.controller as &mut Peripheral,
-            0xff01..=0xff02 =>  &mut self.serial as &mut Peripheral,
+            0xff40..=0xff45 => &mut self.display as &mut Peripheral,
+            0xff47..=0xff4b => &mut self.display as &mut Peripheral,
+            0xff00 => &mut self.controller as &mut Peripheral,
+            0xff01..=0xff02 => &mut self.serial as &mut Peripheral,
             //0xFF4C...0xFF7F =>  self.empty1[($addr - 0xFF4C) as usize],
-            0xFF04..=0xFF07 =>  &mut self.timer as &mut Peripheral,
-            0xff0f =>  &mut self.interrupt_flag as &mut Peripheral,
-            0xFF80...0xFFFF =>  &mut self.ram1  as &mut Peripheral,
-            _ => &mut  self.fake_mem as &mut Peripheral,
+            0xFF04..=0xFF07 => &mut self.timer as &mut Peripheral,
+            0xff0f => &mut self.interrupt_flag as &mut Peripheral,
+            0xff46 => &mut self.dma as &mut Peripheral,
+            0xFF80...0xFFFF => &mut self.ram1 as &mut Peripheral,
+            _ => &mut self.fake_mem as &mut Peripheral,
         }
     }
 
