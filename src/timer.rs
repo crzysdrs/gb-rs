@@ -1,10 +1,10 @@
 use super::mmu::MemRegister;
-use enum_primitive::FromPrimitive;
-use peripherals::Peripheral;
 use cpu::InterruptFlag;
+use enum_primitive::FromPrimitive;
+use peripherals::{Peripheral};
 
 #[allow(non_camel_case_types)]
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone)]
 enum TimerFlags {
     ICS_4096hz = 0b00,
     ICS_262144hz = 0b01,
@@ -20,21 +20,24 @@ pub struct Timer {
     TAC: u8,
     DIV: u8,
     unused_cycles: u64,
-    div_unused_cycles : u64,
+    div_unused_cycles: u64,
 }
 
+
 impl Peripheral for Timer {
-    fn lookup(&mut self, addr: u16) -> &mut u8 {
-        match MemRegister::from_u64(addr.into()).expect("Valid Register") {
-            MemRegister::TIMA => &mut self.TIMA,
-            MemRegister::TMA => &mut self.TMA,
-            MemRegister::TAC => &mut self.TAC,
-            MemRegister::DIV => &mut self.DIV,
-            _ => panic!("invalid timer address"),
-        }
+    fn read_byte(&mut self, addr: u16) -> u8 {
+        *self.lookup(addr)
     }
+    fn write_byte(&mut self, addr: u16, v: u8) {
+        *self.lookup(addr) = v;
+    }
+
     fn step(&mut self, time: u64) -> Option<InterruptFlag> {
-        self.DIV.wrapping_add(Timer::compute_time(time, &mut self.div_unused_cycles, TimerFlags::ICS_65536hz) as u8);
+        self.DIV.wrapping_add(Timer::compute_time(
+            time,
+            &mut self.div_unused_cycles,
+            TimerFlags::ICS_65536hz,
+        ) as u8);
 
         if self.TAC & (TimerFlags::START as u8) != 0 {
             let freq = self.freq();
@@ -71,7 +74,7 @@ impl Timer {
         }
     }
 
-    fn compute_time(time : u64, unused: &mut u64, freq : TimerFlags) -> u64{
+    fn compute_time(time: u64, unused: &mut u64, freq: TimerFlags) -> u64 {
         *unused += time;
         //Assumes 4MHZ clock.
         let div = match freq {
@@ -84,5 +87,14 @@ impl Timer {
         let add = *unused / div;
         *unused -= add * div;
         add
+    }
+    fn lookup(&mut self, addr: u16) -> &mut u8 {
+        match MemRegister::from_u64(addr.into()).expect("Valid Register") {
+            MemRegister::TIMA => &mut self.TIMA,
+            MemRegister::TMA => &mut self.TMA,
+            MemRegister::TAC => &mut self.TAC,
+            MemRegister::DIV => &mut self.DIV,
+            _ => panic!("invalid timer address"),
+        }
     }
 }

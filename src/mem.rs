@@ -1,5 +1,4 @@
-use peripherals::Peripheral;
-use cpu::InterruptFlag;
+use peripherals::{Peripheral};
 
 pub struct Mem {
     read_only: bool,
@@ -15,9 +14,6 @@ impl Mem {
             mem,
         }
     }
-}
-
-impl Peripheral for Mem {
     fn lookup(&mut self, addr: u16) -> &mut u8 {
         if addr >= self.base && (addr as usize) < self.mem.len() + self.base as usize {
             &mut self.mem[(addr - self.base) as usize]
@@ -28,12 +24,17 @@ impl Peripheral for Mem {
             );
         }
     }
-    fn write(&mut self, addr: u16, val: u8) {
+
+}
+
+impl Peripheral for Mem {
+    fn write_byte(&mut self, addr: u16, val: u8) {
         if !self.read_only {
             *self.lookup(addr) = val;
         }
     }
-    fn step(&mut self, _time: u64) -> Option<InterruptFlag> {
-        None
+    fn read_byte(&mut self, addr: u16) -> u8 {
+        *self.lookup(addr)
     }
+
 }

@@ -30,14 +30,14 @@ impl<'a> GB<'a> {
                 match p.step(cycles as u64) {
                     Some(i) => {
                         interrupt_flag |= mask_u8!(i);
-                    },
-                    None => {},
+                    }
+                    None => {}
                 }
             }
 
             {
-                let b = self.mem.find_byte(0xff0f);
-                *b = *b | interrupt_flag;
+                let rhs = self.mem.read_byte(0xff0f) | interrupt_flag;
+                self.mem.write_byte(0xff0f, rhs);
             }
             cpu_cycles += cycles;
             self.mem.get_display().render::<C, P>(display);

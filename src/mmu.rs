@@ -69,7 +69,7 @@ pub struct MMU<'a> {
     serial: Serial<'a>,
     ram1: Mem,
     ram2: Mem,
-    interrupt_flag : Mem,
+    interrupt_flag: Mem,
 }
 
 impl<'a> MMU<'a> {
@@ -116,38 +116,44 @@ impl<'a> MMU<'a> {
     pub fn disable_bios(&mut self) {
         self.bios_exists = false;
     }
-    pub fn find_byte(&mut self, mut addr: u16) -> &mut u8 {
-        /* these should really be bitwise operations */
-        let x: &mut Peripheral = match addr {
+
+    fn lookup_peripheral(&mut self, addr: &mut u16) -> &mut Peripheral {
+        match addr  {
             0x0000...0x00ff => if self.bios_exists {
-                &mut self.bios
+                &mut self.bios as &mut Peripheral
             } else {
-                &mut self.rom1
+                &mut self.rom1 as &mut Peripheral
             },
-            0x0100...0x7FFF => &mut self.rom1,
-            0x8000...0x9FFF => &mut self.display,
-            0xA000...0xBFFF => &mut self.swap_ram,
-            0xC000...0xDFFF => &mut self.ram0,
+            0x0100...0x7FFF =>  &mut self.rom1 as &mut Peripheral,
+            0x8000...0x9FFF =>  &mut self.display as &mut Peripheral,
+            0xA000...0xBFFF =>  &mut self.swap_ram as &mut Peripheral,
+            0xC000...0xDFFF =>  &mut  self.ram0 as &mut Peripheral,
             0xE000...0xFDFF => {
                 /* echo of ram0 */
-                addr -= 0x2000;
-                &mut self.ram0
+                *addr -= 0x2000;
+                &mut self.ram0 as &mut Peripheral
             }
-            0xFE00...0xFE9F => &mut self.display,
-            0xFEA0...0xFEFF => &mut self.ram2,
-            //0xFEA0...0xFEFF => &mut self.empty0[(addr - 0xFEA0) as usize],
-            //0xFF00...0xFF4B => &mut self.io[(addr - 0xFF00) as usize],
-            0xff40..=0xff45 => &mut self.display,
-            0xff47..=0xff4b => &mut self.display,
-            0xff00 => &mut self.controller,
-            0xff01..=0xff02 => &mut self.serial,
-            //0xFF4C...0xFF7F => &mut self.empty1[(addr - 0xFF4C) as usize],
-            0xFF04..=0xFF07 => &mut self.timer,
-            0xff0f => &mut self.interrupt_flag,
-            0xFF80...0xFFFF => &mut self.ram1,
-            _ => &mut self.fake_mem,
-        };
-        x.lookup(addr)
+            0xFE00...0xFE9F =>  &mut self.display as &mut Peripheral,
+            0xFEA0...0xFEFF =>  &mut self.ram2 as &mut Peripheral,
+            //0xFEA0...0xFEFF =>  self.empty0[($addr - 0xFEA0) as usize],
+            //0xFF00...0xFF4B =>  self.io[($addr - 0xFF00) as usize],
+            0xff40..=0xff45 =>  &mut self.display as &mut Peripheral,
+            0xff47..=0xff4b =>  &mut self.display as &mut Peripheral,
+            0xff00 =>  &mut self.controller as &mut Peripheral,
+            0xff01..=0xff02 =>  &mut self.serial as &mut Peripheral,
+            //0xFF4C...0xFF7F =>  self.empty1[($addr - 0xFF4C) as usize],
+            0xFF04..=0xFF07 =>  &mut self.timer as &mut Peripheral,
+            0xff0f =>  &mut self.interrupt_flag as &mut Peripheral,
+            0xFF80...0xFFFF =>  &mut self.ram1  as &mut Peripheral,
+            _ => &mut  self.fake_mem as &mut Peripheral,
+        }
+    }
+
+    pub fn read_byte(&mut self, mut addr: u16) -> u8 {
+        self.lookup_peripheral(&mut addr).read_byte(addr)
+    }
+    pub fn write_byte(&mut self, mut addr: u16, v: u8) {
+        self.lookup_peripheral(&mut addr).write_byte(addr, v);
     }
     // fn dump(&mut self) {
     //     self.seek(SeekFrom::Start(0));
@@ -160,8 +166,7 @@ impl<'a> Write for MMU<'a> {
         for (i, w) in buf.iter().enumerate() {
             let pos = self.seek_pos;
             {
-                let b = self.find_byte(pos);
-                *b = *w;
+                self.write_byte(pos, *w);
             }
             if self.seek_pos == std::u16::MAX {
                 return Ok(i);
@@ -181,8 +186,7 @@ impl<'a> Read for MMU<'a> {
         for (i, b) in buf.iter_mut().enumerate() {
             {
                 let pos = self.seek_pos;
-                let &mut r = self.find_byte(pos);
-                *b = r;
+                *b = self.read_byte(pos);
             }
             if self.seek_pos == std::u16::MAX {
                 return Ok(i);

@@ -5,15 +5,15 @@ use super::{make_u16, split_u16};
 use std::io::{Read, Seek, SeekFrom, Write};
 
 macro_rules! alu_mem {
-    ($s:expr, $mem:expr, $v:expr) => {
-        alu_mem_mask!($s, $mem, $v, Registers::default_mask())
+    ($s:expr, $mem:expr, $addr:expr, $v:expr) => {
+        alu_mem_mask!($s, $mem, $addr, $v, Registers::default_mask())
     };
 }
 
 macro_rules! alu_mem_mask {
-    ($s:expr, $mem:expr, $v:expr, $m:expr) => {{
+    ($s:expr, $mem:expr, $addr:expr, $v:expr, $m:expr) => {{
         let (res, flags) = $v;
-        *$mem = res;
+        $mem.write_byte($addr, res);
         $s.reg.write_mask(Reg8::F, flags, $m);
     }};
 }
@@ -74,7 +74,7 @@ struct Registers {
 pub struct CPU {
     reg: Registers,
     halted: bool,
-    dead : bool,
+    dead: bool,
     trace: bool,
 }
 
@@ -251,30 +251,29 @@ impl CPU {
         self.reg.dump();
     }
     fn manage_interrupt(&mut self, mem: &mut MMU) {
-        let iflag = *mem.find_byte(0xff0f);
-        let ienable = *mem.find_byte(0xffff);
+        let iflag = mem.read_byte(0xff0f);
+        let ienable = mem.read_byte(0xffff);
         let interrupt = iflag & ienable;
         if interrupt == 0 {
-            return
+            return;
         } else if self.reg.ime != 0 {
             self.reg.ime = 0;
-            let addr =
-                if interrupt & mask_u8!(InterruptFlag::HiLo) != 0 {
-                    0x0060
-                } else if interrupt & mask_u8!(InterruptFlag::Serial) != 0{
-                    0x0058
-                } else if interrupt & mask_u8!(InterruptFlag::Timer) != 0 {
-                    0x0050
-                } else if interrupt & mask_u8!(InterruptFlag::LCDC) != 0 {
-                    0x0048
-                } else if interrupt & mask_u8!(InterruptFlag::VBlank) != 0 {
-                    0x0040
-                } else {
-                    panic!("Unknown interrupt {:b}", interrupt);
-                };
+            let addr = if interrupt & mask_u8!(InterruptFlag::HiLo) != 0 {
+                0x0060
+            } else if interrupt & mask_u8!(InterruptFlag::Serial) != 0 {
+                0x0058
+            } else if interrupt & mask_u8!(InterruptFlag::Timer) != 0 {
+                0x0050
+            } else if interrupt & mask_u8!(InterruptFlag::LCDC) != 0 {
+                0x0048
+            } else if interrupt & mask_u8!(InterruptFlag::VBlank) != 0 {
+                0x0040
+            } else {
+                panic!("Unknown interrupt {:b}", interrupt);
+            };
             let shift = interrupt.leading_zeros();
             //Clear highest interrupt
-            *mem.find_byte(0xff0f) = iflag & !(0x80 >> shift);
+            mem.write_byte(0xff0f, iflag & !(0x80 >> shift));
             self.push16(mem, Reg16::PC);
             self.reg.write(Reg16::PC, addr);
             self.halted = false;
@@ -313,7 +312,7 @@ impl CPU {
                 x0,
                 ALU::adc(
                     self.reg.read(x0),
-                    *mem.find_byte(self.reg.read(x1)),
+                    mem.read_byte(self.reg.read(x1)),
                     self.reg.get_flag(Flag::C)
                 )
             ),
@@ -344,13 +343,13 @@ impl CPU {
             Instr::ADD_r8_ir16(x0, x1) => alu_result!(
                 self,
                 x0,
-                ALU::add(self.reg.read(x0), *mem.find_byte(self.reg.read(x1)))
+                ALU::add(self.reg.read(x0), mem.read_byte(self.reg.read(x1)))
             ),
             Instr::AND_d8(x0) => alu_result!(self, Reg8::A, ALU::and(self.reg.read(Reg8::A), x0)),
             Instr::AND_ir16(x0) => alu_result!(
                 self,
                 Reg8::A,
-                ALU::and(self.reg.read(Reg8::A), *mem.find_byte(self.reg.read(x0)))
+                ALU::and(self.reg.read(Reg8::A), mem.read_byte(self.reg.read(x0)))
             ),
             Instr::AND_r8(x0) => alu_result!(
                 self,
@@ -359,7 +358,7 @@ impl CPU {
             ),
             Instr::BIT_l8_ir16(x0, x1) => self.reg.write_mask(
                 Reg8::F,
-                ALU::bit(x0, *mem.find_byte(self.reg.read(x1))).1,
+                ALU::bit(x0, mem.read_byte(self.reg.read(x1))).1,
                 mask_u8!(Flag::Z | Flag::H | Flag::N),
             ),
             Instr::BIT_l8_r8(x0, x1) => self.reg.write_mask(
@@ -398,7 +397,7 @@ impl CPU {
             }
             Instr::CP_ir16(x0) => {
                 let (_, flags) =
-                    ALU::sub(self.reg.read(Reg8::A), *mem.find_byte(self.reg.read(x0)));
+                    ALU::sub(self.reg.read(Reg8::A), mem.read_byte(self.reg.read(x0)));
                 self.reg
                     .write_mask(Reg8::F, flags, Registers::default_mask());
             }
@@ -439,8 +438,9 @@ impl CPU {
             }
             Instr::DEC_ir16(x0) => alu_mem_mask!(
                 self,
-                mem.find_byte(self.reg.read(x0)),
-                ALU::dec(*mem.find_byte(self.reg.read(x0))),
+                mem,
+                self.reg.read(x0),
+                ALU::dec(mem.read_byte(self.reg.read(x0))),
                 mask_u8!(Flag::Z | Flag::N | Flag::H)
             ),
             Instr::DEC_r16(x0) => alu_result_mask!(self, x0, ALU::dec(self.reg.read(x0)), 0),
@@ -464,8 +464,9 @@ impl CPU {
             }
             Instr::INC_ir16(x0) => alu_mem_mask!(
                 self,
-                mem.find_byte(self.reg.read(x0)),
-                ALU::inc(*mem.find_byte(self.reg.read(x0))),
+                mem,
+                self.reg.read(x0),
+                ALU::inc(mem.read_byte(self.reg.read(x0))),
                 mask_u8!(Flag::Z | Flag::N | Flag::H)
             ),
             Instr::INC_r16(x0) => alu_result_mask!(self, x0, ALU::inc(self.reg.read(x0)), 0),
@@ -495,7 +496,7 @@ impl CPU {
                 }
             }
             Instr::JR_r8(x0) => {
-                if x0 == -2 && (self.reg.ime == 0 || *mem.find_byte(0xffff) == 0) {
+                if x0 == -2 && (self.reg.ime == 0 || mem.read_byte(0xffff) == 0) {
                     /* infinite loop with no interrupts enabled */
                     self.dead = true;
                 }
@@ -505,12 +506,10 @@ impl CPU {
                 );
             }
             Instr::LDH_ia8_r8(x0, x1) => {
-                let b = mem.find_byte(0xff00 + x0 as u16);
-                *b = self.reg.read(x1);
+                mem.write_byte(0xff00 + x0 as u16, self.reg.read(x1));
             }
             Instr::LDH_r8_ia8(x0, x1) => {
-                let b = mem.find_byte(0xff00 + x1 as u16);
-                self.reg.write(x0, *b);
+                self.reg.write(x0, mem.read_byte(0xff00 + x1 as u16));
             }
             Instr::LD_ia16_r16(x0, x1) => {
                 mem.seek(SeekFrom::Start(x0 as u64))
@@ -519,30 +518,24 @@ impl CPU {
                 mem.write(&[lo, hi]).expect("Memory wraps");
             }
             Instr::LD_ia16_r8(x0, x1) => {
-                let b = mem.find_byte(x0);
-                *b = self.reg.read(x1);
+                mem.write_byte(x0, self.reg.read(x1));
             }
-            Instr::LD_ir16_d8(x0, x1) => {
-                let b = mem.find_byte(self.reg.read(x0));
-                *b = x1;
+                Instr::LD_ir16_d8(x0, x1) => {
+                    mem.write_byte(self.reg.read(x0), x1)
             }
             Instr::LD_ir16_r8(x0, x1) => {
-                let b = mem.find_byte(self.reg.read(x0));
-                *b = self.reg.read(x1);
+                mem.write_byte(self.reg.read(x0), self.reg.read(x1));
             }
             Instr::LD_iir16_r8(x0, x1) => {
-                let b = mem.find_byte(self.reg.read(x0));
-                *b = self.reg.read(x1);
+                mem.write_byte(self.reg.read(x0), self.reg.read(x1));
                 self.reg.write(x0, ALU::inc(self.reg.read(x0)).0)
             }
             Instr::LD_dir16_r8(x0, x1) => {
-                let b = mem.find_byte(self.reg.read(x0));
-                *b = self.reg.read(x1);
+                mem.write_byte(self.reg.read(x0), self.reg.read(x1));
                 self.reg.write(x0, ALU::dec(self.reg.read(x0)).0)
             }
             Instr::LD_ir8_r8(x0, x1) => {
-                let b = mem.find_byte(0xff00 + self.reg.read(x0) as u16);
-                *b = self.reg.read(x1);
+                mem.write_byte(0xff00 + self.reg.read(x0) as u16, self.reg.read(x1));
             }
             Instr::LD_r16_d16(x0, x1) => {
                 self.reg.write(x0, x1);
@@ -559,26 +552,21 @@ impl CPU {
                 self.reg.write(x0, x1);
             }
             Instr::LD_r8_ia16(x0, x1) => {
-                let b = mem.find_byte(x1);
-                self.reg.write(x0, *b);
+                self.reg.write(x0, mem.read_byte(x1));
             }
             Instr::LD_r8_ir16(x0, x1) => {
-                let b = mem.find_byte(self.reg.read(x1));
-                self.reg.write(x0, *b);
+                self.reg.write(x0, mem.read_byte(self.reg.read(x1)));
             }
             Instr::LD_r8_iir16(x0, x1) => {
-                let b = mem.find_byte(self.reg.read(x1));
-                self.reg.write(x0, *b);
+                self.reg.write(x0, mem.read_byte(self.reg.read(x1)));
                 self.reg.write(x1, ALU::inc(self.reg.read(x1)).0)
             }
             Instr::LD_r8_dir16(x0, x1) => {
-                let b = mem.find_byte(self.reg.read(x1));
-                self.reg.write(x0, *b);
+                self.reg.write(x0, mem.read_byte(self.reg.read(x1)));
                 self.reg.write(x1, ALU::dec(self.reg.read(x1)).0)
             }
             Instr::LD_r8_ir8(x0, x1) => {
-                let b = mem.find_byte(0xff00 + self.reg.read(x1) as u16);
-                self.reg.write(x0, *b)
+                self.reg.write(x0, mem.read_byte(0xff00 + self.reg.read(x1) as u16))
             }
             Instr::LD_r8_r8(x0, x1) => {
                 self.reg.write(x0, self.reg.read(x1));
@@ -588,7 +576,7 @@ impl CPU {
             Instr::OR_ir16(x0) => alu_result!(
                 self,
                 Reg8::A,
-                ALU::or(self.reg.read(Reg8::A), *mem.find_byte(self.reg.read(x0)))
+                ALU::or(self.reg.read(Reg8::A), mem.read_byte(self.reg.read(x0)))
             ),
             Instr::OR_r8(x0) => alu_result!(
                 self,
@@ -598,8 +586,8 @@ impl CPU {
             Instr::POP_r16(x0) => self.pop16(&mut mem, x0),
             Instr::PUSH_r16(x0) => self.push16(&mut mem, x0),
             Instr::RES_l8_ir16(x0, x1) => {
-                let b = mem.find_byte(self.reg.read(x1));
-                *b = *b & !(1 << x0);
+                let rhs = mem.read_byte(self.reg.read(x1)) & !(1 << x0);
+                mem.write_byte(self.reg.read(x1), rhs);
             }
             Instr::RES_l8_r8(x0, x1) => self.reg.write(x1, self.reg.read(x1) & !(1 << x0)),
             Instr::RET => self.pop16(&mut mem, Reg16::PC),
@@ -633,11 +621,11 @@ impl CPU {
                 )
             ),
             Instr::RLC_ir16(x0) => {
-                let b = mem.find_byte(self.reg.read(x0));
                 alu_mem!(
                     self,
-                    b,
-                    ALU::rlca(*b, self.reg.get_flag(Flag::C), false, true)
+                    mem,
+                    self.reg.read(x0),
+                    ALU::rlca(mem.read_byte(self.reg.read(x0)), self.reg.get_flag(Flag::C), false, true)
                 );
             }
             Instr::RLC_r8(x0) => alu_result!(
@@ -646,11 +634,11 @@ impl CPU {
                 ALU::rlca(self.reg.read(x0), self.reg.get_flag(Flag::C), false, true)
             ),
             Instr::RL_ir16(x0) => {
-                let b = mem.find_byte(self.reg.read(x0));
                 alu_mem!(
                     self,
-                    b,
-                    ALU::rlca(*b, self.reg.get_flag(Flag::C), true, true)
+                    mem,
+                    self.reg.read(x0),
+                    ALU::rlca(mem.read_byte(self.reg.read(x0)), self.reg.get_flag(Flag::C), true, true)
                 );
             }
             Instr::RL_r8(x0) => alu_result!(
@@ -679,11 +667,11 @@ impl CPU {
                 )
             ),
             Instr::RRC_ir16(x0) => {
-                let b = mem.find_byte(self.reg.read(x0));
                 alu_mem!(
                     self,
-                    b,
-                    ALU::rrca(*b, self.reg.get_flag(Flag::C), false, true)
+                    mem,
+                    self.reg.read(x0),
+                    ALU::rrca(mem.read_byte(self.reg.read(x0)), self.reg.get_flag(Flag::C), false, true)
                 );
             }
             Instr::RRC_r8(x0) => alu_result!(
@@ -692,11 +680,11 @@ impl CPU {
                 ALU::rrca(self.reg.read(x0), self.reg.get_flag(Flag::C), false, true)
             ),
             Instr::RR_ir16(x0) => {
-                let b = mem.find_byte(self.reg.read(x0));
                 alu_mem!(
                     self,
-                    b,
-                    ALU::rrca(*b, self.reg.get_flag(Flag::C), true, true)
+                    mem,
+                    self.reg.read(x0),
+                    ALU::rrca(mem.read_byte(self.reg.read(x0)), self.reg.get_flag(Flag::C), true, true)
                 );
             }
             Instr::RR_r8(x0) => alu_result!(
@@ -718,7 +706,7 @@ impl CPU {
                 Reg8::A,
                 ALU::sbc(
                     self.reg.read(x0),
-                    *mem.find_byte(self.reg.read(x1)),
+                    mem.read_byte(self.reg.read(x1)),
                     self.reg.get_flag(Flag::C)
                 )
             ),
@@ -737,31 +725,27 @@ impl CPU {
                 mask_u8!(Flag::C | Flag::N | Flag::H),
             ),
             Instr::SET_l8_ir16(x0, x1) => {
-                let b = mem.find_byte(self.reg.read(x1));
-                *b = *b | 1 << x0;
+                let rhs = mem.read_byte(self.reg.read(x1)) | 1 << x0;
+                mem.write_byte(self.reg.read(x1), rhs);
             }
             Instr::SET_l8_r8(x0, x1) => self.reg.write(x1, self.reg.read(x1) | 1 << x0),
             Instr::SLA_ir16(x0) => {
-                let b = mem.find_byte(self.reg.read(x0));
-                alu_mem!(self, b, ALU::sla(*b));
+                alu_mem!(self, mem, self.reg.read(x0), ALU::sla(mem.read_byte(self.reg.read(x0))));
             }
             Instr::SLA_r8(x0) => alu_result!(self, x0, ALU::sla(self.reg.read(x0))),
             Instr::SRA_ir16(x0) => {
-                let b = mem.find_byte(self.reg.read(x0));
-                alu_mem!(self, b, ALU::sr(*b, true));
+                alu_mem!(self, mem, self.reg.read(x0), ALU::sr(mem.read_byte(self.reg.read(x0)), true));
             }
             Instr::SRA_r8(x0) => alu_result!(self, x0, ALU::sr(self.reg.read(x0), true)),
             Instr::SRL_ir16(x0) => {
-                let b = mem.find_byte(self.reg.read(x0));
-                alu_mem!(self, b, ALU::sr(*b, false));
+                alu_mem!(self, mem, self.reg.read(x0), ALU::sr(mem.read_byte(self.reg.read(x0)), false));
             }
             Instr::SRL_r8(x0) => alu_result!(self, x0, ALU::sr(self.reg.read(x0), false)),
             /* halt cpu and lcd display until button press */
             Instr::STOP_0(_x0) => unimplemented!("Missing STOP"),
             Instr::SUB_d8(x0) => alu_result!(self, Reg8::A, ALU::sub(self.reg.read(Reg8::A), x0)),
             Instr::SUB_ir16(x0) => {
-                let b = mem.find_byte(self.reg.read(x0));
-                alu_result!(self, Reg8::A, ALU::sub(self.reg.read(Reg8::A), *b));
+                alu_result!(self, Reg8::A, ALU::sub(self.reg.read(Reg8::A),  mem.read_byte(self.reg.read(x0))));
             }
             Instr::SUB_r8(x0) => alu_result!(
                 self,
@@ -769,14 +753,12 @@ impl CPU {
                 ALU::sub(self.reg.read(Reg8::A), self.reg.read(x0))
             ),
             Instr::SWAP_ir16(x0) => {
-                let b = mem.find_byte(self.reg.read(x0));
-                alu_mem!(self, b, ALU::swap(*b));
+                alu_mem!(self, mem, self.reg.read(x0), ALU::swap( mem.read_byte(self.reg.read(x0))));
             }
             Instr::SWAP_r8(x0) => alu_result!(self, x0, ALU::swap(self.reg.read(x0))),
             Instr::XOR_d8(x0) => alu_result!(self, Reg8::A, ALU::xor(self.reg.read(Reg8::A), x0)),
             Instr::XOR_ir16(x0) => {
-                let b = mem.find_byte(self.reg.read(x0));
-                alu_result!(self, Reg8::A, ALU::xor(self.reg.read(Reg8::A), *b));
+                alu_result!(self, Reg8::A, ALU::xor(self.reg.read(Reg8::A), mem.read_byte(self.reg.read(x0))));
             }
             Instr::XOR_r8(x0) => alu_result!(
                 self,
@@ -792,7 +774,7 @@ impl CPU {
         if self.halted {
             return 1; /* claim one cycle has passed */
         }
-        let  pc = self.reg.read(Reg16::PC);
+        let pc = self.reg.read(Reg16::PC);
         if pc == 0x100 {
             mem.disable_bios();
         }
@@ -808,8 +790,8 @@ impl CPU {
         };
         let next_pc = mem.get_current_pos();
         if self.trace {
-            let ienable = *mem.find_byte(0xffff);
-            let iflag = *mem.find_byte(0xff0f);
+            let ienable = mem.read_byte(0xffff);
+            let iflag = mem.read_byte(0xff0f);
             mem.seek(SeekFrom::Start(pc as u64))
                 .expect("All memory valid");
             let taken = mem.take(get_op(op).size as u64);
@@ -820,12 +802,13 @@ impl CPU {
             let disasm_str = std::str::from_utf8(vec.as_ref()).unwrap();
 
             print!("A:{:02X}", self.reg.read(Reg8::A));
-            print!("F:{z}{n}{h}{c}",
-                   z = if self.reg.get_flag(Flag::Z) { "Z" } else { "-" },
-                   n = if self.reg.get_flag(Flag::N) { "N" } else { "-" },
-                   h = if self.reg.get_flag(Flag::H) { "H" } else { "-" },
-                   c = if self.reg.get_flag(Flag::C) { "C" } else { "-" },
-                   );
+            print!(
+                "F:{z}{n}{h}{c}",
+                z = if self.reg.get_flag(Flag::Z) { "Z" } else { "-" },
+                n = if self.reg.get_flag(Flag::N) { "N" } else { "-" },
+                h = if self.reg.get_flag(Flag::H) { "H" } else { "-" },
+                c = if self.reg.get_flag(Flag::C) { "C" } else { "-" },
+            );
             print!("BC:{:04X} ", self.reg.read(Reg16::BC));
             print!("DE:{:04x} ", self.reg.read(Reg16::DE));
             print!("HL:{:04x} ", self.reg.read(Reg16::HL));
@@ -838,7 +821,7 @@ impl CPU {
             }
             print!("(cy: {}) ", cycles);
             print!("ppu:+{} ", 0);
-            print!("|[??]{}",disasm_str);
+            print!("|[??]{}", disasm_str);
             mem = buf.into_inner().into_inner();
         }
         self.reg.write(Reg16::PC, next_pc);

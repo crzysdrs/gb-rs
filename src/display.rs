@@ -1,7 +1,7 @@
-use peripherals::Peripheral;
 use cpu::InterruptFlag;
+use peripherals::{Peripheral};
 
-#[derive(PartialEq,Copy,Clone)]
+#[derive(PartialEq, Copy, Clone)]
 enum DisplayState {
     Off,
     OAMSearch,     //20 Clocks
@@ -157,7 +157,7 @@ impl Display {
     }
 }
 
-impl Peripheral for Display {
+impl Display {
     fn lookup(&mut self, addr: u16) -> &mut u8 {
         match addr {
             0x8000...0x9fff => &mut self.vram[(addr - 0x8000) as usize],
@@ -177,6 +177,15 @@ impl Peripheral for Display {
         }
     }
 
+}
+
+impl Peripheral for Display {
+    fn read_byte(&mut self, addr: u16) -> u8 {
+        *self.lookup(addr)
+    }
+    fn write_byte(&mut self, addr: u16, v: u8) {
+        *self.lookup(addr) = v;
+    }
     fn step(&mut self, time: u64) -> Option<InterruptFlag> {
         self.unused_cycles += time;
         let next_state = match self.state {
@@ -259,10 +268,18 @@ impl Peripheral for Display {
         };
 
         let mut triggers = if next_state != self.state {
-            let state_trig =
-                flag_u8!(StatFlag::OAMInterrupt, next_state == DisplayState::OAMSearch)
-                | flag_u8!(StatFlag::VBlankInterrupt, next_state == DisplayState::VBlank)
-                | flag_u8!(StatFlag::HBlankInterrupt, next_state == DisplayState::HBlank);
+            let state_trig = flag_u8!(
+                StatFlag::OAMInterrupt,
+                next_state == DisplayState::OAMSearch
+            )
+                | flag_u8!(
+                    StatFlag::VBlankInterrupt,
+                    next_state == DisplayState::VBlank
+                )
+                | flag_u8!(
+                    StatFlag::HBlankInterrupt,
+                    next_state == DisplayState::HBlank
+                );
             self.state = next_state;
             state_trig
         } else {
@@ -279,7 +296,11 @@ impl Peripheral for Display {
             // Pretend we are in vblank when screen is off, same invariants
             _ => StatFlag::VBlank,
         } as u8 & 0b11;
-        self.stat |= if self.ly == self.lyc {mask_u8!(StatFlag::Coincidence)} else {0};
+        self.stat |= if self.ly == self.lyc {
+            mask_u8!(StatFlag::Coincidence)
+        } else {
+            0
+        };
 
         if triggers & mask_u8!(StatFlag::VBlankInterrupt) != 0 {
             /* TODO: The LCDC interrupt may also need to be triggered here */
