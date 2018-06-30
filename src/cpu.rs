@@ -851,7 +851,7 @@ impl CPU {
 
             print!("A:{:02X} ", self.reg.read(Reg8::A));
             print!(
-                "F:{z}{n}{h}{c}",
+                "F:{z}{n}{h}{c} ",
                 z = if self.reg.get_flag(Flag::Z) { "Z" } else { "-" },
                 n = if self.reg.get_flag(Flag::N) { "N" } else { "-" },
                 h = if self.reg.get_flag(Flag::H) { "H" } else { "-" },

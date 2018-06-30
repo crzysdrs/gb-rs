@@ -7,8 +7,8 @@ use super::fakemem::FakeMem;
 use super::mem::Mem;
 use super::serial::Serial;
 use super::timer::Timer;
-use peripherals::Peripheral;
 use dma::DMA;
+use peripherals::Peripheral;
 
 enum_from_primitive! {
     #[derive(Debug, PartialEq)]
@@ -81,10 +81,13 @@ impl<'a> MMU<'a> {
     pub fn get_display(&mut self) -> &mut Display {
         &mut self.display
     }
+    pub fn set_controls(&mut self, controls: u8) {
+        self.controller.set_controls(controls);
+    }
     pub fn dma_active(&mut self) -> bool {
         self.dma.is_active()
     }
-    pub fn swap_dma(&mut self, new_dma : DMA) -> DMA {
+    pub fn swap_dma(&mut self, new_dma: DMA) -> DMA {
         std::mem::replace(&mut self.dma, new_dma)
     }
     pub fn peripherals(&mut self) -> Vec<Box<&mut Peripheral>> {
@@ -93,6 +96,7 @@ impl<'a> MMU<'a> {
             Box::new(&mut self.timer as &mut Peripheral),
             Box::new(&mut self.display as &mut Peripheral),
             Box::new(&mut self.serial as &mut Peripheral),
+            Box::new(&mut self.controller as &mut Peripheral),
         ]
     }
     pub fn new(rom: Vec<u8>, serial: Option<&mut Write>) -> MMU {
@@ -117,7 +121,7 @@ impl<'a> MMU<'a> {
             fake_mem: FakeMem::new(),
             ram1,
             ram2,
-            dma : DMA::new(),
+            dma: DMA::new(),
             interrupt_flag,
         };
         mem

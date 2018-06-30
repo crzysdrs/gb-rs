@@ -3,6 +3,7 @@
 #![cfg_attr(feature = "strict", deny(warnings))]
 #[macro_use]
 extern crate enum_primitive;
+extern crate itertools;
 
 macro_rules! flag_u8 {
     ($x:path, $cond:expr) => {
@@ -41,6 +42,7 @@ mod alu;
 mod controller;
 mod cpu;
 pub mod display;
+mod dma;
 mod emptymem;
 mod fakemem;
 pub mod gb;
@@ -50,7 +52,6 @@ mod mmu;
 mod peripherals;
 mod serial;
 mod timer;
-mod dma;
 
 fn make_u16(h: u8, l: u8) -> u16 {
     ((h as u16) << 8) | (l as u16)

@@ -13,6 +13,7 @@ debug = true
 [dependencies]
 enum_primitive = "*"
 clap = "2.31"
+itertools = "*"
 
 
 [features]

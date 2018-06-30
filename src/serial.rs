@@ -39,7 +39,8 @@ impl<'a> Peripheral for Serial<'a> {
             }
             self.sc &= !0x80;
             self.sb = 0;
-            Some(InterruptFlag::Serial)
+            //Some(InterruptFlag::Serial)
+            None
         } else {
             None
         }

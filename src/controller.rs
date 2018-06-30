@@ -17,8 +17,7 @@ impl Controller {
             old: 0xff,
         }
     }
-    #[allow(dead_code)]
-    fn set_controls(&mut self, controls: u8) {
+    pub fn set_controls(&mut self, controls: u8) {
         self.read = controls;
     }
 }
@@ -29,7 +28,7 @@ impl Peripheral for Controller {
             MemRegister::P1 => {
                 self.p1 &= !0x0f;
                 if self.p1 & 0x30 == 0x30 {
-                    self.p1 |= ((self.read >> 4) & 0x0f) | (self.read & 0x0f);
+                    self.p1 |= 0x0f;
                 } else if self.p1 & 0x10 == 0x10 {
                     self.p1 |= self.read & 0x0f;
                 } else {

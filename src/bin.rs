@@ -52,6 +52,27 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
 
+    let mut controls : u8 = 0xff;
+
+    macro_rules! control_seq {
+        ( $event:path, $key:pat) => {
+            $event {
+                keycode: Some($key),
+                repeat: false,
+                ..
+            }
+        }
+    }
+    enum GBControl {
+        Right = 1 << 4,
+        Left = 1 << 5,
+        Up = 1 << 6,
+        Down = 1 << 7,
+        A = 1 << 0,
+        B = 1 << 1,
+        Select = 1 << 2,
+        Start = 1 << 3,
+    }
     'running: loop {
         // get the inputs here
         for event in event_pump.poll_iter() {
@@ -70,9 +91,23 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                     keycode: Some(Keycode::T),
                     repeat: false,
                     ..
-                } => {
-                    gb.toggle_trace()
-                }
+                } => gb.toggle_trace(),
+                control_seq!(Event::KeyDown, Keycode::Right) => {controls &= !(GBControl::Right as u8);},
+                control_seq!(Event::KeyDown, Keycode::Left) => {controls &= !(GBControl::Left as u8);},
+                control_seq!(Event::KeyDown, Keycode::Up) => {controls &= !(GBControl::Up as u8);},
+                control_seq!(Event::KeyDown, Keycode::Down) => {controls &= !(GBControl::Down as u8);},
+                control_seq!(Event::KeyDown, Keycode::Z) => {controls &= !(GBControl::B as u8);},
+                control_seq!(Event::KeyDown, Keycode::A) => {controls &= !(GBControl::A as u8);},
+                control_seq!(Event::KeyDown, Keycode::Tab) => {controls &= !(GBControl::Select as u8);},
+                control_seq!(Event::KeyDown, Keycode::Return) => {controls &= !(GBControl::Start as u8);},
+                control_seq!(Event::KeyUp, Keycode::Right) => {controls |= GBControl::Right as u8;},
+                control_seq!(Event::KeyUp, Keycode::Left) => {controls |= GBControl::Left as u8;},
+                control_seq!(Event::KeyUp, Keycode::Up) => {controls |= GBControl::Up as u8;},
+                control_seq!(Event::KeyUp, Keycode::Down) => {controls |= GBControl::Down as u8;},
+                control_seq!(Event::KeyUp, Keycode::Z) => {controls |= GBControl::B as u8;},
+                control_seq!(Event::KeyUp, Keycode::A) => {controls |= GBControl::A as u8;},
+                control_seq!(Event::KeyUp, Keycode::Tab) => {controls |= GBControl::Select as u8;},
+                control_seq!(Event::KeyUp, Keycode::Return) => {controls |= GBControl::Start as u8;},
                 Event::MouseButtonDown {
                     x: _,
                     y: _,
@@ -82,7 +117,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                 _ => {}
             }
         }
-
+        gb.set_controls(controls);
         if gb.step(1_000u64 / 60, &mut Some(&mut canvas)) {
             break 'running;
         }

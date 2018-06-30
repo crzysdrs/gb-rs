@@ -32,7 +32,7 @@ impl Peripheral for Timer {
     }
 
     fn step(&mut self, time: u64) -> Option<InterruptFlag> {
-        self.DIV.wrapping_add(Timer::compute_time(
+        self.DIV = self.DIV.wrapping_add(Timer::compute_time(
             time,
             &mut self.div_unused_cycles,
             TimerFlags::ICS_65536hz,
@@ -64,7 +64,7 @@ impl Timer {
         }
     }
     fn freq(&self) -> TimerFlags {
-        match self.TIMA & 0b11 {
+        match self.TAC & 0b11 {
             0b00 => TimerFlags::ICS_4096hz,
             0b01 => TimerFlags::ICS_262144hz,
             0b10 => TimerFlags::ICS_65536hz,
@@ -75,12 +75,11 @@ impl Timer {
 
     fn compute_time(time: u64, unused: &mut u64, freq: TimerFlags) -> u64 {
         *unused += time;
-        //Assumes 4MHZ clock.
         let div = match freq {
-            TimerFlags::ICS_4096hz => 128,
-            TimerFlags::ICS_262144hz => 2,
-            TimerFlags::ICS_65536hz => 8,
-            TimerFlags::ICS_16384hz => 32,
+            TimerFlags::ICS_4096hz => 256,
+            TimerFlags::ICS_262144hz => 4,
+            TimerFlags::ICS_65536hz => 16,
+            TimerFlags::ICS_16384hz => 64,
             _ => panic!("Invalid Clock divider frequency"),
         };
         let add = *unused / div;
