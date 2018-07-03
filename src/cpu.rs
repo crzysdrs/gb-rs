@@ -56,8 +56,8 @@ pub enum Cond {
     NC,
 }
 
-#[derive(Debug, PartialEq)]
-struct Registers {
+#[derive(Debug, PartialEq, Clone)]
+pub struct Registers {
     a: u8,
     f: u8,
     b: u8,
@@ -76,6 +76,7 @@ pub struct CPU {
     halted: bool,
     dead: bool,
     trace: bool,
+    magic_bp: bool,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -87,7 +88,7 @@ pub enum InterruptFlag {
     VBlank = 1 << 0,
 }
 
-trait RegType<Register>
+pub trait RegType<Register>
 where
     Self::Output: std::ops::Not<Output = Self::Output>
         + std::ops::BitAnd<Output = Self::Output>
@@ -233,7 +234,16 @@ impl CPU {
             halted: false,
             dead: false,
             trace,
+            magic_bp: false,
         }
+    }
+    #[cfg(test)]
+    pub fn magic_breakpoint(&mut self) {
+        self.magic_bp = true;
+    }
+    #[cfg(test)]
+    pub fn get_reg(&self) -> Registers {
+        self.reg.clone()
     }
     pub fn is_dead(&mut self, _mem: &mut MMU) -> bool {
         self.dead
@@ -569,6 +579,9 @@ impl CPU {
                 .reg
                 .write(x0, mem.read_byte(0xff00 + self.reg.read(x1) as u16)),
             Instr::LD_r8_r8(x0, x1) => {
+                if self.magic_bp && x0 == x1 && x0 == Reg8::B {
+                    self.dead = true;
+                }
                 self.reg.write(x0, self.reg.read(x1));
             }
             Instr::NOP => {}
@@ -886,7 +899,8 @@ mod tests {
 
     macro_rules! test_state {
         ($instr:expr, $reg:expr, $val:expr) => {
-            let mut mem = MMU::new(Vec::new(), None);
+            let cart = Cart::fake();
+            let mut mem = MMU::new(cart, None);
             let mut cpu = CPU::new(false);
             for i in $instr {
                 cpu.execute_instr(&mut mem, i)
@@ -897,6 +911,7 @@ mod tests {
 
     #[test]
     fn targeted() {
+        use cart::Cart;
         test_state!(
             vec![Instr::ADD_r8_d8(Reg8::A, 0x05), Instr::DAA],
             Reg8::A,

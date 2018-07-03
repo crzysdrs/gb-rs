@@ -7,6 +7,7 @@ use super::fakemem::FakeMem;
 use super::mem::Mem;
 use super::serial::Serial;
 use super::timer::Timer;
+use cart::Cart;
 use dma::DMA;
 use peripherals::Peripheral;
 
@@ -64,9 +65,8 @@ pub struct MMU<'a> {
     controller: Controller,
     dma: DMA,
     bios: Mem,
-    rom1: Mem,
+    cart: Cart,
     ram0: Mem,
-    swap_ram: Mem,
     fake_mem: FakeMem,
     serial: Serial<'a>,
     ram1: Mem,
@@ -99,11 +99,9 @@ impl<'a> MMU<'a> {
             Box::new(&mut self.controller as &mut Peripheral),
         ]
     }
-    pub fn new(rom: Vec<u8>, serial: Option<&mut Write>) -> MMU {
+    pub fn new(cart: Cart, serial: Option<&mut Write>) -> MMU {
         let bios = Mem::new(true, 0, include_bytes!("../boot_rom.gb").to_vec());
-        let rom1 = Mem::new(true, 0, rom);
         let ram0 = Mem::new(false, 0xc000, vec![0; 8 << 10]);
-        let swap_ram = Mem::new(false, 0xa000, vec![0; 8 << 10]);
         let ram1 = Mem::new(false, 0xff80, vec![0; 0xffff - 0xff80 + 1]);
         let ram2 = Mem::new(false, 0xfea0, vec![0; 0xff00 - 0xfea0 + 1]);
         let interrupt_flag = Mem::new(false, 0xff0f, vec![0; 1]);
@@ -111,13 +109,12 @@ impl<'a> MMU<'a> {
             seek_pos: 0,
             bios_exists: true,
             bios,
-            rom1,
+            cart,
             display: Display::new(),
             timer: Timer::new(),
             serial: Serial::new(serial),
             controller: Controller::new(),
             ram0,
-            swap_ram,
             fake_mem: FakeMem::new(),
             ram1,
             ram2,
@@ -139,11 +136,11 @@ impl<'a> MMU<'a> {
             0x0000...0x00ff => if self.bios_exists {
                 &mut self.bios as &mut Peripheral
             } else {
-                &mut self.rom1 as &mut Peripheral
+                &mut self.cart as &mut Peripheral
             },
-            0x0100...0x7FFF => &mut self.rom1 as &mut Peripheral,
+            0x0100...0x7FFF => &mut self.cart as &mut Peripheral,
             0x8000...0x9FFF => &mut self.display as &mut Peripheral,
-            0xA000...0xBFFF => &mut self.swap_ram as &mut Peripheral,
+            0xA000...0xBFFF => &mut self.cart as &mut Peripheral,
             0xC000...0xDFFF => &mut self.ram0 as &mut Peripheral,
             0xE000...0xFDFF => {
                 /* echo of ram0 */

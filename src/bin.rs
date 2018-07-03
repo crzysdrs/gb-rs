@@ -1,10 +1,10 @@
 extern crate clap;
 extern crate gb;
 extern crate sdl2;
+use gb::cart::Cart;
 use gb::gb::GB;
-use std::fs::File;
-
 use sdl2::pixels::Color;
+use std::fs::File;
 use std::io::Write;
 
 fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
@@ -52,7 +52,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
 
-    let mut controls : u8 = 0xff;
+    let mut controls: u8 = 0xff;
 
     macro_rules! control_seq {
         ( $event:path, $key:pat) => {
@@ -92,22 +92,54 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                     repeat: false,
                     ..
                 } => gb.toggle_trace(),
-                control_seq!(Event::KeyDown, Keycode::Right) => {controls &= !(GBControl::Right as u8);},
-                control_seq!(Event::KeyDown, Keycode::Left) => {controls &= !(GBControl::Left as u8);},
-                control_seq!(Event::KeyDown, Keycode::Up) => {controls &= !(GBControl::Up as u8);},
-                control_seq!(Event::KeyDown, Keycode::Down) => {controls &= !(GBControl::Down as u8);},
-                control_seq!(Event::KeyDown, Keycode::Z) => {controls &= !(GBControl::B as u8);},
-                control_seq!(Event::KeyDown, Keycode::A) => {controls &= !(GBControl::A as u8);},
-                control_seq!(Event::KeyDown, Keycode::Tab) => {controls &= !(GBControl::Select as u8);},
-                control_seq!(Event::KeyDown, Keycode::Return) => {controls &= !(GBControl::Start as u8);},
-                control_seq!(Event::KeyUp, Keycode::Right) => {controls |= GBControl::Right as u8;},
-                control_seq!(Event::KeyUp, Keycode::Left) => {controls |= GBControl::Left as u8;},
-                control_seq!(Event::KeyUp, Keycode::Up) => {controls |= GBControl::Up as u8;},
-                control_seq!(Event::KeyUp, Keycode::Down) => {controls |= GBControl::Down as u8;},
-                control_seq!(Event::KeyUp, Keycode::Z) => {controls |= GBControl::B as u8;},
-                control_seq!(Event::KeyUp, Keycode::A) => {controls |= GBControl::A as u8;},
-                control_seq!(Event::KeyUp, Keycode::Tab) => {controls |= GBControl::Select as u8;},
-                control_seq!(Event::KeyUp, Keycode::Return) => {controls |= GBControl::Start as u8;},
+                control_seq!(Event::KeyDown, Keycode::Right) => {
+                    controls &= !(GBControl::Right as u8);
+                }
+                control_seq!(Event::KeyDown, Keycode::Left) => {
+                    controls &= !(GBControl::Left as u8);
+                }
+                control_seq!(Event::KeyDown, Keycode::Up) => {
+                    controls &= !(GBControl::Up as u8);
+                }
+                control_seq!(Event::KeyDown, Keycode::Down) => {
+                    controls &= !(GBControl::Down as u8);
+                }
+                control_seq!(Event::KeyDown, Keycode::Z) => {
+                    controls &= !(GBControl::B as u8);
+                }
+                control_seq!(Event::KeyDown, Keycode::A) => {
+                    controls &= !(GBControl::A as u8);
+                }
+                control_seq!(Event::KeyDown, Keycode::Tab) => {
+                    controls &= !(GBControl::Select as u8);
+                }
+                control_seq!(Event::KeyDown, Keycode::Return) => {
+                    controls &= !(GBControl::Start as u8);
+                }
+                control_seq!(Event::KeyUp, Keycode::Right) => {
+                    controls |= GBControl::Right as u8;
+                }
+                control_seq!(Event::KeyUp, Keycode::Left) => {
+                    controls |= GBControl::Left as u8;
+                }
+                control_seq!(Event::KeyUp, Keycode::Up) => {
+                    controls |= GBControl::Up as u8;
+                }
+                control_seq!(Event::KeyUp, Keycode::Down) => {
+                    controls |= GBControl::Down as u8;
+                }
+                control_seq!(Event::KeyUp, Keycode::Z) => {
+                    controls |= GBControl::B as u8;
+                }
+                control_seq!(Event::KeyUp, Keycode::A) => {
+                    controls |= GBControl::A as u8;
+                }
+                control_seq!(Event::KeyUp, Keycode::Tab) => {
+                    controls |= GBControl::Select as u8;
+                }
+                control_seq!(Event::KeyUp, Keycode::Return) => {
+                    controls |= GBControl::Start as u8;
+                }
                 Event::MouseButtonDown {
                     x: _,
                     y: _,
@@ -169,6 +201,7 @@ fn main() -> Result<(), std::io::Error> {
 
     let rom = matches.value_of("ROM").unwrap();
     let rom_vec = std::fs::read(rom)?;
+    let cart = Cart::new(rom_vec);
 
     let mut serial: Box<Write> = matches.value_of("serial").map_or(
         Box::new(std::io::sink()),
@@ -179,7 +212,7 @@ fn main() -> Result<(), std::io::Error> {
     );
 
     let mut gb = GB::new(
-        rom_vec,
+        cart,
         Some(&mut *serial),
         matches.occurrences_of("trace") > 0,
     );

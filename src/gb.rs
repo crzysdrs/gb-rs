@@ -1,25 +1,36 @@
 use super::cpu::*;
 use super::mmu::*;
+use cart::Cart;
+#[cfg(test)]
+use cpu::Registers;
 use display::LCD;
 use dma::DMA;
-
 use std::io::Write;
+
 pub struct GB<'a> {
     cpu: CPU,
     mem: MMU<'a>,
-    cpu_cycles :u64,
+    cpu_cycles: u64,
 }
 
 impl<'a> GB<'a> {
-    pub fn new<'b>(rom: Vec<u8>, serial: Option<&'b mut Write>, trace: bool) -> GB<'b> {
+    pub fn new<'b>(cart: Cart, serial: Option<&'b mut Write>, trace: bool) -> GB<'b> {
         GB {
             cpu: CPU::new(trace),
-            mem: MMU::new(rom, serial),
+            mem: MMU::new(cart, serial),
             cpu_cycles: 0,
         }
     }
     pub fn toggle_trace(&mut self) {
         self.cpu.toggle_trace()
+    }
+    #[cfg(test)]
+    pub fn get_reg(&self) -> Registers {
+        self.cpu.get_reg()
+    }
+    #[cfg(test)]
+    pub fn magic_breakpoint(&mut self) {
+        self.cpu.magic_breakpoint();
     }
     fn update_interrupts(&mut self, cycles: u64) {
         let mut ps = self.mem.peripherals();
@@ -43,7 +54,7 @@ impl<'a> GB<'a> {
         real_dma.run(&mut self.mem);
         self.mem.swap_dma(real_dma);
     }
-    pub fn set_controls(&mut self, controls :u8) {
+    pub fn set_controls(&mut self, controls: u8) {
         self.mem.set_controls(controls);
     }
     pub fn step<C, P>(&mut self, time: u64, display: &mut Option<&mut LCD<C, P>>) -> bool
@@ -53,7 +64,9 @@ impl<'a> GB<'a> {
     {
         //time in ms
         let mut timeout_cycles = 0;
-        while time == 0 || timeout_cycles < 1_000_000 / 1_000 * time {
+        let cycles_per_ms = 1_000_000 / 1_000;
+        println!("Run Cycles: {}", cycles_per_ms * time);
+        while time == 0 || timeout_cycles < cycles_per_ms * time {
             let cycles: u64 = self.cpu.execute(&mut self.mem, self.cpu_cycles) as u64;
 
             self.update_interrupts(cycles);
