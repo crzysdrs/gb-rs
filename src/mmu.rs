@@ -71,6 +71,7 @@ pub struct MMU<'a> {
     serial: Serial<'a>,
     ram1: Mem,
     ram2: Mem,
+    sound: Mem,
     interrupt_flag: Mem,
 }
 
@@ -114,6 +115,7 @@ impl<'a> MMU<'a> {
             timer: Timer::new(),
             serial: Serial::new(serial),
             controller: Controller::new(),
+            sound: Mem::new(false, 0xff10, vec![0u8; 0xff3f - 0xff10 + 1]),
             ram0,
             fake_mem: FakeMem::new(),
             ram1,
@@ -158,6 +160,7 @@ impl<'a> MMU<'a> {
             //0xFF4C...0xFF7F =>  self.empty1[($addr - 0xFF4C) as usize],
             0xFF04..=0xFF07 => &mut self.timer as &mut Peripheral,
             0xff0f => &mut self.interrupt_flag as &mut Peripheral,
+            0xff10...0xFF3F => &mut self.sound as &mut Peripheral,
             0xff46 => &mut self.dma as &mut Peripheral,
             0xFF80...0xFFFF => &mut self.ram1 as &mut Peripheral,
             _ => &mut self.fake_mem as &mut Peripheral,

@@ -65,7 +65,6 @@ impl<'a> GB<'a> {
         //time in ms
         let mut timeout_cycles = 0;
         let cycles_per_ms = 1_000_000 / 1_000;
-        println!("Run Cycles: {}", cycles_per_ms * time);
         while time == 0 || timeout_cycles < cycles_per_ms * time {
             let cycles: u64 = self.cpu.execute(&mut self.mem, self.cpu_cycles) as u64;
 

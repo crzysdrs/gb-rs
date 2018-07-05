@@ -1,6 +1,7 @@
 #![feature(nll)]
 #![feature(extern_prelude)]
 #![cfg_attr(feature = "strict", deny(warnings))]
+#![feature(reverse_bits)]
 #[macro_use]
 extern crate enum_primitive;
 extern crate itertools;
@@ -151,12 +152,10 @@ mod tests {
                     )
                 };
                 let buf = buf.into_inner().unwrap();
+                let output = ::std::str::from_utf8(&buf).unwrap();
+                println!("{}", output);
+                assert_eq!(output, "TEST OK");
                 assert_eq!(finished, true);
-                for b in buf.iter() {
-                    print!("{:02x} ", b);
-                }
-                println!();
-                println!("{}", ::std::str::from_utf8(&buf).unwrap());
                 assert_eq!(reg.read(Reg8::B), 3);
                 assert_eq!(reg.read(Reg8::C), 5);
                 assert_eq!(reg.read(Reg8::D), 8);

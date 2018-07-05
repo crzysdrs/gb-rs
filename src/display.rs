@@ -24,11 +24,29 @@ enum StatFlag {
     PixelTransfer = 0b11,
 }
 
+enum LCDCFlag {
+    //BGDisplayPriority = 1 << 0,
+    //SpriteDisplayEnable = 1 << 1,
+    SpriteSize = 1 << 2,
+    BGTileMapSelect = 1 << 3,
+    BGWinTileDataSelect = 1 << 4,
+    //WindowEnable = 1 << 5,
+    //WindowTileMapDisplaySelect = 1 << 6,
+    //LCDDisplayEnable = 1 << 7,
+}
+
+enum OAMFlag {
+    PaletteNumber = 1 << 4,
+    FlipX = 1 << 5,
+    FlipY = 1 << 6,
+    Priority = 1 << 7,
+}
+
 #[derive(Copy, Clone)]
-struct SpriteAttribute {
+pub struct SpriteAttribute {
     y: u8,
     x: u8,
-    pattern: u8,
+    pattern: SpriteIdx,
     flags: u8,
 }
 
@@ -84,7 +102,7 @@ impl Display {
                 x: 0,
                 y: 0,
                 flags: 0,
-                pattern: 0,
+                pattern: SpriteIdx(0),
             }; 40],
             oam_searched: Vec::with_capacity(10),
             scx: 0,
@@ -104,6 +122,14 @@ impl Display {
             unused_cycles: 0,
         }
     }
+    pub fn oam_lookup(&self, idx: OAMIdx) -> Option<&SpriteAttribute> {
+        let idx = idx.0 as usize;
+        if idx > self.oam.len() {
+            None
+        } else {
+            Some(&self.oam[idx])
+        }
+    }
     pub fn render<C: From<(u8, u8, u8, u8)>, P: From<(i32, i32)>>(
         &mut self,
         lcd: &mut Option<&mut LCD<C, P>>,
@@ -118,84 +144,77 @@ impl Display {
         }
         self.rendered.clear();
     }
+    fn sprite_size(&self) -> u8 {
+        if self.lcdc & mask_u8!(LCDCFlag::SpriteSize) == 0 {
+            8
+        } else {
+            16
+        }
+    }
     fn oam_search(&mut self) {
-        let (idxs, _): (Vec<usize>, Vec<&SpriteAttribute>) = self
-            .oam
-            .iter()
-            .enumerate()
-            .filter(
-                /* ignored invisible sprites */
-                |(_i, oam)| oam.y != 0 && oam.y < 144 + 16,
-            )
-            .filter(
-                /* filter only items in this row */
-                |(_i, oam)| self.ly + 16 >= oam.y && self.ly + 16 - oam.y <= 8, //TODO: Should be 16 in Tall Sprite Mode
-            )
-            .sorted_by_key(|(_i, oam)| oam.x)
-            .into_iter()
-            .take(10)
-            .unzip();
+        let (idxs, _): (Vec<usize>, Vec<&SpriteAttribute>) =
+            self.oam
+                .iter()
+                .enumerate()
+                .filter(
+                    /* ignored invisible sprites */
+                    |(_i, oam)| oam.y != 0 && oam.y < 144 + 16,
+                )
+                .filter(/* filter only items in this row */ |(_i, oam)| {
+                    self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size()
+                })
+                .sorted_by_key(|(_i, oam)| oam.x)
+                .into_iter()
+                .take(10)
+                .unzip();
         self.oam_searched = idxs;
     }
 
     fn get_bg_true(&self, x: u8, y: u8) -> (u8, u8) {
-        let true_x = self.wx.wrapping_add(x.wrapping_add(self.scx) % 160);
-        let true_y = self.wy.wrapping_add(y.wrapping_add(self.scy) % 144);
+        let true_x = self.scx.wrapping_add(x);
+        let true_y = self.scy.wrapping_add(y);
         (true_x, true_y)
     }
-    fn get_screen_bg_tile(&self, x: u8, y: u8) -> u8 {
+    fn get_screen_bg_tile(&self, x: u8, y: u8) -> Tile {
         let (true_x, true_y) = self.get_bg_true(x, y);
         let tile_x = true_x / 8;
         let tile_y = true_y / 8;
-
-        self.get_bg_tile(tile_x, tile_y)
+        Tile::BG(self.get_bg_tile(tile_x, tile_y), Coord(0, true_y % 8))
     }
 
-    fn get_bg_tile(&self, true_x: u8, true_y: u8) -> u8 {
-        let bg_map = if self.lcdc & (1 << 3) == 0 {
+    fn get_bg_tile(&self, true_x: u8, true_y: u8) -> BGIdx {
+        let bg_map = if self.lcdc & mask_u8!(LCDCFlag::BGTileMapSelect) == 0 {
             0x1800
         } else {
             0x1C00
         };
         let idx = bg_map + true_y as u16 * 32 + true_x as u16;
-        self.vram[idx as usize]
+        BGIdx(self.vram[idx as usize])
     }
-    fn tile_color(&self, tile_idx: u8, y_offset: u8, pt: PixelType) -> (u16, PixelType) {
-        let start = match pt {
-            PixelType::BG => {
-                (if self.lcdc & (1 << 4) == 0 { 0x800 } else { 0 }) + tile_idx as u16 * 16
-            }
-            PixelType::Sprite => tile_idx as u16 * 16,
-        };
-        (self.line_color(start, y_offset), pt)
-    }
-    fn line_color(&self, start: u16, y_offset: u8) -> u16 {
-        let start = start as usize;
-        let y_offset = y_offset as usize;
-        (self.vram[start + (y_offset * 2)] as u16) << 8
-            | self.vram[start + (y_offset * 2) + 1] as u16
-    }
+
     pub fn dump(&mut self) {
         println!("BG Tile Map");
         for y in 0..32 {
             for x in 0..32 {
-                print!("{:02x} ", self.get_bg_tile(x, y));
+                let bgidx = self.get_bg_tile(x, y);
+                print!("{:02x} ", bgidx.0);
             }
             println!("");
         }
 
         for t in 0..=0x20 {
             println!("Tile {}", t);
+            let idx = BGIdx(t);
             let mut ppu = PPU::new();
             for y in 0..8 {
-                let line = self.tile_color(t, y, PixelType::BG);
-                ppu.load_line(line);
+                let t = Tile::BG(idx, Coord(0, y));
+                ppu.load(&t, t.fetch(self));
                 for _x in 0..8 {
                     let c = match ppu.shift() {
-                        Palette::Empty => 0,
-                        Palette::Low(_) => 1,
-                        Palette::Mid(_) => 2,
-                        Palette::High(_) => 3,
+                        Pixel(_, PaletteShade::Empty) => 0,
+                        Pixel(_, PaletteShade::Low) => 1,
+                        Pixel(_, PaletteShade::Mid) => 2,
+                        Pixel(_, PaletteShade::High) => 3,
                     };
                     print!("{} ", c)
                 }
@@ -215,7 +234,7 @@ impl Display {
                 match addr & 0b11 {
                     0b00 => &mut oam.y,
                     0b01 => &mut oam.x,
-                    0b10 => &mut oam.pattern,
+                    0b10 => &mut oam.pattern.0,
                     0b11 => &mut oam.flags,
                     _ => panic!("invalid oam access"),
                 }
@@ -235,38 +254,161 @@ impl Display {
         }
     }
 
-    fn bgp_shade(&self, shade_id: u8) -> (u8, u8, u8, u8) {
+    fn bgp_shade(&self, p: Pixel) -> (u8, u8, u8, u8) {
         let white = (0xff, 0xff, 0xff, 0xff);
-        let dark_grey = (0xD3, 0xD3, 0xD3, 0xff);
-        let light_grey = (0x80, 0x80, 0x80, 0xff);
+        let dark_grey = (0xaa, 0xaa, 0xaa, 0xff);
+        let light_grey = (0x55, 0x55, 0x55, 0xff);
         let black = (0x00, 0x00, 0x00, 0xff);
-
-        match (self.bgp >> (shade_id * 2)) & 0b11 {
+        let pal = match p {
+            Pixel(Palette::BG, _) => self.bgp,
+            Pixel(Palette::OBP0, _) => self.obp0,
+            Pixel(Palette::OBP1, _) => self.obp1,
+        };
+        let shade_id = match p {
+            Pixel(_, PaletteShade::High) => 3,
+            Pixel(_, PaletteShade::Mid) => 2,
+            Pixel(_, PaletteShade::Low) => 1,
+            Pixel(_, PaletteShade::Empty) => 0,
+        };
+        match (pal >> (shade_id * 2)) & 0b11 {
             0b00 => white,
-            0b01 => light_grey,
-            0b10 => dark_grey,
+            0b01 => dark_grey,
+            0b10 => light_grey,
             0b11 => black,
             _ => panic!("shade out of bounds"),
         }
     }
+
+    fn add_oams<T: Iterator<Item = usize>>(
+        &mut self,
+        oams: &mut std::iter::Peekable<T>,
+        x: u8,
+        y: u8,
+    ) {
+        'oams_done: while oams.peek().is_some() {
+            if let Some(cur) = oams.peek() {
+                if self.oam[*cur].x == x {
+                    let t = Tile::Sprite(OAMIdx(*cur as u8), Coord(0, y + 16 - self.oam[*cur].y));
+                    let l = t.fetch(self);
+                    self.ppu.load(&t, l);
+                } else {
+                    break 'oams_done;
+                }
+            }
+            oams.next();
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+struct SpriteIdx(u8);
+#[derive(Copy, Clone)]
+struct BGIdx(u8);
+#[derive(Copy, Clone)]
+struct TileIdx(u8);
+#[derive(Copy, Clone)]
+pub struct OAMIdx(u8);
+#[derive(Copy, Clone)]
+struct Coord(u8, u8);
+
+impl Coord {
+    // fn x(&self) -> u8 {
+    //     self.0
+    // }
+    fn y(&self) -> u8 {
+        self.1
+    }
+}
+
+enum Tile {
+    BG(BGIdx, Coord),
+    Sprite(OAMIdx, Coord),
+}
+
+impl Tile {
+    pub fn fetch(&self, display: &mut Display) -> (bool, Palette, u16) {
+        let (start, line_offset) = match *self {
+            Tile::BG(idx, coord) => {
+                let bytes_per_tile = 16;
+                let start = if display.lcdc & mask_u8!(LCDCFlag::BGWinTileDataSelect) == 0 {
+                    /* signed tile idx */
+                    (0x1000 + idx.0 as i8 as i16 * bytes_per_tile) as u16
+                } else {
+                    /*unsigned tile_idx */
+                    0 + idx.0 as u16 * bytes_per_tile as u16
+                };
+                (start as usize, (coord.y() % 8) as usize)
+            }
+            Tile::Sprite(oamidx, coord) => {
+                let bytes_per_line = 2;
+                let attrib = display
+                    .oam_lookup(oamidx)
+                    .expect("Only valid OAM addresses");
+                let idx = attrib.pattern;
+                let start = idx.0 as u16 * bytes_per_line * display.sprite_size() as u16;
+                let y = if attrib.flags & mask_u8!(OAMFlag::FlipY) != 0 {
+                    display.sprite_size() - coord.y()
+                } else {
+                    coord.y()
+                };
+                (start as usize, y as usize)
+            }
+        };
+
+        let b1 = display.vram[start + (line_offset * 2)];
+        let b2 = display.vram[start + (line_offset * 2) + 1];
+
+        let line = match *self {
+            Tile::Sprite(oamidx, _) => {
+                let attrib = display
+                    .oam_lookup(oamidx)
+                    .expect("Only valid OAM addresses");
+                if attrib.flags & mask_u8!(OAMFlag::FlipX) != 0 {
+                    u16::from_bytes([b1.reverse_bits(), b2.reverse_bits()])
+                } else {
+                    u16::from_bytes([b1, b2])
+                }
+            }
+            _ => u16::from_bytes([b1, b2]),
+        };
+
+        let (priority, palette) = match *self {
+            Tile::Sprite(oamidx, _) => {
+                let attrib = display
+                    .oam_lookup(oamidx)
+                    .expect("Only valid OAM addresses");
+                let priority = attrib.flags & mask_u8!(OAMFlag::Priority) == 0;
+                let palette = if attrib.flags & mask_u8!(OAMFlag::PaletteNumber) == 0 {
+                    Palette::OBP0
+                } else {
+                    Palette::OBP1
+                };
+                (priority, palette)
+            }
+            Tile::BG(_, _) => (false, Palette::BG),
+        };
+        (priority, palette, line)
+    }
 }
 
 #[derive(PartialEq, Copy, Clone)]
-enum PixelType {
+enum PaletteShade {
+    Empty,
+    Low,
+    Mid,
+    High,
+}
+#[derive(Copy, Clone)]
+enum Palette {
     BG,
-    Sprite,
+    OBP0,
+    OBP1,
 }
 
-#[derive(PartialEq)]
-enum Palette {
-    Empty,
-    Low(PixelType),
-    Mid(PixelType),
-    High(PixelType),
-}
+struct Pixel(Palette, PaletteShade);
 
 struct PPU {
-    shift: VecDeque<Palette>,
+    shift: VecDeque<Pixel>,
 }
 
 impl PPU {
@@ -275,37 +417,37 @@ impl PPU {
             shift: VecDeque::with_capacity(16),
         }
     }
-    fn load_line(&mut self, (mut line, typ): (u16, PixelType)) {
+    fn load(&mut self, _t: &Tile, (priority, palette, mut line): (bool, Palette, u16)) {
         for x in 0..8 {
             let p = match (line & 0x8000 != 0, line & 0x80 != 0) {
-                (true, true) => Palette::High(typ),
-                (true, false) => Palette::Mid(typ),
-                (false, true) => Palette::Low(typ),
-                (false, false) => Palette::Empty,
+                (true, true) => PaletteShade::High,
+                (true, false) => PaletteShade::Mid,
+                (false, true) => PaletteShade::Low,
+                (false, false) => PaletteShade::Empty,
             };
 
-            match typ {
-                PixelType::Sprite => {
-                    if p != Palette::Empty {
+            match palette {
+                Palette::OBP1 | Palette::OBP0 => {
+                    if p != PaletteShade::Empty {
                         match self.shift[x] {
-                            Palette::High(PixelType::BG)
-                            | Palette::Mid(PixelType::BG)
-                            | Palette::Low(PixelType::BG)
-                            | Palette::Empty => {
-                                self.shift[x] = p;
+                            Pixel(Palette::BG, _) if priority => {
+                                self.shift[x] = Pixel(palette, p);
+                            }
+                            Pixel(Palette::BG, PaletteShade::Empty) => {
+                                self.shift[x] = Pixel(palette, p);
                             }
                             _ => { /* existing non-background data */ }
                         }
                     }
                 }
-                PixelType::BG => {
-                    self.shift.push_back(p);
+                Palette::BG => {
+                    self.shift.push_back(Pixel(palette, p));
                 }
             }
             line <<= 1;
         }
     }
-    fn shift(&mut self) -> Palette {
+    fn shift(&mut self) -> Pixel {
         self.shift.pop_front().unwrap()
     }
     fn need_data(&self) -> bool {
@@ -343,46 +485,41 @@ impl Peripheral for Display {
                     let oams = orig_oams.drain(..);
                     let mut oams = oams.peekable();
 
-                    let (_, true_y) = self.get_bg_true(0, self.ly);
-                    self.ppu.load_line((0, PixelType::BG));
-                    for x in 0..(160 / 8) + 1 {
-                        self.ppu.load_line(self.tile_color(
-                            self.get_screen_bg_tile(x * 8, self.ly),
-                            true_y % 8,
-                            PixelType::BG,
-                        ));
-                        assert_eq!(self.ppu.need_data(), false);
-                        for sub_x in 0..8 {
-                            'oams_done: while oams.peek().is_some() {
-                                if let Some(cur) = oams.peek() {
-                                    if self.oam[*cur].x == x * 8 + sub_x {
-                                        self.ppu.load_line(self.tile_color(
-                                            self.oam[*cur].pattern,
-                                            self.ly + 16 - self.oam[*cur].y,
-                                            PixelType::Sprite,
-                                        ));
-                                    } else {
-                                        break 'oams_done;
-                                    }
-                                }
-                                oams.next();
-                            }
-                            if x == 0 {
-                                self.ppu.shift();
-                            } else {
-                                let color: (u8, u8, u8, u8) = match self.ppu.shift() {
-                                    Palette::Empty => self.bgp_shade(0),
-                                    Palette::Low(_) => self.bgp_shade(1),
-                                    Palette::Mid(_) => self.bgp_shade(2),
-                                    Palette::High(_) => self.bgp_shade(3),
-                                };
-                                self.rendered
-                                    .push((color, ((x * 8 + sub_x - 8) as i32, self.ly as i32)));
-                                //println!("{:?}", self.rendered[self.rendered.len() - 1])
-                            }
+                    let (true_x, _true_y) = self.get_bg_true(0, self.ly);
+
+                    /* offscreen pixels */
+                    let fake = Tile::BG(BGIdx(0), Coord(0, 0));
+                    let l = fake.fetch(self);
+                    self.ppu.load(&fake, l);
+
+                    // for x in 0..8 - true_x % 8 {
+                    //     self.ppu.shift();
+                    //     self.add_oams(&mut oams, x, self.ly);
+                    //}
+                    for _x in 0..(true_x % 8) {
+                        self.ppu.shift();
+                    }
+                    //assert_eq!(true_x % 8, 0);
+
+                    for x in 0..(160 + 8) {
+                        if self.ppu.need_data() {
+                            let t = self.get_screen_bg_tile(x, self.ly);
+                            let l = t.fetch(self);
+                            self.ppu.load(&t, l);
                         }
-                        assert_eq!(self.ppu.need_data(), true);
-                        //std::mem::replace(&mut orig_oams, self.oam_searched);
+                        assert_eq!(self.ppu.need_data(), false);
+                        self.add_oams(&mut oams, x, self.ly);
+
+                        if x >= 8 {
+                            let color: (u8, u8, u8, u8) = {
+                                let p = self.ppu.shift();
+                                self.bgp_shade(p)
+                            };
+                            self.rendered
+                                .push((color, (((x - 8) as i32, self.ly as i32))));
+                        } else {
+                            self.ppu.shift();
+                        }
                     }
                     self.ppu.clear();
                     self.unused_cycles -= 43;
