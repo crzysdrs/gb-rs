@@ -119,7 +119,7 @@ mod tests {
                         Some(&mut buf),
                         false,
                     );
-                    gb.step::<(u8, u8, u8, u8), (i32, i32)>(30 * 1000, &mut None);
+                    gb.step_timeout::<(u8, u8, u8, u8), (i32, i32)>(30 * 1000000, &mut None);
                 }
                 assert_eq!(
                     ::std::str::from_utf8(&buf.into_inner().unwrap()).unwrap(),
@@ -147,7 +147,7 @@ mod tests {
                     gb.magic_breakpoint();
 
                     (
-                        gb.step::<(u8, u8, u8, u8), (i32, i32)>(30 * 1000, &mut None),
+                        gb.step_timeout::<(u8, u8, u8, u8), (i32, i32)>(30 * 1000000, &mut None),
                         gb.get_reg(),
                     )
                 };
@@ -155,7 +155,7 @@ mod tests {
                 let output = ::std::str::from_utf8(&buf).unwrap();
                 println!("{}", output);
                 assert_eq!(output, "TEST OK");
-                assert_eq!(finished, true);
+                assert_eq!(finished, ::gb::GBReason::Dead);
                 assert_eq!(reg.read(Reg8::B), 3);
                 assert_eq!(reg.read(Reg8::C), 5);
                 assert_eq!(reg.read(Reg8::D), 8);

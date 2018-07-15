@@ -13,6 +13,13 @@ pub struct GB<'a> {
     cpu_cycles: u64,
 }
 
+#[derive(Debug,PartialEq)]
+pub enum GBReason {
+    Timeout,
+    VSync,
+    Dead,
+}
+
 impl<'a> GB<'a> {
     pub fn new<'b>(cart: Cart, serial: Option<&'b mut Write>, trace: bool) -> GB<'b> {
         GB {
@@ -32,20 +39,17 @@ impl<'a> GB<'a> {
     pub fn magic_breakpoint(&mut self) {
         self.cpu.magic_breakpoint();
     }
-    fn update_interrupts(&mut self, cycles: u64) {
-        let mut ps = self.mem.peripherals();
+    fn update_interrupts(&mut self, cycles: u64) -> u8 {
         let mut interrupt_flag = 0;
-        for p in ps.iter_mut() {
-            match p.step(cycles as u64) {
-                Some(i) => {
-                    interrupt_flag |= mask_u8!(i);
-                }
-                None => {}
+        self.mem.walk_peripherals(|p| match p.step(cycles as u64) {
+            Some(i) => {
+                interrupt_flag |= mask_u8!(i);
             }
-        }
-
+            None => {}
+        });
         let rhs = self.mem.read_byte(0xff0f) | interrupt_flag;
         self.mem.write_byte(0xff0f, rhs);
+        interrupt_flag
     }
 
     fn run_dma(&mut self) {
@@ -57,18 +61,36 @@ impl<'a> GB<'a> {
     pub fn set_controls(&mut self, controls: u8) {
         self.mem.set_controls(controls);
     }
-    pub fn step<C, P>(&mut self, time: u64, display: &mut Option<&mut LCD<C, P>>) -> bool
+
+    pub fn step_timeout<C, P>(
+        &mut self,
+        mut time: u64,
+        display: &mut Option<&mut LCD<C, P>>,
+    ) -> GBReason
     where
         P: std::convert::From<(i32, i32)>,
         C: std::convert::From<(u8, u8, u8, u8)>,
     {
-        //time in ms
+        loop {
+            let cycles = self.cpu_cycles;
+            match self.step(time, display) {
+                r @ GBReason::Dead | r @ GBReason::Timeout => return r,
+                _ => {}
+            }
+            time -= self.cpu_cycles - cycles;
+        }
+    }
+    pub fn step<C, P>(&mut self, time: u64, display: &mut Option<&mut LCD<C, P>>) -> GBReason
+    where
+        P: std::convert::From<(i32, i32)>,
+        C: std::convert::From<(u8, u8, u8, u8)>,
+    {
+        //time in us
         let mut timeout_cycles = 0;
-        let cycles_per_ms = 1_000_000 / 1_000;
-        while time == 0 || timeout_cycles < cycles_per_ms * time {
+        while time == 0 || timeout_cycles < time {
             let cycles: u64 = self.cpu.execute(&mut self.mem, self.cpu_cycles) as u64;
 
-            self.update_interrupts(cycles);
+            let new_interrupt = self.update_interrupts(cycles);
             if self.mem.dma_active() {
                 self.run_dma();
             }
@@ -77,11 +99,12 @@ impl<'a> GB<'a> {
             self.mem.get_display().render::<C, P>(display);
             if self.cpu.is_dead(&mut self.mem) {
                 /* cpu permanently halted */
-                break;
+                return GBReason::Dead;
+            } else if new_interrupt & mask_u8!(InterruptFlag::VBlank) != 0 {
+                return GBReason::VSync;
             }
         }
-        //self.mem.get_display().dump();
-        self.cpu.is_dead(&mut self.mem)
+        GBReason::Timeout
     }
     // #[cfg(test)]
     // pub fn run_instrs(&mut self, instrs: &[Instr]) {

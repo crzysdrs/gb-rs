@@ -91,14 +91,20 @@ impl<'a> MMU<'a> {
     pub fn swap_dma(&mut self, new_dma: DMA) -> DMA {
         std::mem::replace(&mut self.dma, new_dma)
     }
-    pub fn peripherals(&mut self) -> Vec<Box<&mut Peripheral>> {
-        vec![
-            Box::new(&mut self.bios as &mut Peripheral),
-            Box::new(&mut self.timer as &mut Peripheral),
-            Box::new(&mut self.display as &mut Peripheral),
-            Box::new(&mut self.serial as &mut Peripheral),
-            Box::new(&mut self.controller as &mut Peripheral),
-        ]
+    pub fn walk_peripherals<F>(&mut self, mut walk: F)
+    where
+        F: FnMut(&mut Peripheral) -> (),
+    {
+        let ps: &mut [&mut Peripheral] = &mut [
+            &mut self.bios as &mut Peripheral,
+            &mut self.timer as &mut Peripheral,
+            &mut self.display as &mut Peripheral,
+            &mut self.serial as &mut Peripheral,
+            &mut self.controller as &mut Peripheral,
+        ];
+        for p in ps.iter_mut() {
+            walk(*p)
+        }
     }
     pub fn new(cart: Cart, serial: Option<&mut Write>) -> MMU {
         let bios = Mem::new(true, 0, include_bytes!("../boot_rom.gb").to_vec());

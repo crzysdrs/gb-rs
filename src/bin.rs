@@ -2,7 +2,7 @@ extern crate clap;
 extern crate gb;
 extern crate sdl2;
 use gb::cart::Cart;
-use gb::gb::GB;
+use gb::gb::{GBReason, GB};
 use sdl2::pixels::Color;
 use std::fs::File;
 use std::io::Write;
@@ -23,6 +23,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
     let window = video_subsystem
         .window("rust-sdl2 demo: Game of Life", 160, 144)
         .position_centered()
+        .resizable()
         .build()
         .unwrap();
 
@@ -52,6 +53,10 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
 
+    let tc = canvas.texture_creator();
+    let mut texture = tc
+        .create_texture_target(tc.default_pixel_format(), 160, 144)
+        .unwrap();
     let mut controls: u8 = 0xff;
 
     macro_rules! control_seq {
@@ -150,11 +155,20 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
             }
         }
         gb.set_controls(controls);
-        if gb.step(1_000u64 / 60, &mut Some(&mut canvas)) {
-            break 'running;
+        match gb.step(17556, &mut Some(&mut texture)) {
+            GBReason::Timeout => {
+                //fps.delay();
+            }
+            GBReason::VSync => {
+                canvas.copy(&texture, None, None).unwrap();
+                canvas.present();
+                //let frames = fps.delay();
+                //println!("Frames: {}", frames);
+            }
+            GBReason::Dead => {
+                break 'running;
+            }
         }
-        canvas.present();
-        fps.delay();
     }
 
     Ok(())
@@ -218,7 +232,12 @@ fn main() -> Result<(), std::io::Error> {
     );
 
     if matches.occurrences_of("no-display") > 0 {
-        gb.step::<(u8, u8, u8, u8), (i32, i32)>(0, &mut None);
+        loop {
+            match gb.step::<(u8, u8, u8, u8), (i32, i32)>(0, &mut None) {
+                GBReason::Dead => break,
+                _ => {}
+            }
+        }
         Ok(())
     } else {
         sdl(&mut gb)

@@ -66,7 +66,7 @@ pub struct Display {
     wy: u8,
     wx: u8,
     ppu: PPU,
-    rendered: Vec<((u8, u8, u8, u8), (i32, i32))>,
+    rendered: Vec<u8>,
     unused_cycles: u64,
     state: DisplayState,
 }
@@ -74,25 +74,70 @@ pub struct Display {
 pub trait LCD<C, P> {
     fn draw_point(&mut self, c: C, point: P);
     fn screen_power(&mut self, on: bool);
+    fn draw_line(&mut self, start: P, c: &Vec<u8>);
 }
-
-impl<T> LCD<sdl2::pixels::Color, sdl2::rect::Point> for sdl2::render::Canvas<T>
-where
-    T: sdl2::render::RenderTarget,
-{
+impl<'a> LCD<sdl2::pixels::Color, sdl2::rect::Point> for sdl2::render::Texture<'a> {
+    fn draw_line(&mut self, start: sdl2::rect::Point, c: &Vec<u8>) {
+        if c.len() > 0 {
+            self.update(
+                Some(sdl2::rect::Rect::new(
+                    start.x,
+                    start.y,
+                    (c.len() / 4) as u32,
+                    1,
+                )),
+                c.as_ref(),
+                c.len(),
+            ).unwrap();
+        }
+    }
     fn draw_point(&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
-        self.set_draw_color(c);
-        self.draw_point(point).expect("Couldn't draw a point");
+        self.update(
+            Some(sdl2::rect::Rect::new(point.x, point.y, 1, 1)),
+            &[c.r, c.g, c.b, c.a],
+            4,
+        ).unwrap();
     }
     fn screen_power(&mut self, on: bool) {
-        if on {
-            self.set_draw_color(sdl2::pixels::Color::RGB(0xff, 0xff, 0xff));
-        } else {
-            self.set_draw_color(sdl2::pixels::Color::RGB(0, 0, 0));
-        }
-        self.clear();
+        let c: u8 = if on { 0xff } else { 0 };
+
+        self.update(
+            Some(sdl2::rect::Rect::new(0, 0, 160, 144)),
+            &[c; 160 * 144 * 4],
+            4,
+        ).unwrap();
     }
 }
+// impl<T> LCD<sdl2::pixels::Color, sdl2::rect::Point> for sdl2::render::Canvas<T>
+// where
+//     T: sdl2::render::RenderTarget
+// {
+//     fn draw_point(&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
+//         self.set_draw_color(c);
+//         self.draw_point(point).expect("Couldn't draw a point");
+//     }
+//     // fn draw_line(&mut self, start : sdl2::rect::Point, c: Vec<sdl2::pixels::Color>) {
+//     //     let tc = self.texture_creator();
+//     //     let tex = tc.create_texture(Some(sdl2::pixels::PixelFormatEnum::RGB888),
+//     //                                 sdl2::render::TextureAccess::Target,
+//     //                                 c.len(),
+//     //                                 1).unwrap();
+//     //     let bytes =
+//     //         c.iter().map(|c| vec![c.r, c.g, c.b])
+//     //         .flatten()
+//     //         .collect();
+//     //     tex.update(None, bytes.as_ref(), bytes.len());
+
+//     // }
+//     fn screen_power(&mut self, on: bool) {
+//         if on {
+//             self.set_draw_color(sdl2::pixels::Color::RGB(0xff, 0xff, 0xff));
+//         } else {
+//             self.set_draw_color(sdl2::pixels::Color::RGB(0, 0, 0));
+//         }
+//         self.clear();
+//     }
+// }
 
 impl Display {
     pub fn new() -> Display {
@@ -137,10 +182,7 @@ impl Display {
         if self.state == DisplayState::Off || lcd.is_none() {
             /* no display */
         } else if let Some(lcd) = lcd {
-            for (c, p) in self.rendered.drain(..) {
-                //println!("Drawing Point {:?} {:?}", c, p);
-                lcd.draw_point(c.into(), p.into());
-            }
+            lcd.draw_line((0, self.ly as i32).into(), &mut self.rendered);
         }
         self.rendered.clear();
     }
@@ -152,18 +194,19 @@ impl Display {
         }
     }
     fn oam_search(&mut self) {
-        let oams: Vec<SpriteAttribute> =
-            self.oam
-                .iter()
-                .filter(
-                    /* ignored invisible sprites */
-                    |oam| oam.y != 0 && oam.y < 144 + 16,
-                )
-                .filter(/* filter only items in this row */ |oam| {
-                    self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size()
-                })
-                .sorted_by_key(|oam| oam.x)
-                .into_iter()
+        let oams: Vec<SpriteAttribute> = self
+            .oam
+            .iter()
+            .filter(
+                /* ignored invisible sprites */
+                |oam| oam.y != 0 && oam.y < 144 + 16,
+            )
+            .filter(
+                /* filter only items in this row */
+                |oam| self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size(),
+            )
+            .sorted_by_key(|oam| oam.x)
+            .into_iter()
             .take(10)
             .map(|x| *x)
             .collect();
@@ -411,13 +454,17 @@ impl PPU {
             shift: VecDeque::with_capacity(16),
         }
     }
-    fn load(&mut self, _t: &Tile, (priority, palette, mut line): (bool, Palette, u16)) {
+    fn load(&mut self, _t: &Tile, (priority, palette, line): (bool, Palette, u16)) {
         for x in 0..8 {
-            let p = match (line & 0x8000 != 0, line & 0x80 != 0) {
-                (true, true) => PaletteShade::High,
-                (true, false) => PaletteShade::Mid,
-                (false, true) => PaletteShade::Low,
-                (false, false) => PaletteShade::Empty,
+            let hi = 0x8000;
+            let lo = 0x0080;
+            let mask = hi | lo;
+            let p = match (line << x) & mask {
+                0x8080 => PaletteShade::High,
+                0x8000 => PaletteShade::Mid,
+                0x0080 => PaletteShade::Low,
+                0x0000 => PaletteShade::Empty,
+                _ => unreachable!(),
             };
 
             match palette {
@@ -438,7 +485,6 @@ impl PPU {
                     self.shift.push_back(Pixel(palette, p));
                 }
             }
-            line <<= 1;
         }
     }
     fn shift(&mut self) -> Pixel {
@@ -476,47 +522,49 @@ impl Peripheral for Display {
                     /* do work */
                     let mut orig_oams =
                         std::mem::replace(&mut self.oam_searched, Vec::with_capacity(0));
-                    let oams = orig_oams.drain(..);
-                    let mut oams = oams.peekable();
+                    {
+                        let oams = orig_oams.drain(..);
+                        let mut oams = oams.peekable();
 
-                    let (true_x, _true_y) = self.get_bg_true(0, self.ly);
+                        let (true_x, _true_y) = self.get_bg_true(0, self.ly);
 
-                    /* offscreen pixels */
-                    let fake = Tile::BG(BGIdx(0), Coord(0, 0));
-                    let l = fake.fetch(self);
-                    self.ppu.load(&fake, l);
+                        /* offscreen pixels */
+                        let fake = Tile::BG(BGIdx(0), Coord(0, 0));
+                        let l = fake.fetch(self);
+                        self.ppu.load(&fake, l);
 
-                    // for x in 0..8 - true_x % 8 {
-                    //     self.ppu.shift();
-                    //     self.add_oams(&mut oams, x, self.ly);
-                    //}
-                    for _x in 0..(true_x % 8) {
-                        self.ppu.shift();
-                    }
-                    //assert_eq!(true_x % 8, 0);
-
-                    for x in 0..(160 + 8) {
-                        if self.ppu.need_data() {
-                            let t = self.get_screen_bg_tile(x, self.ly);
-                            let l = t.fetch(self);
-                            self.ppu.load(&t, l);
-                        }
-                        assert_eq!(self.ppu.need_data(), false);
-                        self.add_oams(&mut oams, x, self.ly);
-
-                        if x >= 8 {
-                            let color: (u8, u8, u8, u8) = {
-                                let p = self.ppu.shift();
-                                self.bgp_shade(p)
-                            };
-                            self.rendered
-                                .push((color, (((x - 8) as i32, self.ly as i32))));
-                        } else {
+                        // for x in 0..8 - true_x % 8 {
+                        //     self.ppu.shift();
+                        //     self.add_oams(&mut oams, x, self.ly);
+                        //}
+                        for _x in 0..(true_x % 8) {
                             self.ppu.shift();
                         }
+                        //assert_eq!(true_x % 8, 0);
+
+                        for x in 0..(160 + 8) {
+                            if self.ppu.need_data() {
+                                let t = self.get_screen_bg_tile(x, self.ly);
+                                let l = t.fetch(self);
+                                self.ppu.load(&t, l);
+                            }
+                            assert_eq!(self.ppu.need_data(), false);
+                            self.add_oams(&mut oams, x, self.ly);
+
+                            if x >= 8 {
+                                let c: (u8, u8, u8, u8) = {
+                                    let p = self.ppu.shift();
+                                    self.bgp_shade(p)
+                                };
+                                self.rendered.extend(&[c.0, c.1, c.2, c.3]);
+                            } else {
+                                self.ppu.shift();
+                            }
+                        }
+                        self.ppu.clear();
+                        self.unused_cycles -= 43;
                     }
-                    self.ppu.clear();
-                    self.unused_cycles -= 43;
+                    std::mem::replace(&mut self.oam_searched, orig_oams);
                     DisplayState::HBlank
                 } else {
                     self.state
