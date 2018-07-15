@@ -53,7 +53,7 @@ pub struct SpriteAttribute {
 pub struct Display {
     vram: [u8; 8 << 10],
     oam: [SpriteAttribute; 40],
-    oam_searched: Vec<usize>,
+    oam_searched: Vec<SpriteAttribute>,
     scx: u8,
     scy: u8,
     lcdc: u8,
@@ -152,22 +152,22 @@ impl Display {
         }
     }
     fn oam_search(&mut self) {
-        let (idxs, _): (Vec<usize>, Vec<&SpriteAttribute>) =
+        let oams: Vec<SpriteAttribute> =
             self.oam
                 .iter()
-                .enumerate()
                 .filter(
                     /* ignored invisible sprites */
-                    |(_i, oam)| oam.y != 0 && oam.y < 144 + 16,
+                    |oam| oam.y != 0 && oam.y < 144 + 16,
                 )
-                .filter(/* filter only items in this row */ |(_i, oam)| {
+                .filter(/* filter only items in this row */ |oam| {
                     self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size()
                 })
-                .sorted_by_key(|(_i, oam)| oam.x)
+                .sorted_by_key(|oam| oam.x)
                 .into_iter()
-                .take(10)
-                .unzip();
-        self.oam_searched = idxs;
+            .take(10)
+            .map(|x| *x)
+            .collect();
+        self.oam_searched = oams;
     }
 
     fn get_bg_true(&self, x: u8, y: u8) -> (u8, u8) {
@@ -279,23 +279,26 @@ impl Display {
         }
     }
 
-    fn add_oams<T: Iterator<Item = usize>>(
+    fn add_oams<T: Iterator<Item = SpriteAttribute>>(
         &mut self,
         oams: &mut std::iter::Peekable<T>,
         x: u8,
         y: u8,
     ) {
         'oams_done: while oams.peek().is_some() {
-            if let Some(cur) = oams.peek() {
-                if self.oam[*cur].x == x {
-                    let t = Tile::Sprite(OAMIdx(*cur as u8), Coord(0, y + 16 - self.oam[*cur].y));
-                    let l = t.fetch(self);
-                    self.ppu.load(&t, l);
-                } else {
-                    break 'oams_done;
-                }
+            let use_oam = if let Some(cur) = oams.peek() {
+                cur.x == x
+            } else {
+                false
+            };
+            if !use_oam {
+                break 'oams_done;
             }
-            oams.next();
+
+            let oam = oams.next().unwrap();
+            let t = Tile::Sprite(oam, Coord(0, y + 16 - oam.y));
+            let l = t.fetch(self);
+            self.ppu.load(&t, l);
         }
     }
 }
@@ -322,7 +325,7 @@ impl Coord {
 
 enum Tile {
     BG(BGIdx, Coord),
-    Sprite(OAMIdx, Coord),
+    Sprite(SpriteAttribute, Coord),
 }
 
 impl Tile {
@@ -339,14 +342,11 @@ impl Tile {
                 };
                 (start as usize, (coord.y() % 8) as usize)
             }
-            Tile::Sprite(oamidx, coord) => {
+            Tile::Sprite(oam, coord) => {
                 let bytes_per_line = 2;
-                let attrib = display
-                    .oam_lookup(oamidx)
-                    .expect("Only valid OAM addresses");
-                let idx = attrib.pattern;
+                let idx = oam.pattern;
                 let start = idx.0 as u16 * bytes_per_line * display.sprite_size() as u16;
-                let y = if attrib.flags & mask_u8!(OAMFlag::FlipY) != 0 {
+                let y = if oam.flags & mask_u8!(OAMFlag::FlipY) != 0 {
                     display.sprite_size() - coord.y()
                 } else {
                     coord.y()
@@ -359,11 +359,8 @@ impl Tile {
         let b2 = display.vram[start + (line_offset * 2) + 1];
 
         let line = match *self {
-            Tile::Sprite(oamidx, _) => {
-                let attrib = display
-                    .oam_lookup(oamidx)
-                    .expect("Only valid OAM addresses");
-                if attrib.flags & mask_u8!(OAMFlag::FlipX) != 0 {
+            Tile::Sprite(oam, _) => {
+                if oam.flags & mask_u8!(OAMFlag::FlipX) != 0 {
                     u16::from_bytes([b1.reverse_bits(), b2.reverse_bits()])
                 } else {
                     u16::from_bytes([b1, b2])
@@ -373,12 +370,9 @@ impl Tile {
         };
 
         let (priority, palette) = match *self {
-            Tile::Sprite(oamidx, _) => {
-                let attrib = display
-                    .oam_lookup(oamidx)
-                    .expect("Only valid OAM addresses");
-                let priority = attrib.flags & mask_u8!(OAMFlag::Priority) == 0;
-                let palette = if attrib.flags & mask_u8!(OAMFlag::PaletteNumber) == 0 {
+            Tile::Sprite(oam, _) => {
+                let priority = oam.flags & mask_u8!(OAMFlag::Priority) == 0;
+                let palette = if oam.flags & mask_u8!(OAMFlag::PaletteNumber) == 0 {
                     Palette::OBP0
                 } else {
                     Palette::OBP1
