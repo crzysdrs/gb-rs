@@ -355,5 +355,9 @@ mod tests {
         "../blarg/cpu_instrs/11-op_a,(hl).gb",
         "11-op_a,(hl)"
     );
-
+    blarg_test!(
+        blarg_cpu_instr_timing,
+        "../blarg/instr_timing/instr_timing.gb",
+        "instr_timing"
+    );
 }

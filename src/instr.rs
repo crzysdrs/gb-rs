@@ -2076,7 +2076,7 @@ static OPCODES: [OpCode; 512] = [
     OpCode {
         mnemonic: "BIT",
         size: 2,
-        cycles: 4,
+        cycles: 3,
         cycles_branch: None,
     },
     OpCode {
@@ -2124,7 +2124,7 @@ static OPCODES: [OpCode; 512] = [
     OpCode {
         mnemonic: "BIT",
         size: 2,
-        cycles: 4,
+        cycles: 3,
         cycles_branch: None,
     },
     OpCode {
@@ -2172,7 +2172,7 @@ static OPCODES: [OpCode; 512] = [
     OpCode {
         mnemonic: "BIT",
         size: 2,
-        cycles: 4,
+        cycles: 3,
         cycles_branch: None,
     },
     OpCode {
@@ -2220,7 +2220,7 @@ static OPCODES: [OpCode; 512] = [
     OpCode {
         mnemonic: "BIT",
         size: 2,
-        cycles: 4,
+        cycles: 3,
         cycles_branch: None,
     },
     OpCode {
@@ -2268,7 +2268,7 @@ static OPCODES: [OpCode; 512] = [
     OpCode {
         mnemonic: "BIT",
         size: 2,
-        cycles: 4,
+        cycles: 3,
         cycles_branch: None,
     },
     OpCode {
@@ -2316,7 +2316,7 @@ static OPCODES: [OpCode; 512] = [
     OpCode {
         mnemonic: "BIT",
         size: 2,
-        cycles: 4,
+        cycles: 3,
         cycles_branch: None,
     },
     OpCode {
@@ -2364,7 +2364,7 @@ static OPCODES: [OpCode; 512] = [
     OpCode {
         mnemonic: "BIT",
         size: 2,
-        cycles: 4,
+        cycles: 3,
         cycles_branch: None,
     },
     OpCode {
@@ -2412,7 +2412,7 @@ static OPCODES: [OpCode; 512] = [
     OpCode {
         mnemonic: "BIT",
         size: 2,
-        cycles: 4,
+        cycles: 3,
         cycles_branch: None,
     },
     OpCode {
