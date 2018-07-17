@@ -194,23 +194,23 @@ impl Display {
         }
     }
     fn oam_search(&mut self) {
-        let oams: Vec<SpriteAttribute> = self
-            .oam
-            .iter()
-            .filter(
-                /* ignored invisible sprites */
-                |oam| oam.y != 0 && oam.y < 144 + 16,
-            )
-            .filter(
-                /* filter only items in this row */
-                |oam| self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size(),
-            )
-            .sorted_by_key(|oam| oam.x)
-            .into_iter()
-            .take(10)
-            .map(|x| *x)
-            .collect();
-        self.oam_searched = oams;
+        self.oam_searched.clear();
+        self.oam_searched.extend(
+            self.oam
+                .iter()
+                .filter(
+                    /* ignored invisible sprites */
+                    |oam| oam.y != 0 && oam.y < 144 + 16,
+                )
+                .filter(
+                    /* filter only items in this row */
+                    |oam| self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size(),
+                )
+                .sorted_by_key(|oam| oam.x)
+                .into_iter()
+                .take(10)
+                .map(|x| *x),
+        );
     }
 
     fn get_bg_true(&self, x: u8, y: u8) -> (u8, u8) {
@@ -458,12 +458,13 @@ impl PPU {
         for x in 0..8 {
             let hi = 0x8000;
             let lo = 0x0080;
-            let mask = hi | lo;
-            let p = match (line << x) & mask {
-                0x8080 => PaletteShade::High,
-                0x8000 => PaletteShade::Mid,
-                0x0080 => PaletteShade::Low,
-                0x0000 => PaletteShade::Empty,
+            let t = (((line << x) & hi) >> 14) | (((line << x) & lo) >> 7);
+
+            let p = match t {
+                0b11 => PaletteShade::High,
+                0b10 => PaletteShade::Mid,
+                0b01 => PaletteShade::Low,
+                0b00 => PaletteShade::Empty,
                 _ => unreachable!(),
             };
 

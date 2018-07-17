@@ -313,7 +313,8 @@ impl CPU {
         mem.write(&[lo, hi]).expect("Memory wraps");
     }
 
-    pub fn execute_instr(&mut self, mut mem: &mut MMU, instr: Instr) {
+    pub fn execute_instr(&mut self, mut mem: &mut MMU, op: u16, instr: Instr) -> u32 {
+        let mut cond_branch_taken = false;
         match instr {
             Instr::ADC_r8_d8(x0, x1) => alu_result!(
                 self,
@@ -383,6 +384,7 @@ impl CPU {
                 if self.check_flag(x0) {
                     self.push16(mem, Reg16::PC);
                     self.reg.write(Reg16::PC, x1);
+                    cond_branch_taken = true;
                 }
             }
             Instr::CALL_a16(x0) => {
@@ -490,7 +492,8 @@ impl CPU {
             ),
             Instr::JP_COND_a16(x0, x1) => {
                 if self.check_flag(x0) {
-                    self.reg.write(Reg16::PC, x1)
+                    self.reg.write(Reg16::PC, x1);
+                    cond_branch_taken = true;
                 }
             }
             Instr::JP_a16(x0) => {
@@ -505,6 +508,7 @@ impl CPU {
                         Reg16::PC,
                         ALU::add(self.reg.read(Reg16::PC), x1 as i16 as u16).0,
                     );
+                    cond_branch_taken = true;
                 }
             }
             Instr::JR_r8(x0) => {
@@ -610,6 +614,7 @@ impl CPU {
             }
             Instr::RET_COND(x0) => {
                 if self.check_flag(x0) {
+                    cond_branch_taken = true;
                     self.pop16(&mut mem, Reg16::PC);
                 }
             }
@@ -827,6 +832,12 @@ impl CPU {
                 ALU::xor(self.reg.read(Reg8::A), self.reg.read(x0))
             ),
             Instr::INVALID(instr) => panic!("Invalid Instruction {}", instr),
+        };
+
+        if cond_branch_taken {
+            get_op(op).cycles_branch.unwrap() as u32
+        } else {
+            get_op(op).cycles as u32
         }
     }
     pub fn execute(&mut self, mut mem: &mut MMU, cycles: u64) -> u32 {
@@ -886,8 +897,7 @@ impl CPU {
             mem = buf.into_inner().into_inner();
         }
         self.reg.write(Reg16::PC, next_pc);
-        self.execute_instr(&mut mem, i);
-        get_op(op).cycles as u32
+        self.execute_instr(&mut mem, op, i)
     }
 }
 
@@ -903,7 +913,7 @@ mod tests {
             let mut mem = MMU::new(cart, None);
             let mut cpu = CPU::new(false);
             for i in $instr {
-                cpu.execute_instr(&mut mem, i)
+                cpu.execute_instr(&mut mem, 0, i);
             }
             assert_eq!(cpu.reg.read($reg), $val);
         };

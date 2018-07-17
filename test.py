@@ -15,6 +15,9 @@ def read_cell(opcode, c):
         mnemonic, l2, l3 = c.split("<br/>")
         m = re.match("([0-9]+)\xa0+([0-9]+)(?:/([0-9]+))?", l2)
         bytes, cycles, cycles_false = (int(m.group(1)), int(m.group(2)), int(m.group(3)) if m.group(3) else None)
+        if cycles_false:
+            (cycles, cycles_false) = (cycles_false, cycles)
+
         (z, n, h, c) = l3.split(" ")
         generic = mnemonic
         generic = re.sub("HL\+", "HLP", generic)
@@ -123,11 +126,11 @@ for i in itertools.chain(range(0,256), range(0xCB << 8 + 0, (0xCB << 8) + 0x100)
         "({})".format(", ".join(gens[i].init)) if len(args) else "",
 
     )
-    data += "OpCode {{ mnemonic : \"{}\", size : {}, cycles: {}, cycles_false: {} }},\n".format(
+    data += "OpCode {{ mnemonic : \"{}\", size : {}, cycles: {}, cycles_branch: {} }},\n".format(
         gens[i].op_name,
         gens[i].size,
-        gens[i].cycles,
-        "None" if gens[i].cycles_false is None else "Some({})".format(gens[i].cycles_false)
+        gens[i].cycles / 4,
+        "None" if gens[i].cycles_false is None else "Some({})".format(gens[i].cycles_false / 4)
     )
 
     if gens[i].name in seen:

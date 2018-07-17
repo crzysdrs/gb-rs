@@ -15,6 +15,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
+    let timer_sub = sdl_context.timer().unwrap();
 
     // the window is the representation of a window in your operating system,
     // however you can only manipulate properties of that window, like its size, whether it's
@@ -33,6 +34,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         .into_canvas()
         .target_texture()
         .present_vsync()
+        .accelerated()
         .build()
         .unwrap();
 
@@ -48,7 +50,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
 
     let mut event_pump = sdl_context.event_pump().unwrap();
     let mut fps = FPSManager::new();
-    fps.set_framerate(60).expect("Unable to set framerate");
+    fps.set_framerate(90).expect("Unable to set framerate");
 
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
@@ -78,6 +80,10 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         Select = 1 << 2,
         Start = 1 << 3,
     }
+
+    let mut last_ticks = timer_sub.performance_counter();
+    let mut frames = 0;
+
     'running: loop {
         // get the inputs here
         for event in event_pump.poll_iter() {
@@ -155,20 +161,42 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
             }
         }
         gb.set_controls(controls);
-        match gb.step(17556, &mut Some(&mut texture)) {
-            GBReason::Timeout => {
-                //fps.delay();
-            }
-            GBReason::VSync => {
-                canvas.copy(&texture, None, None).unwrap();
-                canvas.present();
-                //let frames = fps.delay();
-                //println!("Frames: {}", frames);
-            }
-            GBReason::Dead => {
-                break 'running;
+        let ticks = timer_sub.performance_counter();
+        let elapsed = ticks - last_ticks;
+        let freq = timer_sub.performance_frequency();
+        let elapsed_ms = elapsed as f64 / freq as f64;
+        last_ticks = ticks;
+        let start_frame = timer_sub.performance_counter();
+        let cycles = gb.cpu_cycles();
+
+        'frame: loop {
+            let r = gb.step(99999, &mut Some(&mut texture));
+            match r {
+                GBReason::VSync => {
+                    frames += 1;
+                    break 'frame;
+                }
+                GBReason::Dead => {
+                    break 'running;
+                },
+                GBReason::Timeout => {}//{break 'frame},
             }
         }
+
+        #[cfg(not(Debug))]
+        {
+            let end_cycles = gb.cpu_cycles();
+            let end_frame = timer_sub.performance_counter();
+            let frame_time = (end_frame - start_frame) as f64 / freq as f64 * 1000.0;
+
+            if frame_time > 10.0 || elapsed_ms > 0.017 {
+                println!("Elapsed: {}", elapsed_ms * 1000.0);
+                println!("Frame Time: {} Frames {}", frame_time, frames);
+                println!("Cycles: {}", end_cycles - cycles);
+            }
+        }
+        canvas.copy(&texture, None, None).unwrap();
+        canvas.present();
     }
 
     Ok(())

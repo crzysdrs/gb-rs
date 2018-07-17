@@ -13,7 +13,7 @@ pub struct GB<'a> {
     cpu_cycles: u64,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum GBReason {
     Timeout,
     VSync,
@@ -60,6 +60,10 @@ impl<'a> GB<'a> {
     }
     pub fn set_controls(&mut self, controls: u8) {
         self.mem.set_controls(controls);
+    }
+
+    pub fn cpu_cycles(&self) -> u64 {
+        self.cpu_cycles
     }
 
     pub fn step_timeout<C, P>(
