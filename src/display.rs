@@ -26,13 +26,13 @@ enum StatFlag {
 
 enum LCDCFlag {
     //BGDisplayPriority = 1 << 0,
-    //SpriteDisplayEnable = 1 << 1,
+    SpriteDisplayEnable = 1 << 1,
     SpriteSize = 1 << 2,
     BGTileMapSelect = 1 << 3,
     BGWinTileDataSelect = 1 << 4,
-    //WindowEnable = 1 << 5,
-    //WindowTileMapDisplaySelect = 1 << 6,
-    //LCDDisplayEnable = 1 << 7,
+    WindowEnable = 1 << 5,
+    WindowTileMapDisplaySelect = 1 << 6,
+    LCDDisplayEnable = 1 << 7,
 }
 
 enum OAMFlag {
@@ -69,6 +69,7 @@ pub struct Display {
     rendered: Vec<u8>,
     unused_cycles: u64,
     state: DisplayState,
+    changed_state : bool,
 }
 
 pub trait LCD<C, P> {
@@ -99,49 +100,22 @@ impl<'a> LCD<sdl2::pixels::Color, sdl2::rect::Point> for sdl2::render::Texture<'
         ).unwrap();
     }
     fn screen_power(&mut self, on: bool) {
-        let c: u8 = if on { 0xff } else { 0 };
+        if !on {
+            let c: u8 = 0xff;
 
-        self.update(
-            Some(sdl2::rect::Rect::new(0, 0, 160, 144)),
-            &[c; 160 * 144 * 4],
-            4,
-        ).unwrap();
+            self.update(
+                Some(sdl2::rect::Rect::new(0, 0, 160, 144)),
+                &[c; 160 * 144 * 4],
+                4,
+            ).unwrap();
+        }
     }
 }
-// impl<T> LCD<sdl2::pixels::Color, sdl2::rect::Point> for sdl2::render::Canvas<T>
-// where
-//     T: sdl2::render::RenderTarget
-// {
-//     fn draw_point(&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
-//         self.set_draw_color(c);
-//         self.draw_point(point).expect("Couldn't draw a point");
-//     }
-//     // fn draw_line(&mut self, start : sdl2::rect::Point, c: Vec<sdl2::pixels::Color>) {
-//     //     let tc = self.texture_creator();
-//     //     let tex = tc.create_texture(Some(sdl2::pixels::PixelFormatEnum::RGB888),
-//     //                                 sdl2::render::TextureAccess::Target,
-//     //                                 c.len(),
-//     //                                 1).unwrap();
-//     //     let bytes =
-//     //         c.iter().map(|c| vec![c.r, c.g, c.b])
-//     //         .flatten()
-//     //         .collect();
-//     //     tex.update(None, bytes.as_ref(), bytes.len());
-
-//     // }
-//     fn screen_power(&mut self, on: bool) {
-//         if on {
-//             self.set_draw_color(sdl2::pixels::Color::RGB(0xff, 0xff, 0xff));
-//         } else {
-//             self.set_draw_color(sdl2::pixels::Color::RGB(0, 0, 0));
-//         }
-//         self.clear();
-//     }
-// }
 
 impl Display {
     pub fn new() -> Display {
         Display {
+            changed_state : false,
             vram: [0; 8 << 10],
             oam: [SpriteAttribute {
                 x: 0,
@@ -179,10 +153,14 @@ impl Display {
         &mut self,
         lcd: &mut Option<&mut LCD<C, P>>,
     ) {
-        if self.state == DisplayState::Off || lcd.is_none() {
-            /* no display */
+        if lcd.is_none() {
+            /* do nothing */
         } else if let Some(lcd) = lcd {
-            lcd.draw_line((0, self.ly as i32).into(), &mut self.rendered);
+            if self.changed_state && self.state == DisplayState::Off {
+                lcd.screen_power(false);
+            } else {
+                lcd.draw_line((0, self.ly as i32).into(), &mut self.rendered);
+            }
         }
         self.rendered.clear();
     }
@@ -195,22 +173,24 @@ impl Display {
     }
     fn oam_search(&mut self) {
         self.oam_searched.clear();
-        self.oam_searched.extend(
-            self.oam
-                .iter()
-                .filter(
-                    /* ignored invisible sprites */
-                    |oam| oam.y != 0 && oam.y < 144 + 16,
-                )
-                .filter(
-                    /* filter only items in this row */
-                    |oam| self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size(),
-                )
-                .sorted_by_key(|oam| oam.x)
-                .into_iter()
-                .take(10)
-                .map(|x| *x),
-        );
+        if self.lcdc & mask_u8!(LCDCFlag::SpriteDisplayEnable) != 0 {
+            self.oam_searched.extend(
+                self.oam
+                    .iter()
+                    .filter(
+                        /* ignored invisible sprites */
+                        |oam| oam.y != 0 && oam.y < 144 + 16,
+                    )
+                    .filter(
+                        /* filter only items in this row */
+                        |oam| self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size(),
+                    )
+                    .sorted_by_key(|oam| oam.x)
+                    .into_iter()
+                    .take(10)
+                    .map(|x| *x),
+            );
+        }
     }
 
     fn get_bg_true(&self, x: u8, y: u8) -> (u8, u8) {
@@ -234,7 +214,17 @@ impl Display {
         let idx = bg_map + true_y as u16 * 32 + true_x as u16;
         BGIdx(self.vram[idx as usize])
     }
-
+    fn get_win_tile(&self, x: u8) -> Tile {
+        let x = x - (self.wx - 7);
+        let y = self.ly - self.wy;
+        let win_map = if self.lcdc & mask_u8!(LCDCFlag::WindowTileMapDisplaySelect) == 0 {
+            0x1800u16
+        } else {
+            0x1c00u16
+        };
+        let idx = win_map + (y / 8) as u16 * 32 + (x / 8) as u16;
+        Tile::Window(BGIdx(self.vram[idx as usize]), Coord(0, y % 8))
+    }
     pub fn dump(&mut self) {
         println!("BG Tile Map");
         for y in 0..32 {
@@ -344,6 +334,42 @@ impl Display {
             self.ppu.load(&t, l);
         }
     }
+
+    fn draw_window<T: Iterator<Item = SpriteAttribute>>
+        (&mut self, oams: &mut std::iter::Peekable<T>,  window: bool, bg_offset: u8, range: std::ops::Range<u8>)
+    {
+        /* offscreen pixels */
+        let fake = Tile::BG(BGIdx(0), Coord(0, 0));
+        let l = fake.fetch(self);
+        self.ppu.load(&fake, l);
+        for _x in 0..bg_offset {
+            self.ppu.shift();
+        }
+        for x in range.start..range.end + 8 {
+            if self.ppu.need_data() {
+                let t = if window {
+                    self.get_win_tile(x)
+                } else {
+                    self.get_screen_bg_tile(x, self.ly)
+                };
+                let l = t.fetch(self);
+                self.ppu.load(&t, l);
+            }
+            assert_eq!(self.ppu.need_data(), false);
+            self.add_oams(oams, x, self.ly);
+
+            if x >= range.start + 8 {
+                let c: (u8, u8, u8, u8) = {
+                    let p = self.ppu.shift();
+                    self.bgp_shade(p)
+                };
+                self.rendered.extend(&[c.0, c.1, c.2, c.3]);
+            } else {
+                self.ppu.shift();
+            }
+        }
+        self.ppu.clear();
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -368,13 +394,14 @@ impl Coord {
 
 enum Tile {
     BG(BGIdx, Coord),
+    Window(BGIdx, Coord),
     Sprite(SpriteAttribute, Coord),
 }
 
 impl Tile {
     pub fn fetch(&self, display: &mut Display) -> (bool, Palette, u16) {
         let (start, line_offset) = match *self {
-            Tile::BG(idx, coord) => {
+            Tile::Window(idx, coord) | Tile::BG(idx, coord) => {
                 let bytes_per_tile = 16;
                 let start = if display.lcdc & mask_u8!(LCDCFlag::BGWinTileDataSelect) == 0 {
                     /* signed tile idx */
@@ -422,7 +449,7 @@ impl Tile {
                 };
                 (priority, palette)
             }
-            Tile::BG(_, _) => (false, Palette::BG),
+            Tile::BG(_, _) | Tile::Window(_, _) => (false, Palette::BG),
         };
         (priority, palette, line)
     }
@@ -526,41 +553,16 @@ impl Peripheral for Display {
                     {
                         let oams = orig_oams.drain(..);
                         let mut oams = oams.peekable();
-
                         let (true_x, _true_y) = self.get_bg_true(0, self.ly);
-
-                        /* offscreen pixels */
-                        let fake = Tile::BG(BGIdx(0), Coord(0, 0));
-                        let l = fake.fetch(self);
-                        self.ppu.load(&fake, l);
-
-                        // for x in 0..8 - true_x % 8 {
-                        //     self.ppu.shift();
-                        //     self.add_oams(&mut oams, x, self.ly);
-                        //}
-                        for _x in 0..(true_x % 8) {
-                            self.ppu.shift();
-                        }
-                        //assert_eq!(true_x % 8, 0);
-
-                        for x in 0..(160 + 8) {
-                            if self.ppu.need_data() {
-                                let t = self.get_screen_bg_tile(x, self.ly);
-                                let l = t.fetch(self);
-                                self.ppu.load(&t, l);
-                            }
-                            assert_eq!(self.ppu.need_data(), false);
-                            self.add_oams(&mut oams, x, self.ly);
-
-                            if x >= 8 {
-                                let c: (u8, u8, u8, u8) = {
-                                    let p = self.ppu.shift();
-                                    self.bgp_shade(p)
-                                };
-                                self.rendered.extend(&[c.0, c.1, c.2, c.3]);
-                            } else {
-                                self.ppu.shift();
-                            }
+                        let has_window = self.lcdc & mask_u8!(LCDCFlag::WindowEnable) != 0 && self.ly >= self.wy;
+                        let end_bg = if has_window {
+                            std::cmp::min(self.wx - 7, 160)
+                        } else {
+                            160
+                        };
+                        self.draw_window(&mut oams, false, true_x % 8, 0..end_bg);
+                        if has_window {
+                            self.draw_window(&mut oams, true, 0, end_bg..160);
                         }
                         self.ppu.clear();
                         self.unused_cycles -= 43;
@@ -586,7 +588,7 @@ impl Peripheral for Display {
                 }
             }
             DisplayState::VBlank => {
-                if self.lcdc & 0x80 == 0 {
+                if self.lcdc & mask_u8!(LCDCFlag::LCDDisplayEnable) == 0 {
                     DisplayState::Off
                 } else if self.unused_cycles >= (43 + 51 + 20) {
                     /* do work */
@@ -605,7 +607,7 @@ impl Peripheral for Display {
             DisplayState::Off => {
                 self.ly = 0;
                 self.unused_cycles = 0;
-                if self.lcdc & 0x80 != 0 {
+                if self.lcdc & mask_u8!(LCDCFlag::LCDDisplayEnable) != 0 {
                     DisplayState::OAMSearch
                 } else {
                     self.state
@@ -615,6 +617,7 @@ impl Peripheral for Display {
 
         let mut triggers = 0;
 
+        self.changed_state = next_state != self.state;
         if next_state != self.state {
             let state_trig = flag_u8!(
                 StatFlag::OAMInterrupt,
