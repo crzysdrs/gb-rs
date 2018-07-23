@@ -69,7 +69,7 @@ pub struct Display {
     rendered: Vec<u8>,
     unused_cycles: u64,
     state: DisplayState,
-    changed_state : bool,
+    changed_state: bool,
 }
 
 pub trait LCD<C, P> {
@@ -115,7 +115,7 @@ impl<'a> LCD<sdl2::pixels::Color, sdl2::rect::Point> for sdl2::render::Texture<'
 impl Display {
     pub fn new() -> Display {
         Display {
-            changed_state : false,
+            changed_state: false,
             vram: [0; 8 << 10],
             oam: [SpriteAttribute {
                 x: 0,
@@ -181,10 +181,9 @@ impl Display {
                         /* ignored invisible sprites */
                         |oam| oam.y != 0 && oam.y < 144 + 16,
                     )
-                    .filter(
-                        /* filter only items in this row */
-                        |oam| self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size(),
-                    )
+                    .filter(/* filter only items in this row */ |oam| {
+                        self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size()
+                    })
                     .sorted_by_key(|oam| oam.x)
                     .into_iter()
                     .take(10)
@@ -335,9 +334,13 @@ impl Display {
         }
     }
 
-    fn draw_window<T: Iterator<Item = SpriteAttribute>>
-        (&mut self, oams: &mut std::iter::Peekable<T>,  window: bool, bg_offset: u8, range: std::ops::Range<u8>)
-    {
+    fn draw_window<T: Iterator<Item = SpriteAttribute>>(
+        &mut self,
+        oams: &mut std::iter::Peekable<T>,
+        window: bool,
+        bg_offset: u8,
+        range: std::ops::Range<u8>,
+    ) {
         /* offscreen pixels */
         let fake = Tile::BG(BGIdx(0), Coord(0, 0));
         let l = fake.fetch(self);
@@ -417,7 +420,7 @@ impl Tile {
                 let idx = oam.pattern;
                 let start = idx.0 as u16 * bytes_per_line * display.sprite_size() as u16;
                 let y = if oam.flags & mask_u8!(OAMFlag::FlipY) != 0 {
-                    display.sprite_size() - coord.y()
+                    display.sprite_size() - 1 - coord.y()
                 } else {
                     coord.y()
                 };
@@ -554,7 +557,8 @@ impl Peripheral for Display {
                         let oams = orig_oams.drain(..);
                         let mut oams = oams.peekable();
                         let (true_x, _true_y) = self.get_bg_true(0, self.ly);
-                        let has_window = self.lcdc & mask_u8!(LCDCFlag::WindowEnable) != 0 && self.ly >= self.wy;
+                        let has_window =
+                            self.lcdc & mask_u8!(LCDCFlag::WindowEnable) != 0 && self.ly >= self.wy;
                         let end_bg = if has_window {
                             std::cmp::min(self.wx - 7, 160)
                         } else {
