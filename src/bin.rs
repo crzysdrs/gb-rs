@@ -57,8 +57,9 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
 
     let tc = canvas.texture_creator();
     let mut texture = tc
-        .create_texture_target(tc.default_pixel_format(), 160, 144)
+        .create_texture_streaming(tc.default_pixel_format(), 160, 144)
         .unwrap();
+
     let mut controls: u8 = 0xff;
 
     macro_rules! control_seq {
@@ -170,7 +171,11 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         let cycles = gb.cpu_cycles();
 
         'frame: loop {
-            let r = gb.step(99999, &mut Some(&mut texture));
+            let r = texture.with_lock(sdl2::rect::Rect::new(0, 0, 160, 144), |mut slice, _size|
+                                      gb.step(99999, &mut Some(&mut slice))
+            );
+            let r = r.unwrap();
+
             match r {
                 GBReason::VSync => {
                     frames += 1;

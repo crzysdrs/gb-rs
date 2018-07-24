@@ -3,6 +3,10 @@ use itertools::Itertools;
 use peripherals::Peripheral;
 use std::collections::VecDeque;
 
+const SCREEN_X : usize = 160;
+const SCREEN_Y : usize = 144;
+const BYTES_PER_PIXEL : usize = 4;
+
 #[derive(PartialEq, Copy, Clone)]
 enum DisplayState {
     Off,
@@ -77,6 +81,28 @@ pub trait LCD<C, P> {
     fn screen_power(&mut self, on: bool);
     fn draw_line(&mut self, start: P, c: &Vec<u8>);
 }
+
+impl<'a> LCD<sdl2::pixels::Color, sdl2::rect::Point> for &'a mut [u8] {
+    fn draw_line(&mut self, start: sdl2::rect::Point, c: &Vec<u8>) {
+        let start = (start.x as usize + start.y as usize * SCREEN_X) * BYTES_PER_PIXEL as usize;
+        let end = start + SCREEN_X * BYTES_PER_PIXEL;
+        if c.len() > 0 {
+            assert_eq!(c.len(), SCREEN_X * BYTES_PER_PIXEL);
+            self[start..end]
+                .copy_from_slice(c[..].as_ref());
+        }
+    }
+    fn draw_point(&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
+        let start = (point.x as usize + point.y as usize * SCREEN_X) as usize;
+        self[start .. start + BYTES_PER_PIXEL].copy_from_slice(&[c.r, c.g, c.b, c.a]);
+    }
+    fn screen_power(&mut self, on: bool) {
+        if !on {
+            self[..].copy_from_slice(&[0xff; SCREEN_X * SCREEN_Y * BYTES_PER_PIXEL]);
+        }
+    }
+}
+
 impl<'a> LCD<sdl2::pixels::Color, sdl2::rect::Point> for sdl2::render::Texture<'a> {
     fn draw_line(&mut self, start: sdl2::rect::Point, c: &Vec<u8>) {
         if c.len() > 0 {
@@ -172,6 +198,7 @@ impl Display {
         }
     }
     fn oam_search(&mut self) {
+        assert_eq!(self.oam_searched.capacity(), 10);
         self.oam_searched.clear();
         if self.lcdc & mask_u8!(LCDCFlag::SpriteDisplayEnable) != 0 {
             self.oam_searched.extend(
