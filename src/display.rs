@@ -240,7 +240,7 @@ impl Display {
         BGIdx(self.vram[idx as usize])
     }
     fn get_win_tile(&self, x: u8) -> Tile {
-        let x = x - (self.wx - 7);
+        let x = x.wrapping_sub(self.wx.wrapping_sub(7));
         let y = self.ly - self.wy;
         let win_map = if self.lcdc & mask_u8!(LCDCFlag::WindowTileMapDisplaySelect) == 0 {
             0x1800u16
@@ -337,7 +337,7 @@ impl Display {
         }
     }
 
-    fn add_oams<T: Iterator<Item = SpriteAttribute>>(
+    fn add_oams<'a, T: Iterator<Item = &'a SpriteAttribute>>(
         &mut self,
         oams: &mut std::iter::Peekable<T>,
         x: u8,
@@ -345,22 +345,23 @@ impl Display {
     ) {
         'oams_done: while oams.peek().is_some() {
             let use_oam = if let Some(cur) = oams.peek() {
-                cur.x == x
+                cur.x <= x
             } else {
                 false
             };
             if !use_oam {
                 break 'oams_done;
             }
-
             let oam = oams.next().unwrap();
-            let t = Tile::Sprite(oam, Coord(0, y + 16 - oam.y));
-            let l = t.fetch(self);
-            self.ppu.load(&t, l);
+            if oam.x == x {
+                let t = Tile::Sprite(*oam, Coord(0, y + 16 - oam.y));
+                let l = t.fetch(self);
+                self.ppu.load(&t, l);
+            }
         }
     }
 
-    fn draw_window<T: Iterator<Item = SpriteAttribute>>(
+    fn draw_window<'a, T: Iterator<Item = &'a SpriteAttribute>>(
         &mut self,
         oams: &mut std::iter::Peekable<T>,
         window: bool,
@@ -421,6 +422,7 @@ impl Coord {
     }
 }
 
+#[derive(Clone)]
 enum Tile {
     BG(BGIdx, Coord),
     Window(BGIdx, Coord),
@@ -428,6 +430,43 @@ enum Tile {
 }
 
 impl Tile {
+    #[allow(dead_code)]
+    pub fn show(&self, display: &mut Display) {
+        let mut tmp: Tile = self.to_owned();
+        for i in 0..display.sprite_size() {
+            let c: &mut Coord = match tmp {
+                Tile::BG(_, ref mut c) => c,
+                Tile::Window(_, ref mut c) => c,
+                Tile::Sprite(_, ref mut c) => c,
+            };
+            *c = Coord(0, i);
+            let (_, _, line) = tmp.fetch(display);
+            for x in 0..8 {
+                let num = match Tile::line_palette(line, x) {
+                    PaletteShade::High => 3,
+                    PaletteShade::Mid => 2,
+                    PaletteShade::Low => 1,
+                    PaletteShade::Empty => 0,
+                };
+                print!("{} ", num);
+            }
+            println!();
+        }
+    }
+    pub fn line_palette(line: u16, x: usize) -> PaletteShade {
+        let hi = 0x8000;
+        let lo = 0x0080;
+        let t = (((line << x) & hi) >> 14) | (((line << x) & lo) >> 7);
+
+        match t {
+            0b11 => PaletteShade::High,
+            0b10 => PaletteShade::Mid,
+            0b01 => PaletteShade::Low,
+            0b00 => PaletteShade::Empty,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn fetch(&self, display: &mut Display) -> (bool, Palette, u16) {
         let (start, line_offset) = match *self {
             Tile::Window(idx, coord) | Tile::BG(idx, coord) => {
@@ -443,8 +482,12 @@ impl Tile {
             }
             Tile::Sprite(oam, coord) => {
                 let bytes_per_line = 2;
-                let idx = oam.pattern;
-                let start = idx.0 as u16 * bytes_per_line * display.sprite_size() as u16;
+                let idx = if display.sprite_size() == 16 {
+                    oam.pattern.0 >> 1
+                } else {
+                    oam.pattern.0
+                };
+                let start = idx as u16 * bytes_per_line * display.sprite_size() as u16;
                 let y = if oam.flags & mask_u8!(OAMFlag::FlipY) != 0 {
                     display.sprite_size() - 1 - coord.y()
                 } else {
@@ -512,17 +555,7 @@ impl PPU {
     }
     fn load(&mut self, _t: &Tile, (priority, palette, line): (bool, Palette, u16)) {
         for x in 0..8 {
-            let hi = 0x8000;
-            let lo = 0x0080;
-            let t = (((line << x) & hi) >> 14) | (((line << x) & lo) >> 7);
-
-            let p = match t {
-                0b11 => PaletteShade::High,
-                0b10 => PaletteShade::Mid,
-                0b01 => PaletteShade::Low,
-                0b00 => PaletteShade::Empty,
-                _ => unreachable!(),
-            };
+            let p = Tile::line_palette(line, x);
 
             match palette {
                 Palette::OBP1 | Palette::OBP0 => {
@@ -577,22 +610,26 @@ impl Peripheral for Display {
             DisplayState::PixelTransfer => {
                 if self.unused_cycles >= 43 {
                     /* do work */
-                    let mut orig_oams =
+                    let orig_oams =
                         std::mem::replace(&mut self.oam_searched, Vec::with_capacity(0));
                     {
-                        let oams = orig_oams.drain(..);
-                        let mut oams = oams.peekable();
+                        let mut oams = orig_oams.iter().peekable();
                         let (true_x, _true_y) = self.get_bg_true(0, self.ly);
                         let has_window =
                             self.lcdc & mask_u8!(LCDCFlag::WindowEnable) != 0 && self.ly >= self.wy;
                         let end_bg = if has_window {
-                            std::cmp::min(self.wx - 7, 160)
+                            std::cmp::min(std::cmp::max(7, self.wx) - 7, 160)
                         } else {
                             160
                         };
-                        self.draw_window(&mut oams, false, true_x % 8, 0..end_bg);
-                        if has_window {
-                            self.draw_window(&mut oams, true, 0, end_bg..160);
+                        let nonwindow_range = 0..end_bg;
+                        if !std::ops::Range::is_empty(&nonwindow_range) {
+                            self.draw_window(&mut oams, false, true_x % 8, nonwindow_range);
+                        }
+                        let window_range = end_bg..160;
+                        if has_window && !std::ops::Range::is_empty(&window_range) {
+                            let mut oams = orig_oams.iter().peekable();
+                            self.draw_window(&mut oams, true, 0, window_range);
                         }
                         self.ppu.clear();
                         self.unused_cycles -= 43;

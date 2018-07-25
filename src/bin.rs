@@ -6,7 +6,7 @@ extern crate zip;
 use gb::cart::Cart;
 use gb::gb::{GBReason, GB};
 use sdl2::pixels::Color;
-use std::fs::{File};
+use std::fs::File;
 use std::io::{Read, Write};
 
 fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
@@ -249,8 +249,11 @@ fn main() -> Result<(), std::io::Error> {
         .get_matches();
 
     let rom = std::path::Path::new(matches.value_of("ROM").unwrap());
-    let maybe_rom : std::io::Result<Vec<u8>> = match rom.extension() {
-        None => Err(std::io::Error::new(std::io::ErrorKind::Other, "Missing file extension")),
+    let maybe_rom: std::io::Result<Vec<u8>> = match rom.extension() {
+        None => Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Missing file extension",
+        )),
         Some(ext) => match ext.to_str() {
             Some("zip") => {
                 let f = std::fs::File::open(rom)?;
@@ -268,14 +271,18 @@ fn main() -> Result<(), std::io::Error> {
                 if let Some(buf) = res {
                     Ok(buf)
                 } else {
-                    Err(std::io::Error::new(std::io::ErrorKind::Other, "No rom file found in archive"))
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "No rom file found in archive",
+                    ))
                 }
-            },
-            Some("gb") => {
-                Ok(std::fs::read(rom)?)
             }
-            _ =>  Err(std::io::Error::new(std::io::ErrorKind::Other, "Unknown Extension"))
-        }
+            Some("gb") => Ok(std::fs::read(rom)?),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Unknown Extension",
+            )),
+        },
     };
 
     let rom_vec = maybe_rom?;
