@@ -9,7 +9,6 @@ const BYTES_PER_PIXEL: usize = 4;
 
 #[derive(PartialEq, Copy, Clone)]
 enum DisplayState {
-    Off,
     OAMSearch,     //20 Clocks
     PixelTransfer, //43 + Clocks
     HBlank,        //51 Clocks
@@ -174,6 +173,9 @@ impl Display {
             Some(&self.oam[idx])
         }
     }
+    pub fn display_enabled(&self) -> bool {
+        self.lcdc & mask_u8!(LCDCFlag::LCDDisplayEnable) != 0
+    }
     pub fn render<C: From<(u8, u8, u8, u8)>, P: From<(i32, i32)>>(
         &mut self,
         lcd: &mut Option<&mut LCD<C, P>>,
@@ -181,7 +183,7 @@ impl Display {
         if lcd.is_none() {
             /* do nothing */
         } else if let Some(lcd) = lcd {
-            if self.changed_state && self.state == DisplayState::Off {
+            if self.changed_state && self.state == DisplayState::VBlank && !self.display_enabled() {
                 lcd.screen_power(false);
             } else {
                 lcd.draw_line((0, self.ly as i32).into(), &mut self.rendered);
@@ -662,9 +664,7 @@ impl Peripheral for Display {
                 }
             }
             DisplayState::VBlank => {
-                if self.lcdc & mask_u8!(LCDCFlag::LCDDisplayEnable) == 0 {
-                    DisplayState::Off
-                } else if self.unused_cycles >= (43 + 51 + 20) {
+                if self.unused_cycles >= (43 + 51 + 20) {
                     /* do work */
                     self.unused_cycles -= 43 + 51 + 20;
                     new_ly += 1;
@@ -674,15 +674,6 @@ impl Peripheral for Display {
                     } else {
                         self.state
                     }
-                } else {
-                    self.state
-                }
-            }
-            DisplayState::Off => {
-                new_ly = 0;
-                self.unused_cycles = 0;
-                if self.lcdc & mask_u8!(LCDCFlag::LCDDisplayEnable) != 0 {
-                    DisplayState::OAMSearch
                 } else {
                     self.state
                 }
@@ -723,8 +714,6 @@ impl Peripheral for Display {
             DisplayState::VBlank => StatFlag::VBlank,
             DisplayState::HBlank => StatFlag::HBlank,
             DisplayState::PixelTransfer => StatFlag::PixelTransfer,
-            // Pretend we are in vblank when screen is off, same invariants
-            _ => StatFlag::VBlank,
         } as u8 & 0b11;
         self.stat |= if self.ly == self.lyc {
             mask_u8!(StatFlag::Coincidence)
