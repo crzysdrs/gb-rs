@@ -268,20 +268,19 @@ impl CPU {
             return;
         } else if self.reg.ime != 0 {
             self.reg.ime = 0;
-            let addr =
-                if interrupt & mask_u8!(InterruptFlag::VBlank) != 0 {
-                    0x0040
-                } else if interrupt & mask_u8!(InterruptFlag::LCDC) != 0 {
-                    0x0048
-                } else if interrupt & mask_u8!(InterruptFlag::Timer) != 0 {
-                    0x0050
-                } else if interrupt & mask_u8!(InterruptFlag::Serial) != 0 {
-                    0x0058
-                } else if interrupt & mask_u8!(InterruptFlag::HiLo) != 0 {
-                    0x0060
-                } else {
-                    panic!("Unknown interrupt {:b}", interrupt);
-                };
+            let addr = if interrupt & mask_u8!(InterruptFlag::VBlank) != 0 {
+                0x0040
+            } else if interrupt & mask_u8!(InterruptFlag::LCDC) != 0 {
+                0x0048
+            } else if interrupt & mask_u8!(InterruptFlag::Timer) != 0 {
+                0x0050
+            } else if interrupt & mask_u8!(InterruptFlag::Serial) != 0 {
+                0x0058
+            } else if interrupt & mask_u8!(InterruptFlag::HiLo) != 0 {
+                0x0060
+            } else {
+                panic!("Unknown interrupt {:b}", interrupt);
+            };
 
             let shift = interrupt.trailing_zeros();
             //Clear highest interrupt

@@ -29,7 +29,7 @@ enum StatFlag {
 }
 
 enum LCDCFlag {
-    //BGDisplayPriority = 1 << 0,
+    BGDisplayPriority = 1 << 0,
     SpriteDisplayEnable = 1 << 1,
     SpriteSize = 1 << 2,
     BGTileMapSelect = 1 << 3,
@@ -318,7 +318,12 @@ impl Display {
         let light_grey = (0x55, 0x55, 0x55, 0xff);
         let black = (0x00, 0x00, 0x00, 0xff);
         let pal = match p {
-            Pixel(Palette::BG, _) => self.bgp,
+            Pixel(Palette::BG, _) =>
+                if self.lcdc & mask_u8!(LCDCFlag::BGDisplayPriority) == 0 {
+                    0
+                } else {
+                    self.bgp
+                },
             Pixel(Palette::OBP0, _) => self.obp0,
             Pixel(Palette::OBP1, _) => self.obp1,
         };
@@ -369,6 +374,7 @@ impl Display {
         range: std::ops::Range<u8>,
     ) {
         /* offscreen pixels */
+
         let fake = Tile::BG(BGIdx(0), Coord(0, 0));
         let l = fake.fetch(self);
         self.ppu.load(&fake, l);
