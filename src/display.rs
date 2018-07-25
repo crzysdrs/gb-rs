@@ -3,9 +3,9 @@ use itertools::Itertools;
 use peripherals::Peripheral;
 use std::collections::VecDeque;
 
-const SCREEN_X : usize = 160;
-const SCREEN_Y : usize = 144;
-const BYTES_PER_PIXEL : usize = 4;
+const SCREEN_X: usize = 160;
+const SCREEN_Y: usize = 144;
+const BYTES_PER_PIXEL: usize = 4;
 
 #[derive(PartialEq, Copy, Clone)]
 enum DisplayState {
@@ -88,13 +88,12 @@ impl<'a> LCD<sdl2::pixels::Color, sdl2::rect::Point> for &'a mut [u8] {
         let end = start + SCREEN_X * BYTES_PER_PIXEL;
         if c.len() > 0 {
             assert_eq!(c.len(), SCREEN_X * BYTES_PER_PIXEL);
-            self[start..end]
-                .copy_from_slice(c[..].as_ref());
+            self[start..end].copy_from_slice(c[..].as_ref());
         }
     }
     fn draw_point(&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
         let start = (point.x as usize + point.y as usize * SCREEN_X) as usize;
-        self[start .. start + BYTES_PER_PIXEL].copy_from_slice(&[c.r, c.g, c.b, c.a]);
+        self[start..start + BYTES_PER_PIXEL].copy_from_slice(&[c.r, c.g, c.b, c.a]);
     }
     fn screen_power(&mut self, on: bool) {
         if !on {

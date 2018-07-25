@@ -14,7 +14,7 @@ debug = true
 enum_primitive = "*"
 clap = "2.31"
 itertools = "*"
-
+zip = "0.4"
 
 [features]
 strict = []

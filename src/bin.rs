@@ -1,11 +1,13 @@
 extern crate clap;
 extern crate gb;
 extern crate sdl2;
+extern crate zip;
+
 use gb::cart::Cart;
 use gb::gb::{GBReason, GB};
 use sdl2::pixels::Color;
-use std::fs::File;
-use std::io::Write;
+use std::fs::{File};
+use std::io::{Read, Write};
 
 fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
     use sdl2::event::Event;
@@ -171,9 +173,9 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         let cycles = gb.cpu_cycles();
 
         'frame: loop {
-            let r = texture.with_lock(sdl2::rect::Rect::new(0, 0, 160, 144), |mut slice, _size|
-                                      gb.step(99999, &mut Some(&mut slice))
-            );
+            let r = texture.with_lock(sdl2::rect::Rect::new(0, 0, 160, 144), |mut slice, _size| {
+                gb.step(99999, &mut Some(&mut slice))
+            });
             let r = r.unwrap();
 
             match r {
@@ -246,8 +248,38 @@ fn main() -> Result<(), std::io::Error> {
         )
         .get_matches();
 
-    let rom = matches.value_of("ROM").unwrap();
-    let rom_vec = std::fs::read(rom)?;
+    let rom = std::path::Path::new(matches.value_of("ROM").unwrap());
+    let maybe_rom : std::io::Result<Vec<u8>> = match rom.extension() {
+        None => Err(std::io::Error::new(std::io::ErrorKind::Other, "Missing file extension")),
+        Some(ext) => match ext.to_str() {
+            Some("zip") => {
+                let f = std::fs::File::open(rom)?;
+                let mut z = zip::ZipArchive::new(f)?;
+                let mut res = None;
+                'found: for c_id in 0..z.len() {
+                    if let Ok(mut c_file) = z.by_index(c_id) {
+                        if c_file.name().ends_with(".gb") {
+                            let mut buf = Vec::new();
+                            c_file.read_to_end(&mut buf)?;
+                            res = Some(buf);
+                        }
+                    }
+                }
+                if let Some(buf) = res {
+                    Ok(buf)
+                } else {
+                    Err(std::io::Error::new(std::io::ErrorKind::Other, "No rom file found in archive"))
+                }
+            },
+            Some("gb") => {
+                Ok(std::fs::read(rom)?)
+            }
+            _ =>  Err(std::io::Error::new(std::io::ErrorKind::Other, "Unknown Extension"))
+        }
+    };
+
+    let rom_vec = maybe_rom?;
+
     let cart = Cart::new(rom_vec);
 
     let mut serial: Box<Write> = matches.value_of("serial").map_or(
