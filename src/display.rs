@@ -205,7 +205,7 @@ impl Display {
                     .iter()
                     .filter(
                         /* ignored invisible sprites */
-                        |oam| oam.y != 0 && oam.y < 144 + 16,
+                        |oam| oam.x != 0 && oam.x < 168 && oam.y != 0 && oam.y < 144 + 16,
                     )
                     .filter(/* filter only items in this row */ |oam| {
                         self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size()
