@@ -318,12 +318,11 @@ impl Display {
         let light_grey = (0x55, 0x55, 0x55, 0xff);
         let black = (0x00, 0x00, 0x00, 0xff);
         let pal = match p {
-            Pixel(Palette::BG, _) =>
-                if self.lcdc & mask_u8!(LCDCFlag::BGDisplayPriority) == 0 {
-                    0
-                } else {
-                    self.bgp
-                },
+            Pixel(Palette::BG, _) => if self.lcdc & mask_u8!(LCDCFlag::BGDisplayPriority) == 0 {
+                0
+            } else {
+                self.bgp
+            },
             Pixel(Palette::OBP0, _) => self.obp0,
             Pixel(Palette::OBP1, _) => self.obp1,
         };
@@ -602,6 +601,7 @@ impl Peripheral for Display {
         *self.lookup(addr) = v;
     }
     fn step(&mut self, time: u64) -> Option<InterruptFlag> {
+        let mut new_ly = self.ly;
         self.unused_cycles += time;
         let next_state = match self.state {
             DisplayState::OAMSearch => {
@@ -651,8 +651,8 @@ impl Peripheral for Display {
                 if self.unused_cycles >= 51 {
                     /* do work */
                     self.unused_cycles -= 51;
-                    self.ly += 1;
-                    if self.ly == 144 {
+                    new_ly += 1;
+                    if new_ly == 144 {
                         DisplayState::VBlank
                     } else {
                         DisplayState::OAMSearch
@@ -667,9 +667,9 @@ impl Peripheral for Display {
                 } else if self.unused_cycles >= (43 + 51 + 20) {
                     /* do work */
                     self.unused_cycles -= 43 + 51 + 20;
-                    self.ly += 1;
-                    if self.ly == 153 {
-                        self.ly = 0;
+                    new_ly += 1;
+                    if new_ly == 153 {
+                        new_ly = 0;
                         DisplayState::OAMSearch
                     } else {
                         self.state
@@ -679,7 +679,7 @@ impl Peripheral for Display {
                 }
             }
             DisplayState::Off => {
-                self.ly = 0;
+                new_ly = 0;
                 self.unused_cycles = 0;
                 if self.lcdc & mask_u8!(LCDCFlag::LCDDisplayEnable) != 0 {
                     DisplayState::OAMSearch
@@ -709,7 +709,10 @@ impl Peripheral for Display {
             triggers |= state_trig;
         };
 
-        triggers |= flag_u8!(StatFlag::CoincidenceInterrupt, self.ly == self.lyc);
+        if new_ly != self.ly {
+            self.ly = new_ly;
+            triggers |= flag_u8!(StatFlag::CoincidenceInterrupt, self.ly == self.lyc);
+        }
 
         // always let vblank through
         triggers &= self.stat | mask_u8!(StatFlag::VBlankInterrupt);
