@@ -268,22 +268,24 @@ impl CPU {
             return;
         } else if self.reg.ime != 0 {
             self.reg.ime = 0;
-            let addr = if interrupt & mask_u8!(InterruptFlag::HiLo) != 0 {
-                0x0060
-            } else if interrupt & mask_u8!(InterruptFlag::Serial) != 0 {
-                0x0058
-            } else if interrupt & mask_u8!(InterruptFlag::Timer) != 0 {
-                0x0050
-            } else if interrupt & mask_u8!(InterruptFlag::LCDC) != 0 {
-                0x0048
-            } else if interrupt & mask_u8!(InterruptFlag::VBlank) != 0 {
-                0x0040
-            } else {
-                panic!("Unknown interrupt {:b}", interrupt);
-            };
-            let shift = interrupt.leading_zeros();
+            let addr =
+                if interrupt & mask_u8!(InterruptFlag::VBlank) != 0 {
+                    0x0040
+                } else if interrupt & mask_u8!(InterruptFlag::LCDC) != 0 {
+                    0x0048
+                } else if interrupt & mask_u8!(InterruptFlag::Timer) != 0 {
+                    0x0050
+                } else if interrupt & mask_u8!(InterruptFlag::Serial) != 0 {
+                    0x0058
+                } else if interrupt & mask_u8!(InterruptFlag::HiLo) != 0 {
+                    0x0060
+                } else {
+                    panic!("Unknown interrupt {:b}", interrupt);
+                };
+
+            let shift = interrupt.trailing_zeros();
             //Clear highest interrupt
-            mem.write_byte(0xff0f, iflag & !(0x80 >> shift));
+            mem.write_byte(0xff0f, iflag & !(0x1 << shift));
             self.push16(mem, Reg16::PC);
             self.reg.write(Reg16::PC, addr);
             self.halted = false;

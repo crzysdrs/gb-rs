@@ -610,6 +610,7 @@ impl Peripheral for Display {
             DisplayState::PixelTransfer => {
                 if self.unused_cycles >= 43 {
                     /* do work */
+                    self.ppu.clear();
                     let orig_oams =
                         std::mem::replace(&mut self.oam_searched, Vec::with_capacity(0));
                     {
