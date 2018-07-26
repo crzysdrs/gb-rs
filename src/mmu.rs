@@ -79,9 +79,6 @@ impl<'a> MMU<'a> {
     pub fn get_current_pos(&self) -> u16 {
         self.seek_pos
     }
-    pub fn get_display(&mut self) -> &mut Display {
-        &mut self.display
-    }
     pub fn set_controls(&mut self, controls: u8) {
         self.controller.set_controls(controls);
     }

@@ -1,7 +1,7 @@
 use super::mmu::MemRegister;
 use cpu::InterruptFlag;
 use enum_primitive::FromPrimitive;
-use peripherals::Peripheral;
+use peripherals::{Peripheral, PeripheralData};
 
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]
@@ -31,7 +31,7 @@ impl Peripheral for Timer {
         *self.lookup(addr) = v;
     }
 
-    fn step(&mut self, time: u64) -> Option<InterruptFlag> {
+    fn step(&mut self, _real: &mut PeripheralData, time: u64) -> Option<InterruptFlag> {
         self.DIV = self.DIV.wrapping_add(Timer::compute_time(
             time,
             &mut self.div_unused_cycles,

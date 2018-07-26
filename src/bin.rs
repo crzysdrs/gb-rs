@@ -5,6 +5,7 @@ extern crate zip;
 
 use gb::cart::Cart;
 use gb::gb::{GBReason, GB};
+use gb::peripherals::PeripheralData;
 use sdl2::pixels::Color;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -174,7 +175,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
 
         'frame: loop {
             let r = texture.with_lock(sdl2::rect::Rect::new(0, 0, 160, 144), |mut slice, _size| {
-                gb.step(99999, &mut Some(&mut slice))
+                gb.step(99999, &mut PeripheralData::new(Some(&mut slice)))
             });
             let r = r.unwrap();
 
@@ -305,7 +306,7 @@ fn main() -> Result<(), std::io::Error> {
 
     if matches.occurrences_of("no-display") > 0 {
         loop {
-            match gb.step::<(u8, u8, u8, u8), (i32, i32)>(0, &mut None) {
+            match gb.step(0, &mut PeripheralData::empty()) {
                 GBReason::Dead => break,
                 _ => {}
             }

@@ -1,11 +1,11 @@
 use cpu::InterruptFlag;
 use itertools::Itertools;
-use peripherals::Peripheral;
+use peripherals::{Peripheral, PeripheralData};
 use std::collections::VecDeque;
 
-const SCREEN_X: usize = 160;
-const SCREEN_Y: usize = 144;
-const BYTES_PER_PIXEL: usize = 4;
+pub const SCREEN_X: usize = 160;
+pub const SCREEN_Y: usize = 144;
+pub const BYTES_PER_PIXEL: usize = 4;
 
 #[derive(PartialEq, Copy, Clone)]
 enum DisplayState {
@@ -69,72 +69,71 @@ pub struct Display {
     wy: u8,
     wx: u8,
     ppu: PPU,
-    rendered: Vec<u8>,
     unused_cycles: u64,
     state: DisplayState,
     changed_state: bool,
 }
 
-pub trait LCD<C, P> {
-    fn draw_point(&mut self, c: C, point: P);
-    fn screen_power(&mut self, on: bool);
-    fn draw_line(&mut self, start: P, c: &Vec<u8>);
-}
+// pub trait LCD<C, P> {
+//     fn draw_point(&mut self, c: C, point: P);
+//     fn screen_power(&mut self, on: bool);
+//     fn draw_line(&mut self, start: P, c: &Vec<u8>);
+// }
 
-impl<'a> LCD<sdl2::pixels::Color, sdl2::rect::Point> for &'a mut [u8] {
-    fn draw_line(&mut self, start: sdl2::rect::Point, c: &Vec<u8>) {
-        let start = (start.x as usize + start.y as usize * SCREEN_X) * BYTES_PER_PIXEL as usize;
-        let end = start + SCREEN_X * BYTES_PER_PIXEL;
-        if c.len() > 0 {
-            assert_eq!(c.len(), SCREEN_X * BYTES_PER_PIXEL);
-            self[start..end].copy_from_slice(c[..].as_ref());
-        }
-    }
-    fn draw_point(&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
-        let start = (point.x as usize + point.y as usize * SCREEN_X) as usize;
-        self[start..start + BYTES_PER_PIXEL].copy_from_slice(&[c.r, c.g, c.b, c.a]);
-    }
-    fn screen_power(&mut self, on: bool) {
-        if !on {
-            self[..].copy_from_slice(&[0xff; SCREEN_X * SCREEN_Y * BYTES_PER_PIXEL]);
-        }
-    }
-}
+// impl<'a> LCD<sdl2::pixels::Color, sdl2::rect::Point> for &'a mut [u8] {
+//     fn draw_line(&mut self, start: sdl2::rect::Point, c: &Vec<u8>) {
+//         let start = (start.x as usize + start.y as usize * SCREEN_X) * BYTES_PER_PIXEL as usize;
+//         let end = start + SCREEN_X * BYTES_PER_PIXEL;
+//         if c.len() > 0 {
+//             assert_eq!(c.len(), SCREEN_X * BYTES_PER_PIXEL);
+//             self[start..end].copy_from_slice(c[..].as_ref());
+//         }
+//     }
+//     fn draw_point(&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
+//         let start = (point.x as usize + point.y as usize * SCREEN_X) as usize;
+//         self[start..start + BYTES_PER_PIXEL].copy_from_slice(&[c.r, c.g, c.b, c.a]);
+//     }
+//     fn screen_power(&mut self, on: bool) {
+//         if !on {
+//             self[..].copy_from_slice(&[0xff; SCREEN_X * SCREEN_Y * BYTES_PER_PIXEL]);
+//         }
+//     }
+// }
 
-impl<'a> LCD<sdl2::pixels::Color, sdl2::rect::Point> for sdl2::render::Texture<'a> {
-    fn draw_line(&mut self, start: sdl2::rect::Point, c: &Vec<u8>) {
-        if c.len() > 0 {
-            self.update(
-                Some(sdl2::rect::Rect::new(
-                    start.x,
-                    start.y,
-                    (c.len() / 4) as u32,
-                    1,
-                )),
-                c.as_ref(),
-                c.len(),
-            ).unwrap();
-        }
-    }
-    fn draw_point(&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
-        self.update(
-            Some(sdl2::rect::Rect::new(point.x, point.y, 1, 1)),
-            &[c.r, c.g, c.b, c.a],
-            4,
-        ).unwrap();
-    }
-    fn screen_power(&mut self, on: bool) {
-        if !on {
-            let c: u8 = 0xff;
+// impl<'a> LCD<sdl2::pixels::Color, sdl2::rect::Point> for sdl2::render::Texture<'a> {
+//     fn draw_line(&mut self, start: sdl2::rect::Point, c: &Vec<u8>) {
+//         if c.len() > 0 {
+//             self.update(
+//                 Some(sdl2::rect::Rect::new(
+//                     start.x,
+//                     start.y,
+//                     (c.len() / 4) as u32,
+//                     1,
+//                 )),
+//                 c.as_ref(),
+//                 c.len(),
+//             ).unwrap();
+//         }
+//     }
+//     fn draw_point(&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
+//         self.update(
+//             Some(sdl2::rect::Rect::new(point.x, point.y, 1, 1)),
+//             &[c.r, c.g, c.b, c.a],
+//             4,
+//         ).unwrap();
+//     }
+//     fn screen_power(&mut self, on: bool) {
+//         if !on {
+//             let c: u8 = 0xff;
 
-            self.update(
-                Some(sdl2::rect::Rect::new(0, 0, 160, 144)),
-                &[c; 160 * 144 * 4],
-                4,
-            ).unwrap();
-        }
-    }
-}
+//             self.update(
+//                 Some(sdl2::rect::Rect::new(0, 0, 160, 144)),
+//                 &[c; 160 * 144 * 4],
+//                 4,
+//             ).unwrap();
+//         }
+//     }
+// }
 
 impl Display {
     pub fn new() -> Display {
@@ -160,7 +159,6 @@ impl Display {
             wy: 0,
             wx: 0,
             ppu: PPU::new(),
-            rendered: Vec::with_capacity(160),
             state: DisplayState::OAMSearch,
             unused_cycles: 0,
         }
@@ -176,21 +174,21 @@ impl Display {
     pub fn display_enabled(&self) -> bool {
         self.lcdc & mask_u8!(LCDCFlag::LCDDisplayEnable) != 0
     }
-    pub fn render<C: From<(u8, u8, u8, u8)>, P: From<(i32, i32)>>(
-        &mut self,
-        lcd: &mut Option<&mut LCD<C, P>>,
-    ) {
-        if lcd.is_none() {
-            /* do nothing */
-        } else if let Some(lcd) = lcd {
-            if self.changed_state && self.state == DisplayState::VBlank && !self.display_enabled() {
-                //lcd.screen_power(false);
-            } else {
-                lcd.draw_line((0, self.ly as i32).into(), &mut self.rendered);
-            }
-        }
-        self.rendered.clear();
-    }
+    // pub fn render<C: From<(u8, u8, u8, u8)>, P: From<(i32, i32)>>(
+    //     &mut self,
+    //     lcd: &mut Option<&mut LCD<C, P>>,
+    // ) {
+    //     if lcd.is_none() {
+    //         /* do nothing */
+    //     } else if let Some(lcd) = lcd {
+    //         if self.changed_state && self.state == DisplayState::VBlank && !self.display_enabled() {
+    //             //lcd.screen_power(false);
+    //         } else {
+    //             lcd.draw_line((0, self.ly as i32).into(), &mut self.rendered);
+    //         }
+    //     }
+    //     self.rendered.clear();
+    // }
     fn sprite_size(&self) -> u8 {
         if self.lcdc & mask_u8!(LCDCFlag::SpriteSize) == 0 {
             8
@@ -282,9 +280,6 @@ impl Display {
             }
         }
     }
-}
-
-impl Display {
     fn lookup(&mut self, addr: u16) -> &mut u8 {
         match addr {
             0x8000...0x9fff => &mut self.vram[(addr - 0x8000) as usize],
@@ -343,7 +338,7 @@ impl Display {
         }
     }
 
-    fn add_oams<'a, T: Iterator<Item = &'a SpriteAttribute>>(
+    fn add_oams<'sprite, T: Iterator<Item = &'sprite SpriteAttribute>>(
         &mut self,
         oams: &mut std::iter::Peekable<T>,
         x: u8,
@@ -367,8 +362,9 @@ impl Display {
         }
     }
 
-    fn draw_window<'a, T: Iterator<Item = &'a SpriteAttribute>>(
+    fn draw_window<'sprite, T: Iterator<Item = &'sprite SpriteAttribute>>(
         &mut self,
+        real: &mut PeripheralData,
         oams: &mut std::iter::Peekable<T>,
         window: bool,
         bg_offset: u8,
@@ -378,11 +374,12 @@ impl Display {
 
         let fake = Tile::BG(BGIdx(0), Coord(0, 0));
         let l = fake.fetch(self);
+        const IGNORED_OFFSET: usize = 8;
         self.ppu.load(&fake, l);
         for _x in 0..bg_offset {
             self.ppu.shift();
         }
-        for x in range.start..range.end + 8 {
+        for x in range.start..range.end + IGNORED_OFFSET as u8 {
             if self.ppu.need_data() {
                 let t = if window {
                     self.get_win_tile(x)
@@ -395,12 +392,16 @@ impl Display {
             assert_eq!(self.ppu.need_data(), false);
             self.add_oams(oams, x, self.ly);
 
-            if x >= range.start + 8 {
+            if x >= range.start + IGNORED_OFFSET as u8 {
                 let c: (u8, u8, u8, u8) = {
                     let p = self.ppu.shift();
                     self.bgp_shade(p)
                 };
-                self.rendered.extend(&[c.0, c.1, c.2, c.3]);
+                let start =
+                    (self.ly as usize * SCREEN_X + x as usize - IGNORED_OFFSET) * BYTES_PER_PIXEL;
+                real.lcd.as_mut().map(|lcd| {
+                    lcd[start..start + BYTES_PER_PIXEL].copy_from_slice(&[c.0, c.1, c.2, c.3])
+                });
             } else {
                 self.ppu.shift();
             }
@@ -602,7 +603,7 @@ impl Peripheral for Display {
     fn write_byte(&mut self, addr: u16, v: u8) {
         *self.lookup(addr) = v;
     }
-    fn step(&mut self, time: u64) -> Option<InterruptFlag> {
+    fn step(&mut self, real: &mut PeripheralData, time: u64) -> Option<InterruptFlag> {
         let mut new_ly = self.ly;
         self.unused_cycles += time;
         let next_state = match self.state {
@@ -633,12 +634,12 @@ impl Peripheral for Display {
                         };
                         let nonwindow_range = 0..end_bg;
                         if !std::ops::Range::is_empty(&nonwindow_range) {
-                            self.draw_window(&mut oams, false, true_x % 8, nonwindow_range);
+                            self.draw_window(real, &mut oams, false, true_x % 8, nonwindow_range);
                         }
                         let window_range = end_bg..160;
                         if has_window && !std::ops::Range::is_empty(&window_range) {
                             let mut oams = orig_oams.iter().peekable();
-                            self.draw_window(&mut oams, true, 0, window_range);
+                            self.draw_window(real, &mut oams, true, 0, window_range);
                         }
                         self.ppu.clear();
                         self.unused_cycles -= 43;

@@ -1,7 +1,7 @@
 use super::mmu::MemRegister;
 use cpu::InterruptFlag;
 use enum_primitive::FromPrimitive;
-use peripherals::Peripheral;
+use peripherals::{Peripheral, PeripheralData};
 
 pub struct Controller {
     p1: u8,
@@ -45,7 +45,7 @@ impl Peripheral for Controller {
             _ => panic!("invalid controller address"),
         }
     }
-    fn step(&mut self, _time: u64) -> Option<InterruptFlag> {
+    fn step(&mut self, _real: &mut PeripheralData, _time: u64) -> Option<InterruptFlag> {
         let res = if (self.old ^ self.read) & !self.read != 0 {
             Some(InterruptFlag::HiLo)
         } else {

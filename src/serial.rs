@@ -1,7 +1,7 @@
 use super::mmu::MemRegister;
 use cpu::InterruptFlag;
 use enum_primitive::FromPrimitive;
-use peripherals::Peripheral;
+use peripherals::{Peripheral, PeripheralData};
 use std::io::Write;
 
 pub struct Serial<'a> {
@@ -30,7 +30,7 @@ impl<'a> Peripheral for Serial<'a> {
     fn write_byte(&mut self, addr: u16, v: u8) {
         *self.lookup(addr) = v;
     }
-    fn step(&mut self, _time: u64) -> Option<InterruptFlag> {
+    fn step(&mut self, _real: &mut PeripheralData, _time: u64) -> Option<InterruptFlag> {
         if (self.sc & 0x80) != 0 {
             //TODO: Wait appropriate amount of time to send serial data.
             if let Some(ref mut o) = self.out {
