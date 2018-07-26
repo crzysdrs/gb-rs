@@ -184,7 +184,7 @@ impl Display {
             /* do nothing */
         } else if let Some(lcd) = lcd {
             if self.changed_state && self.state == DisplayState::VBlank && !self.display_enabled() {
-                lcd.screen_power(false);
+                //lcd.screen_power(false);
             } else {
                 lcd.draw_line((0, self.ly as i32).into(), &mut self.rendered);
             }
@@ -682,6 +682,8 @@ impl Peripheral for Display {
 
         let mut triggers = 0;
 
+        //TODO: Determine which interrupts actually fire during Display Off
+        // At the very least, VBLANK does not.
         self.changed_state = next_state != self.state;
         if next_state != self.state {
             let state_trig = flag_u8!(
@@ -690,7 +692,7 @@ impl Peripheral for Display {
             )
                 | flag_u8!(
                     StatFlag::VBlankInterrupt,
-                    next_state == DisplayState::VBlank
+                    next_state == DisplayState::VBlank && self.display_enabled()
                 )
                 | flag_u8!(
                     StatFlag::HBlankInterrupt,
