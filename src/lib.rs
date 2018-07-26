@@ -121,10 +121,7 @@ mod tests {
                         Some(&mut buf),
                         false,
                     );
-                    gb.step_timeout(
-                        30 * 1000000,
-                        &mut ::peripherals::PeripheralData::empty(),
-                    );
+                    gb.step_timeout(30 * 1000000, &mut ::peripherals::PeripheralData::empty());
                 }
                 assert_eq!(
                     ::std::str::from_utf8(&buf.into_inner().unwrap()).unwrap(),
@@ -152,10 +149,7 @@ mod tests {
                     gb.magic_breakpoint();
 
                     (
-                        gb.step_timeout(
-                            30 * 1000000,
-                            &mut ::peripherals::PeripheralData::empty(),
-                        ),
+                        gb.step_timeout(30 * 1000000, &mut ::peripherals::PeripheralData::empty()),
                         gb.get_reg(),
                     )
                 };

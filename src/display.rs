@@ -314,15 +314,21 @@ impl Display {
         let dark_grey = (0xaa, 0xaa, 0xaa, 0xff);
         let light_grey = (0x55, 0x55, 0x55, 0xff);
         let black = (0x00, 0x00, 0x00, 0xff);
-        let pal = match p {
-            Pixel(Palette::BG, _) => if self.lcdc & mask_u8!(LCDCFlag::BGDisplayPriority) == 0 {
-                0
+        let pal =
+            if self.display_enabled() {
+                match p {
+                    Pixel(Palette::BG, _) => if self.lcdc & mask_u8!(LCDCFlag::BGDisplayPriority) == 0 {
+                        0
+                    } else {
+                        self.bgp
+                    },
+                    Pixel(Palette::OBP0, _) => self.obp0,
+                    Pixel(Palette::OBP1, _) => self.obp1,
+                }
             } else {
-                self.bgp
-            },
-            Pixel(Palette::OBP0, _) => self.obp0,
-            Pixel(Palette::OBP1, _) => self.obp1,
-        };
+                0
+            };
+
         let shade_id = match p {
             Pixel(_, PaletteShade::High) => 3,
             Pixel(_, PaletteShade::Mid) => 2,
@@ -364,14 +370,16 @@ impl Display {
 
     fn draw_window<'sprite, T: Iterator<Item = &'sprite SpriteAttribute>>(
         &mut self,
-        real: &mut PeripheralData,
+        lcd_line: &mut [u8],
         oams: &mut std::iter::Peekable<T>,
         window: bool,
         bg_offset: u8,
-        range: std::ops::Range<u8>,
+        range: &mut std::ops::Range<u8>,
     ) {
         /* offscreen pixels */
-
+        if std::ops::Range::is_empty(range) {
+            return
+        }
         let fake = Tile::BG(BGIdx(0), Coord(0, 0));
         let l = fake.fetch(self);
         const IGNORED_OFFSET: usize = 8;
@@ -379,6 +387,7 @@ impl Display {
         for _x in 0..bg_offset {
             self.ppu.shift();
         }
+        let mut target_pixel = 0;
         for x in range.start..range.end + IGNORED_OFFSET as u8 {
             if self.ppu.need_data() {
                 let t = if window {
@@ -397,11 +406,9 @@ impl Display {
                     let p = self.ppu.shift();
                     self.bgp_shade(p)
                 };
-                let start =
-                    (self.ly as usize * SCREEN_X + x as usize - IGNORED_OFFSET) * BYTES_PER_PIXEL;
-                real.lcd.as_mut().map(|lcd| {
-                    lcd[start..start + BYTES_PER_PIXEL].copy_from_slice(&[c.0, c.1, c.2, c.3])
-                });
+                let start = target_pixel  * BYTES_PER_PIXEL;
+                lcd_line[start..start + BYTES_PER_PIXEL].copy_from_slice(&[c.0, c.1, c.2, c.3]);
+                target_pixel += 1;
             } else {
                 self.ppu.shift();
             }
@@ -623,24 +630,33 @@ impl Peripheral for Display {
                     let orig_oams =
                         std::mem::replace(&mut self.oam_searched, Vec::with_capacity(0));
                     {
-                        let mut oams = orig_oams.iter().peekable();
                         let (true_x, _true_y) = self.get_bg_true(0, self.ly);
                         let has_window =
                             self.lcdc & mask_u8!(LCDCFlag::WindowEnable) != 0 && self.ly >= self.wy;
-                        let end_bg = if has_window {
-                            std::cmp::min(std::cmp::max(7, self.wx) - 7, 160)
+                        let bg_split = if has_window {
+                            std::cmp::min(std::cmp::max(7, self.wx) - 7, SCREEN_X as u8)
                         } else {
-                            160
+                            SCREEN_X as u8
                         };
-                        let nonwindow_range = 0..end_bg;
-                        if !std::ops::Range::is_empty(&nonwindow_range) {
-                            self.draw_window(real, &mut oams, false, true_x % 8, nonwindow_range);
-                        }
-                        let window_range = end_bg..160;
-                        if has_window && !std::ops::Range::is_empty(&window_range) {
-                            let mut oams = orig_oams.iter().peekable();
-                            self.draw_window(real, &mut oams, true, 0, window_range);
-                        }
+                        let mut split_line = real.lcd.as_mut().map(
+                            |lcd| {
+                                let y = self.ly as usize;
+                                let line_start = SCREEN_X * y * BYTES_PER_PIXEL;
+                                let line_end = SCREEN_X * (y + 1) * BYTES_PER_PIXEL;
+                                let (l, r) = lcd[line_start..line_end].split_at_mut(bg_split as usize * BYTES_PER_PIXEL);
+                                [(l, true_x % 8, 0..bg_split, false),
+                                 (r, 0, bg_split..SCREEN_X as u8, true)]
+                            }
+                        );
+                        split_line.as_mut().map(
+                            |windows|
+                            for w in windows {
+                                let (line, offset, range, is_win) = w;
+                                let mut oams = orig_oams.iter().peekable();
+                                self.draw_window(line, &mut oams, *is_win, *offset, range);
+                            }
+                        );
+
                         self.ppu.clear();
                         self.unused_cycles -= 43;
                     }
