@@ -314,20 +314,21 @@ impl Display {
         let dark_grey = (0xaa, 0xaa, 0xaa, 0xff);
         let light_grey = (0x55, 0x55, 0x55, 0xff);
         let black = (0x00, 0x00, 0x00, 0xff);
-        let pal =
-            if self.display_enabled() {
-                match p {
-                    Pixel(Palette::BG, _) => if self.lcdc & mask_u8!(LCDCFlag::BGDisplayPriority) == 0 {
+        let pal = if self.display_enabled() {
+            match p {
+                Pixel(Palette::BG, _) => {
+                    if self.lcdc & mask_u8!(LCDCFlag::BGDisplayPriority) == 0 {
                         0
                     } else {
                         self.bgp
-                    },
-                    Pixel(Palette::OBP0, _) => self.obp0,
-                    Pixel(Palette::OBP1, _) => self.obp1,
+                    }
                 }
-            } else {
-                0
-            };
+                Pixel(Palette::OBP0, _) => self.obp0,
+                Pixel(Palette::OBP1, _) => self.obp1,
+            }
+        } else {
+            0
+        };
 
         let shade_id = match p {
             Pixel(_, PaletteShade::High) => 3,
@@ -378,7 +379,7 @@ impl Display {
     ) {
         /* offscreen pixels */
         if std::ops::Range::is_empty(range) {
-            return
+            return;
         }
         let fake = Tile::BG(BGIdx(0), Coord(0, 0));
         let l = fake.fetch(self);
@@ -406,7 +407,7 @@ impl Display {
                     let p = self.ppu.shift();
                     self.bgp_shade(p)
                 };
-                let start = target_pixel  * BYTES_PER_PIXEL;
+                let start = target_pixel * BYTES_PER_PIXEL;
                 lcd_line[start..start + BYTES_PER_PIXEL].copy_from_slice(&[c.0, c.1, c.2, c.3]);
                 target_pixel += 1;
             } else {
@@ -638,24 +639,24 @@ impl Peripheral for Display {
                         } else {
                             SCREEN_X as u8
                         };
-                        let mut split_line = real.lcd.as_mut().map(
-                            |lcd| {
-                                let y = self.ly as usize;
-                                let line_start = SCREEN_X * y * BYTES_PER_PIXEL;
-                                let line_end = SCREEN_X * (y + 1) * BYTES_PER_PIXEL;
-                                let (l, r) = lcd[line_start..line_end].split_at_mut(bg_split as usize * BYTES_PER_PIXEL);
-                                [(l, true_x % 8, 0..bg_split, false),
-                                 (r, 0, bg_split..SCREEN_X as u8, true)]
-                            }
-                        );
-                        split_line.as_mut().map(
-                            |windows|
+                        let mut split_line = real.lcd.as_mut().map(|lcd| {
+                            let y = self.ly as usize;
+                            let line_start = SCREEN_X * y * BYTES_PER_PIXEL;
+                            let line_end = SCREEN_X * (y + 1) * BYTES_PER_PIXEL;
+                            let (l, r) = lcd[line_start..line_end]
+                                .split_at_mut(bg_split as usize * BYTES_PER_PIXEL);
+                            [
+                                (l, true_x % 8, 0..bg_split, false),
+                                (r, 0, bg_split..SCREEN_X as u8, true),
+                            ]
+                        });
+                        split_line.as_mut().map(|windows| {
                             for w in windows {
                                 let (line, offset, range, is_win) = w;
                                 let mut oams = orig_oams.iter().peekable();
                                 self.draw_window(line, &mut oams, *is_win, *offset, range);
                             }
-                        );
+                        });
 
                         self.ppu.clear();
                         self.unused_cycles -= 43;
@@ -709,7 +710,7 @@ impl Peripheral for Display {
             )
                 | flag_u8!(
                     StatFlag::VBlankInterrupt,
-                    next_state == DisplayState::VBlank && self.display_enabled()
+                    next_state == DisplayState::VBlank
                 )
                 | flag_u8!(
                     StatFlag::HBlankInterrupt,

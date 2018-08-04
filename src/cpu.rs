@@ -4,6 +4,8 @@ use super::mmu::MMU;
 use super::{make_u16, split_u16};
 use std::io::{Read, Seek, SeekFrom, Write};
 
+pub const CYCLES_PER_S: u32 = 4194304 / 4;
+
 macro_rules! alu_mem {
     ($s:expr, $mem:expr, $addr:expr, $v:expr) => {
         alu_mem_mask!($s, $mem, $addr, $v, Registers::default_mask())

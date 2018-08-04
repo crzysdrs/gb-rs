@@ -5,12 +5,13 @@ extern crate zip;
 
 use gb::cart::Cart;
 use gb::gb::{GBReason, GB};
-use gb::peripherals::PeripheralData;
+use gb::peripherals::{AudioSpec, PeripheralData};
 use sdl2::pixels::Color;
 use std::fs::File;
 use std::io::{Read, Write};
 
 fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
+    use sdl2::audio::AudioSpecDesired;
     use sdl2::event::Event;
     use sdl2::gfx::framerate::FPSManager;
     use sdl2::keyboard::Keycode;
@@ -87,6 +88,17 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
 
     let mut last_ticks = timer_sub.performance_counter();
     let mut frames = 0;
+    let desired_spec = AudioSpecDesired {
+        freq: Some(50_000),
+        channels: Some(2),
+        samples: None,
+    };
+    let audio_subsystem = sdl_context.audio().unwrap();
+    let device = audio_subsystem
+        .open_queue::<i16, _>(None, &desired_spec)
+        .unwrap();
+    println!("{:?}", device.spec());
+    device.resume();
 
     'running: loop {
         // get the inputs here
@@ -174,11 +186,27 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         let cycles = gb.cpu_cycles();
 
         'frame: loop {
+            let mut count = 0;
             let r = texture.with_lock(sdl2::rect::Rect::new(0, 0, 160, 144), |mut slice, _size| {
-                gb.step(99999, &mut PeripheralData::new(Some(&mut slice)))
+                gb.step(
+                    99999,
+                    &mut PeripheralData::new(
+                        Some(&mut slice),
+                        //None
+                        Some(AudioSpec {
+                            silence: 0,
+                            freq: device.spec().freq as u32,
+                            queue: Box::new(&mut |samples| {
+                                count += 1;
+                                device.queue(samples)
+                            }),
+                        }),
+                    ),
+                )
             });
-            let r = r.unwrap();
 
+            println!("{:?} Count {}", device.status(), count);
+            let r = r.unwrap();
             match r {
                 GBReason::VSync => {
                     frames += 1;
@@ -205,8 +233,11 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         }
         canvas.copy(&texture, None, None).unwrap();
         canvas.present();
+        println!("Almost {:?} {:?}", device.status(), device.size());
     }
-
+    device.pause();
+    device.clear();
+    println!("Last {:?} {:?}", device.status(), device.size());
     Ok(())
 }
 

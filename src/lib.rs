@@ -7,6 +7,7 @@
 #[macro_use]
 extern crate enum_primitive;
 extern crate itertools;
+extern crate num;
 
 macro_rules! flag_u8 {
     ($x:path, $cond:expr) => {
@@ -55,6 +56,7 @@ mod mem;
 mod mmu;
 pub mod peripherals;
 mod serial;
+pub mod sound;
 mod timer;
 
 fn make_u16(h: u8, l: u8) -> u16 {

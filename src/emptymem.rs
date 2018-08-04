@@ -2,7 +2,7 @@ use std::io;
 use std::io::{Read, Write};
 
 #[allow(dead_code)]
-struct EmptyMem {}
+pub struct EmptyMem {}
 #[allow(dead_code)]
 impl EmptyMem {
     pub fn new() -> EmptyMem {

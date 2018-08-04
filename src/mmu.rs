@@ -10,6 +10,7 @@ use super::timer::Timer;
 use cart::Cart;
 use dma::DMA;
 use peripherals::Peripheral;
+use sound::Mixer;
 
 enum_from_primitive! {
     #[derive(Debug, PartialEq)]
@@ -22,6 +23,14 @@ enum_from_primitive! {
         TIMA = 0xff05,
         TMA = 0xff06,
         TAC = 0xff07,
+
+        /* sound channel 1 */
+        NR10 = 0xff10,
+        NR11 = 0xff11,
+        NR12 = 0xff12,
+        NR13 = 0xff13,
+        NR14 = 0xff14,
+
         //CGB KEY1 = 0xff4d,
         //CGB RP = 0xff56,
         //Bank Control Registers
@@ -71,11 +80,14 @@ pub struct MMU<'a> {
     serial: Serial<'a>,
     ram1: Mem,
     ram2: Mem,
-    sound: Mem,
+    sound: Mixer,
     interrupt_flag: Mem,
 }
 
 impl<'a> MMU<'a> {
+    pub fn get_display(&self) -> &Display {
+        &self.display
+    }
     pub fn get_current_pos(&self) -> u16 {
         self.seek_pos
     }
@@ -98,6 +110,7 @@ impl<'a> MMU<'a> {
             &mut self.display as &mut Peripheral,
             &mut self.serial as &mut Peripheral,
             &mut self.controller as &mut Peripheral,
+            &mut self.sound as &mut Peripheral,
         ];
         for p in ps.iter_mut() {
             walk(*p)
@@ -118,7 +131,7 @@ impl<'a> MMU<'a> {
             timer: Timer::new(),
             serial: Serial::new(serial),
             controller: Controller::new(),
-            sound: Mem::new(false, 0xff10, vec![0u8; 0xff3f - 0xff10 + 1]),
+            sound: Mixer::new(), //Mem::new(false, 0xff10, vec![0u8; 0xff3f - 0xff10 + 1]),
             ram0,
             fake_mem: FakeMem::new(),
             ram1,
