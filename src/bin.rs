@@ -89,15 +89,15 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
     let mut last_ticks = timer_sub.performance_counter();
     let mut frames = 0;
     let desired_spec = AudioSpecDesired {
-        freq: Some(50_000),
+        freq: Some(16384 * 4),
         channels: Some(2),
         samples: None,
     };
+    assert_eq!((4194304 / 4) % desired_spec.freq.unwrap(), 0);
     let audio_subsystem = sdl_context.audio().unwrap();
     let device = audio_subsystem
         .open_queue::<i16, _>(None, &desired_spec)
         .unwrap();
-    println!("{:?}", device.spec());
     device.resume();
 
     'running: loop {
@@ -198,6 +198,9 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                             freq: device.spec().freq as u32,
                             queue: Box::new(&mut |samples| {
                                 count += 1;
+                                // if samples[0] != 0 || samples[1] != 0 {
+                                //     println!("{:?}", samples);
+                                // }
                                 device.queue(samples)
                             }),
                         }),
@@ -205,7 +208,6 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                 )
             });
 
-            println!("{:?} Count {}", device.status(), count);
             let r = r.unwrap();
             match r {
                 GBReason::VSync => {
@@ -233,11 +235,9 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         }
         canvas.copy(&texture, None, None).unwrap();
         canvas.present();
-        println!("Almost {:?} {:?}", device.status(), device.size());
     }
     device.pause();
     device.clear();
-    println!("Last {:?} {:?}", device.status(), device.size());
     Ok(())
 }
 

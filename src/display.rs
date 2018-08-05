@@ -1,6 +1,6 @@
 use cpu::InterruptFlag;
 use itertools::Itertools;
-use peripherals::{Peripheral, PeripheralData};
+use peripherals::{Addressable, Peripheral, PeripheralData};
 use std::collections::VecDeque;
 
 pub const SCREEN_X: usize = 160;
@@ -604,13 +604,15 @@ impl PPU {
     }
 }
 
-impl Peripheral for Display {
+impl Addressable for Display {
     fn read_byte(&mut self, addr: u16) -> u8 {
         *self.lookup(addr)
     }
     fn write_byte(&mut self, addr: u16, v: u8) {
         *self.lookup(addr) = v;
     }
+}
+impl Peripheral for Display {
     fn step(&mut self, real: &mut PeripheralData, time: u64) -> Option<InterruptFlag> {
         let mut new_ly = self.ly;
         self.unused_cycles += time;

@@ -1,5 +1,5 @@
 use cpu::InterruptFlag;
-use peripherals::{Peripheral, PeripheralData};
+use peripherals::{Addressable, Peripheral, PeripheralData};
 
 pub struct FakeMem {}
 
@@ -8,7 +8,7 @@ impl FakeMem {
         FakeMem {}
     }
 }
-impl Peripheral for FakeMem {
+impl Addressable for FakeMem {
     fn write_byte(&mut self, addr: u16, val: u8) {
         println!(
             "Attempting write to unhandled address {:x}, value {:x}",
@@ -19,6 +19,8 @@ impl Peripheral for FakeMem {
         println!("Attempting read from unhandled address {:x}", addr);
         0
     }
+}
+impl Peripheral for FakeMem {
     fn step(&mut self, _real: &mut PeripheralData, _time: u64) -> Option<InterruptFlag> {
         None
     }

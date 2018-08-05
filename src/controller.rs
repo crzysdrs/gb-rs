@@ -1,7 +1,7 @@
 use super::mmu::MemRegister;
 use cpu::InterruptFlag;
 use enum_primitive::FromPrimitive;
-use peripherals::{Peripheral, PeripheralData};
+use peripherals::{Addressable, Peripheral, PeripheralData};
 
 pub struct Controller {
     p1: u8,
@@ -22,7 +22,7 @@ impl Controller {
     }
 }
 
-impl Peripheral for Controller {
+impl Addressable for Controller {
     fn read_byte(&mut self, addr: u16) -> u8 {
         match MemRegister::from_u64(addr.into()).expect("Valid Register") {
             MemRegister::P1 => {
@@ -45,6 +45,8 @@ impl Peripheral for Controller {
             _ => panic!("invalid controller address"),
         }
     }
+}
+impl Peripheral for Controller {
     fn step(&mut self, _real: &mut PeripheralData, _time: u64) -> Option<InterruptFlag> {
         let res = if (self.old ^ self.read) & !self.read != 0 {
             Some(InterruptFlag::HiLo)

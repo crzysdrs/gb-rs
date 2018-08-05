@@ -1,7 +1,7 @@
 use super::mmu::MemRegister;
 use enum_primitive::FromPrimitive;
 use mmu::MMU;
-use peripherals::Peripheral;
+use peripherals::{Addressable, Peripheral};
 
 pub struct DMA {
     active: bool,
@@ -26,7 +26,8 @@ impl DMA {
     }
 }
 
-impl Peripheral for DMA {
+impl Peripheral for DMA {}
+impl Addressable for DMA {
     fn write_byte(&mut self, addr: u16, val: u8) {
         match MemRegister::from_u64(addr.into()).expect("Valid Register") {
             MemRegister::DMA => {

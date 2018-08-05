@@ -1,4 +1,4 @@
-use peripherals::Peripheral;
+use peripherals::{Addressable, Peripheral};
 
 enum CGBStatus {
     GB,
@@ -155,7 +155,9 @@ impl Cart {
     }
 }
 
-impl Peripheral for Cart {
+impl Peripheral for Cart {}
+
+impl Addressable for Cart {
     fn read_byte(&mut self, addr: u16) -> u8 {
         match addr {
             0x0000...0x3FFF => {

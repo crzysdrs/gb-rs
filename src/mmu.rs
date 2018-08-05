@@ -31,6 +31,26 @@ enum_from_primitive! {
         NR13 = 0xff13,
         NR14 = 0xff14,
 
+        NR21 = 0xff16,
+        NR22 = 0xff17,
+        NR23 = 0xff18,
+        NR24 = 0xff19,
+
+        NR30 = 0xff1A,
+        NR31 = 0xff1B,
+        NR32 = 0xff1C,
+        NR33 = 0xff1D,
+        NR34 = 0xff1E,
+
+        NR41 = 0xff20,
+        NR42 = 0xff21,
+        NR43 = 0xff22,
+        NR44 = 0xff23,
+
+        NR50 = 0xff24,
+        NR51 = 0xff25,
+        NR52 = 0xff26,
+
         //CGB KEY1 = 0xff4d,
         //CGB RP = 0xff56,
         //Bank Control Registers

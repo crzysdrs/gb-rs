@@ -26,10 +26,13 @@ impl PeripheralData<'a> {
     }
 }
 
-pub trait Peripheral {
-    fn read_byte(&mut self, addr: u16) -> u8;
-    fn write_byte(&mut self, addr: u16, v: u8);
+pub trait Peripheral: Addressable {
     fn step(&mut self, _real: &mut PeripheralData, _time: u64) -> Option<InterruptFlag> {
         None
     }
+}
+
+pub trait Addressable {
+    fn read_byte(&mut self, addr: u16) -> u8;
+    fn write_byte(&mut self, addr: u16, v: u8);
 }
