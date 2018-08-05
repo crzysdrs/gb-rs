@@ -70,16 +70,16 @@ impl Addressable for SoundChannel1 {
                 self.channel.vol.update(start_vol, period, down);
             }
             MemRegister::NR13 => {
-                self.channel.freq &= !0xff;
-                self.channel.freq |= v as u16;
-                let f = self.channel.freq;
-                self.channel.set_freq(f);
+                let mut freq = self.channel.get_freq();
+                freq &= !0xff;
+                freq |= v as u16;
+                self.channel.set_freq(freq);
             }
             MemRegister::NR14 => {
-                self.channel.freq &= 0xff;
-                self.channel.freq |= (v as u16 & 0b111) << 8;
-                let f = self.channel.freq;
-                self.channel.set_freq(f);
+                let mut freq = self.channel.get_freq();
+                freq &= 0xff;
+                freq |= (v as u16 & 0b111) << 8;
+                self.channel.set_freq(freq);
                 if (self.nr14 & (1 << 7)) != 0 {
                     self.channel.restart(self.nr14 & (1 << 6) != 0)
                 }

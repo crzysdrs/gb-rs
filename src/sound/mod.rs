@@ -61,21 +61,30 @@ struct Sweep {
     period: u8,
     down: bool,
     shift: u8,
-    shadow_freq: u16,
+    shadow_period: u16,
     wait: WaitTimer<u8>,
+    enable: bool,
 }
 impl Sweep {
     fn new() -> Sweep {
         Sweep {
             period: 0,
-            shadow_freq: 0,
+            shadow_period: 0,
             down: false,
             shift: 0,
             wait: WaitTimer::new(),
+            enable: false,
         }
     }
-    fn set_freq(&mut self, freq: u16) {
-        self.shadow_freq = freq;
+    fn set_period(&mut self, period: u16) {
+        self.shadow_period = period;
+    }
+    fn enabled(&self) -> bool {
+        if self.period > 0 && self.shift > 0 {
+            self.enable
+        } else {
+            true
+        }
     }
     fn update(&mut self, period: u8, shift: u8, down: bool) {
         if period == 0 {
@@ -87,28 +96,33 @@ impl Sweep {
         self.down = down;
     }
 
-    fn reset(&mut self, freq: u16) {
-        self.shadow_freq = freq;
+    fn reset(&mut self, period: u16) {
+        self.shadow_period = period;
+        self.enable = true
     }
     fn step(&mut self, clocks: &Clocks) {
-        if self.shift > 0 {
+        if self.period > 0 && self.shift > 0 && self.enable {
             if let Some(count) = self.wait.ready(clocks.sweep as u8, self.period) {
                 for _ in 0..count {
+                    let mut freq = (1 << 11) - self.shadow_period;
+                    let shift_incr = freq >> self.shift;
                     if self.down {
-                        self.shadow_freq -= self.shadow_freq >> self.shift;
+                        freq = freq.saturating_sub(shift_incr);
                     } else {
-                        self.shadow_freq += self.shadow_freq >> self.shift;
+                        freq = freq.saturating_add(shift_incr);
                     }
-                    self.shadow_freq &= 0x3ff;
+                    if freq > 2047 {
+                        self.enable = false;
+                        self.shadow_period = 0;
+                    } else {
+                        self.shadow_period = ((1 << 11) - freq) & 0x7ff;
+                    }
                 }
             }
         }
     }
-    fn freq(&self) -> u16 {
-        self.shadow_freq
-    }
-    fn shift(&self) -> u8 {
-        self.shift
+    fn period(&self) -> u16 {
+        self.shadow_period
     }
 }
 struct Length {
@@ -227,7 +241,7 @@ struct ToneChannel {
     sweep: Option<Sweep>,
     timer: Timer,
     duty: Duty,
-    freq: u16, // 2^17 / (2^11 - freq) Hz
+    period: u16,
     length: Length,
     vol: Vol,
     enabled: bool,
@@ -242,7 +256,7 @@ impl ToneChannel {
         ToneChannel {
             frame_seq: FrameSequencer::new(),
             sweep,
-            freq: 0,
+            period: 0,
             timer: Timer::new(),
             duty: Duty::new(),
             length: Length::new(),
@@ -250,15 +264,20 @@ impl ToneChannel {
             enabled: false,
         }
     }
+
+    fn get_freq(&self) -> u16 {
+        (1 << 11) - self.period
+    }
     fn set_freq(&mut self, freq: u16) {
-        self.freq = freq;
-        self.sweep.as_mut().map(|s| s.set_freq(freq));
-        self.timer.set_freq(freq);
+        self.period = (1 << 11) - (freq & 0x7ff);
+        let p = self.period;
+        self.sweep.as_mut().map(|s| s.set_period(p));
+        self.timer.set_period(self.period);
     }
     fn restart(&mut self, length_enable: bool) {
-        let f = self.freq;
-        self.sweep.as_mut().map(|s| s.reset(f));
-        self.timer.reset(self.freq);
+        let p = self.period;
+        self.sweep.as_mut().map(|s| s.reset(p));
+        self.timer.reset(self.period);
         self.duty.reset();
         self.vol.reset();
         self.length.reset(length_enable);
@@ -267,15 +286,17 @@ impl ToneChannel {
     fn step(&mut self, cycles: u64) -> i8 {
         if self.enabled {
             let clocks = self.frame_seq.step(cycles);
-            let timer_freq = self.sweep.as_mut().map_or(self.freq, |s| {
-                s.step(&clocks);
-                s.freq()
-            });
-            let ticks = self.timer.step(timer_freq, cycles);
+            let (timer_period, sweep_enabled) =
+                self.sweep.as_mut().map_or((self.period, true), |s| {
+                    s.step(&clocks);
+                    (s.period(), s.enabled())
+                });
+            self.timer.set_period(timer_period);
+            let ticks = self.timer.step(cycles);
             let high = self.duty.step(ticks as u8);
             let length_enabled = self.length.step(&clocks);
             let volume = self.vol.step(&clocks);
-            self.enabled = length_enabled || self.sweep.as_ref().map_or(false, |s| s.shift() > 0);
+            self.enabled = length_enabled && sweep_enabled;
             if high {
                 volume as i8
             } else {
@@ -299,22 +320,19 @@ impl Timer {
             period: 0,
         }
     }
-    fn reset(&mut self, freq: u16) {
-        self.set_freq(freq);
+    fn reset(&mut self, period: u16) {
+        self.set_period(period);
         self.period_wait.reset();
     }
-    fn step(&mut self, freq: u16, cycles: u64) -> u16 {
+    fn step(&mut self, cycles: u64) -> u16 {
         let mut clocks = 0;
         if let Some(count) = self.period_wait.ready(cycles as u16, self.period) {
-            self.set_freq(freq);
             clocks += count as u16;
         }
         clocks
     }
-    fn set_freq(&mut self, freq: u16) {
-        // period in cycles
-        //TODO: This is almost definitely wrong.
-        self.period = (1 << 11) - freq;
+    fn set_period(&mut self, period: u16) {
+        self.period = period;
     }
 }
 
