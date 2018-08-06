@@ -31,6 +31,7 @@ enum_from_primitive! {
         NR13 = 0xff13,
         NR14 = 0xff14,
 
+        NR20 = 0xff15,
         NR21 = 0xff16,
         NR22 = 0xff17,
         NR23 = 0xff18,
@@ -42,6 +43,7 @@ enum_from_primitive! {
         NR33 = 0xff1D,
         NR34 = 0xff1E,
 
+        NR40 = 0xff1F,
         NR41 = 0xff20,
         NR42 = 0xff21,
         NR43 = 0xff22,

@@ -1,78 +1,79 @@
-use super::{AudioChannel, ToneChannel};
-use enum_primitive::FromPrimitive;
-use mmu::MemRegister;
-use peripherals::Addressable;
+use super::{AudioChannel, Clocks};
 
-pub struct SoundChannel2 {
-    channel: ToneChannel,
-    nr21: u8,
-    nr22: u8,
-    nr23: u8,
-    nr24: u8,
+use sound::channel::{
+    ChannelRegs, Duty, DutyPass, Freq, HasRegs, Length, Length64Pass, LengthPass, Timer, Vol,
+    VolumePass,
+};
+
+pub struct Channel2 {
+    enabled: bool,
+    regs: Channel2Regs,
+    vol: Vol,
+    timer: Timer,
+    length: Length,
+    duty: Duty,
 }
 
-impl SoundChannel2 {
-    pub fn new() -> SoundChannel2 {
-        SoundChannel2 {
-            channel: ToneChannel::new(false),
-            nr21: 0,
-            nr22: 0,
-            nr23: 0,
-            nr24: 0,
-        }
-    }
-    fn lookup(&mut self, addr: u16) -> &mut u8 {
-        match MemRegister::from_u64(addr.into()).expect("Valid Register") {
-            MemRegister::NR21 => &mut self.nr21,
-            MemRegister::NR22 => &mut self.nr22,
-            MemRegister::NR23 => &mut self.nr23,
-            MemRegister::NR24 => &mut self.nr24,
-            _ => panic!("Invalid Sound Register in Channel 2"),
+impl Channel2 {
+    pub fn new() -> Channel2 {
+        Channel2 {
+            regs: Channel2Regs(ChannelRegs::new()),
+            vol: Vol::new(),
+            timer: Timer::new(),
+            length: Length::new(),
+            duty: Duty::new(),
+            enabled: false,
         }
     }
 }
 
-impl AudioChannel for SoundChannel2 {
-    fn sample(&mut self, cycles: u64) -> i16 {
-        self.channel.step(cycles) as i16
+impl AudioChannel for Channel2 {
+    fn reset(&mut self) {
+        self.timer.reset();
+        self.duty.reset();
+        self.length.reset();
+        self.vol.reset();
+        self.enabled = true;
     }
-}
-
-impl Addressable for SoundChannel2 {
-    fn read_byte(&mut self, addr: u16) -> u8 {
-        *self.lookup(addr)
-    }
-    fn write_byte(&mut self, addr: u16, v: u8) {
-        *self.lookup(addr) = v;
-        match MemRegister::from_u64(addr.into()).expect("Valid Register") {
-            MemRegister::NR21 => {
-                self.channel.duty.set_duty((v & 0b1100_0000) >> 6);
-                self.channel.length.set_length(64 - (v & 0b0011_1111));
-            }
-            MemRegister::NR22 => {
-                let period = v & 0b0000_0111;
-                let start_vol = (v & 0b1111_0000) >> 4;
-                let down = (v & 0b0000_1000) == 0;
-
-                self.channel.vol.update(start_vol, period, down);
-            }
-            MemRegister::NR23 => {
-                let mut freq = self.channel.get_freq();
-                freq &= !0xff;
-                freq |= v as u16;
-                self.channel.set_freq(freq);
-            }
-            MemRegister::NR24 => {
-                let mut freq = self.channel.get_freq();
-                freq &= 0xff;
-                freq |= (v as u16 & 0b111) << 8;
-                self.channel.set_freq(freq);
-                if (self.nr24 & (1 << 7)) != 0 {
-                    self.channel.restart(self.nr24 & (1 << 6) != 0)
-                }
-                self.nr24 &= !(1 << 7);
-            }
-            _ => panic!("Invalid Register"),
+    fn sample(&mut self, clocks: &Clocks) -> Option<i16> {
+        if !self.enabled && !self.regs.trigger() {
+            return None;
+        } else if self.regs.trigger() {
+            self.regs.clear_trigger();
+            self.reset();
+        }
+        let ticks = self.timer.step(&mut self.regs, clocks);
+        let high = self.duty.step(&mut self.regs, ticks);
+        self.length.step(&mut self.regs, clocks)?;
+        let vol = self.vol.step(&mut self.regs, clocks);
+        if high {
+            Some(vol as i16)
+        } else {
+            Some(-(vol as i16))
         }
     }
 }
+
+struct Channel2Regs(ChannelRegs);
+
+impl HasRegs for Channel2 {
+    fn regs(&self) -> &ChannelRegs {
+        self.regs.regs()
+    }
+    fn mut_regs(&mut self) -> &mut ChannelRegs {
+        self.regs.mut_regs()
+    }
+}
+impl HasRegs for Channel2Regs {
+    fn regs(&self) -> &ChannelRegs {
+        &self.0
+    }
+    fn mut_regs(&mut self) -> &mut ChannelRegs {
+        &mut self.0
+    }
+}
+
+impl Freq for Channel2Regs {}
+impl DutyPass for Channel2Regs {}
+impl Length64Pass for Channel2Regs {}
+impl VolumePass for Channel2Regs {}

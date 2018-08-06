@@ -1,91 +1,84 @@
-use super::AudioChannel;
-use super::ToneChannel;
-use enum_primitive::FromPrimitive;
-use mmu::MemRegister;
-use peripherals::Addressable;
+use super::{AudioChannel, Clocks};
 
-pub struct SoundChannel1 {
-    channel: ToneChannel,
-    nr10: u8,
-    nr11: u8,
-    nr12: u8,
-    nr13: u8,
-    nr14: u8,
+use sound::channel::{
+    ChannelRegs, Duty, DutyPass, Freq, HasRegs, Length, Length64Pass, LengthPass, Sweep, SweepPass,
+    Timer, Vol, VolumePass,
+};
+
+pub struct Channel1 {
+    enabled: bool,
+    regs: Channel1Regs,
+    vol: Vol,
+    timer: Timer,
+    sweep: Sweep,
+    length: Length,
+    duty: Duty,
 }
 
-impl AudioChannel for SoundChannel1 {
-    fn sample(&mut self, cycles: u64) -> i16 {
-        self.channel.step(cycles) as i16
-    }
-}
-
-impl SoundChannel1 {
-    pub fn new() -> SoundChannel1 {
-        SoundChannel1 {
-            channel: ToneChannel::new(true),
-            nr10: 0,
-            nr11: 0,
-            nr12: 0,
-            nr13: 0,
-            nr14: 0,
-        }
-    }
-    fn lookup(&mut self, addr: u16) -> &mut u8 {
-        match MemRegister::from_u64(addr.into()).expect("Valid Register") {
-            MemRegister::NR10 => &mut self.nr10,
-            MemRegister::NR11 => &mut self.nr11,
-            MemRegister::NR12 => &mut self.nr12,
-            MemRegister::NR13 => &mut self.nr13,
-            MemRegister::NR14 => &mut self.nr14,
-            _ => panic!("Invalid Sound Register in Channel 1"),
+impl Channel1 {
+    pub fn new() -> Channel1 {
+        Channel1 {
+            regs: Channel1Regs(ChannelRegs::new()),
+            vol: Vol::new(),
+            timer: Timer::new(),
+            sweep: Sweep::new(),
+            length: Length::new(),
+            duty: Duty::new(),
+            enabled: false,
         }
     }
 }
 
-impl Addressable for SoundChannel1 {
-    fn read_byte(&mut self, addr: u16) -> u8 {
-        *self.lookup(addr)
+impl AudioChannel for Channel1 {
+    fn reset(&mut self) {
+        self.sweep.reset();
+        self.timer.reset();
+        self.duty.reset();
+        self.length.reset();
+        self.vol.reset();
+        self.enabled = true;
     }
-    fn write_byte(&mut self, addr: u16, v: u8) {
-        *self.lookup(addr) = v;
-        match MemRegister::from_u64(addr.into()).expect("Valid Register") {
-            MemRegister::NR10 => {
-                let sweep = (v & 0b0111_0000) >> 4;
-                let n = v & 0b0000_0111;
-                let down = (v & 0b0000_1000) != 0;
-                self.channel
-                    .sweep
-                    .as_mut()
-                    .map(|s| s.update(sweep, n, down));
-            }
-            MemRegister::NR11 => {
-                self.channel.duty.set_duty((v & 0b1100_0000) >> 6);
-                self.channel.length.set_length(64 - (v & 0b0011_1111));
-            }
-            MemRegister::NR12 => {
-                let period = v & 0b0000_0111;
-                let start_vol = (v & 0b1111_0000) >> 4;
-                let down = (v & 0b0000_1000) == 0;
-
-                self.channel.vol.update(start_vol, period, down);
-            }
-            MemRegister::NR13 => {
-                let mut freq = self.channel.get_freq();
-                freq &= !0xff;
-                freq |= v as u16;
-                self.channel.set_freq(freq);
-            }
-            MemRegister::NR14 => {
-                let mut freq = self.channel.get_freq();
-                freq &= 0xff;
-                freq |= (v as u16 & 0b111) << 8;
-                self.channel.set_freq(freq);
-                if (self.nr14 & (1 << 7)) != 0 {
-                    self.channel.restart(self.nr14 & (1 << 6) != 0)
-                }
-                self.nr14 &= !(1 << 7);
-            }
-            _ => panic!("Invalid Register"),
+    fn sample(&mut self, clocks: &Clocks) -> Option<i16> {
+        if !self.enabled && !self.regs.trigger() {
+            return None;
+        } else if self.regs.trigger() {
+            self.regs.clear_trigger();
+            self.reset();
+        }
+        self.sweep.step(&mut self.regs, clocks)?;
+        let ticks = self.timer.step(&mut self.regs, clocks);
+        let high = self.duty.step(&mut self.regs, ticks);
+        self.length.step(&mut self.regs, clocks)?;
+        let vol = self.vol.step(&mut self.regs, clocks);
+        if high {
+            Some(vol as i16)
+        } else {
+            Some(-(vol as i16))
         }
     }
 }
+
+struct Channel1Regs(ChannelRegs);
+
+impl HasRegs for Channel1 {
+    fn regs(&self) -> &ChannelRegs {
+        self.regs.regs()
+    }
+    fn mut_regs(&mut self) -> &mut ChannelRegs {
+        self.regs.mut_regs()
+    }
+}
+impl HasRegs for Channel1Regs {
+    fn regs(&self) -> &ChannelRegs {
+        &self.0
+    }
+    fn mut_regs(&mut self) -> &mut ChannelRegs {
+        &mut self.0
+    }
+}
+
+impl Freq for Channel1Regs {}
+impl DutyPass for Channel1Regs {}
+impl Length64Pass for Channel1Regs {}
+impl VolumePass for Channel1Regs {}
+impl SweepPass for Channel1Regs {}
