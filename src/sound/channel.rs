@@ -1,6 +1,6 @@
 use super::Clocks;
 use super::WaitTimer;
-use std::ops::{Deref,DerefMut};
+use std::ops::{Deref, DerefMut};
 
 pub struct ChannelRegs {
     pub nrx0: u8,
@@ -22,7 +22,7 @@ impl ChannelRegs {
     }
 }
 
-pub trait HasRegs : DerefMut + Deref<Target=ChannelRegs> {}
+pub trait HasRegs: DerefMut + Deref<Target = ChannelRegs> {}
 
 pub trait SweepPass: HasRegs {
     fn period(&self) -> u8 {
@@ -50,7 +50,7 @@ impl ChannelRegs {
         (self.nrx0 & 0b01000_0000) != 0
     }
 }
-pub trait LengthPass<T>{
+pub trait LengthPass<T> {
     fn length(&self) -> T;
 }
 
@@ -121,7 +121,7 @@ impl Vol {
         self.wait.reset();
         self.volume = None;
     }
-    pub fn step(&mut self, reg: &mut VolumePass<Target=ChannelRegs>, c: &Clocks) -> u8 {
+    pub fn step(&mut self, reg: &mut VolumePass<Target = ChannelRegs>, c: &Clocks) -> u8 {
         let vol = self.volume.get_or_insert(reg.vol_start());
         if reg.vol_period() == 0 {
             /* do nothing */
@@ -155,7 +155,7 @@ impl Timer {
     pub fn reset(&mut self) {
         self.period_wait.reset();
     }
-    pub fn step(&mut self, regs: &mut Freq<Target=ChannelRegs>, clocks: &Clocks) -> u8 {
+    pub fn step(&mut self, regs: &mut Freq<Target = ChannelRegs>, clocks: &Clocks) -> u8 {
         let mut ticks = 0;
         if let Some(count) = self
             .period_wait
@@ -185,7 +185,7 @@ impl Duty {
     pub fn reset(&mut self) {
         self.offset = 0;
     }
-    pub fn step(&mut self, regs: &mut DutyPass<Target=ChannelRegs>, ticks: u8) -> bool {
+    pub fn step(&mut self, regs: &mut DutyPass<Target = ChannelRegs>, ticks: u8) -> bool {
         self.offset += ticks;
         self.offset %= 8;
         DUTY_CYCLES[regs.duty() as usize][self.offset as usize]
@@ -209,7 +209,7 @@ impl Sweep {
     }
     pub fn step<T>(&mut self, regs: &mut T, clocks: &Clocks) -> Option<()>
     where
-        T: SweepPass<Target=ChannelRegs> + Freq,
+        T: SweepPass<Target = ChannelRegs> + Freq,
     {
         if self.shadow_freq.is_none() {
             self.shadow_freq = Some(regs.freq());
@@ -241,8 +241,9 @@ pub struct Length<T> {
     count: Option<T>,
 }
 
-impl <T> Length<T>
-where T : std::ops::SubAssign + std::cmp::PartialOrd + std::convert::From<u8>,
+impl<T> Length<T>
+where
+    T: std::ops::SubAssign + std::cmp::PartialOrd + std::convert::From<u8>,
 {
     pub fn new() -> Length<T> {
         Length { count: None }
@@ -251,7 +252,8 @@ where T : std::ops::SubAssign + std::cmp::PartialOrd + std::convert::From<u8>,
         self.count = None;
     }
     pub fn step<X>(&mut self, reg: &mut X, c: &Clocks) -> Option<()>
-    where X: LengthPass<T> + HasRegs
+    where
+        X: LengthPass<T> + HasRegs,
     {
         let count = self.count.get_or_insert(reg.length());
         if !reg.enabled() {

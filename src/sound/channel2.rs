@@ -2,8 +2,7 @@ use super::{AudioChannel, Clocks};
 use std::ops::{Deref, DerefMut};
 
 use sound::channel::{
-    ChannelRegs, Duty, DutyPass, Freq, HasRegs, Length, LengthPass, Timer, Vol,
-    VolumePass,
+    ChannelRegs, Duty, DutyPass, Freq, HasRegs, Length, LengthPass, Timer, Vol, VolumePass,
 };
 
 pub struct Channel2 {

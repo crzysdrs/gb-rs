@@ -2,8 +2,8 @@ use super::{AudioChannel, Clocks};
 use std::ops::{Deref, DerefMut};
 
 use sound::channel::{
-    ChannelRegs, Duty, DutyPass, Freq, HasRegs, Length, LengthPass, Sweep, SweepPass,
-    Timer, Vol, VolumePass,
+    ChannelRegs, Duty, DutyPass, Freq, HasRegs, Length, LengthPass, Sweep, SweepPass, Timer, Vol,
+    VolumePass,
 };
 
 pub struct Channel1 {
@@ -42,7 +42,7 @@ impl AudioChannel for Channel1 {
         self.vol.reset();
         self.enabled = true;
     }
-    fn sample(&mut self, _wave : &[u8], clocks: &Clocks) -> Option<i16> {
+    fn sample(&mut self, _wave: &[u8], clocks: &Clocks) -> Option<i16> {
         if !self.enabled && !self.regs.trigger() {
             return None;
         } else if self.regs.trigger() {
@@ -63,8 +63,8 @@ impl AudioChannel for Channel1 {
 }
 
 struct Channel1Regs(ChannelRegs);
-impl  Deref for Channel1Regs {
-    type Target=ChannelRegs;
+impl Deref for Channel1Regs {
+    type Target = ChannelRegs;
     fn deref(&self) -> &ChannelRegs {
         &self.0
     }

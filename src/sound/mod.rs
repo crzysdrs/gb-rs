@@ -11,7 +11,7 @@ mod channel1;
 mod channel2;
 mod channel3;
 
-use self::channel::{ChannelRegs};
+use self::channel::ChannelRegs;
 use self::channel1::Channel1;
 use self::channel2::Channel2;
 use self::channel3::Channel3;
@@ -19,7 +19,7 @@ use self::channel3::Channel3;
 pub trait AudioChannel {
     fn reset(&mut self);
     fn regs(&mut self) -> &mut ChannelRegs;
-    fn sample(&mut self, wave : &[u8], clocks: &Clocks) -> Option<i16>;
+    fn sample(&mut self, wave: &[u8], clocks: &Clocks) -> Option<i16>;
     fn lookup(&mut self, addr: u16) -> &mut u8 {
         if let Some(reg) = MemRegister::from_u64(addr.into()) {
             match reg {
@@ -145,7 +145,7 @@ pub struct Mixer {
     nr50: u8,
     nr51: u8,
     nr52: u8,
-    wave : Mem,
+    wave: Mem,
 }
 
 impl Mixer {
@@ -160,7 +160,7 @@ impl Mixer {
             nr50: 0,
             nr51: 0,
             nr52: 0,
-            wave : Mem::new(false, 0xff30, vec![0u8; 32]),
+            wave: Mem::new(false, 0xff30, vec![0u8; 32]),
         }
     }
     fn lookup(&mut self, addr: u16) -> &mut Addressable {
@@ -224,10 +224,7 @@ impl Peripheral for Mixer {
                     let mut right: i16 = 0;
                     let clocks = self.frame_seq.step(wait_time);
                     let channels: &mut [&mut AudioChannel] =
-                        &mut [&mut self.channel1,
-                              &mut self.channel2,
-                              &mut self.channel3,
-                        ];
+                        &mut [&mut self.channel1, &mut self.channel2, &mut self.channel3];
                     //self.nr51 = 0b0100_0100;
 
                     for (i, channel) in channels.iter_mut().enumerate() {
