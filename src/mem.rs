@@ -1,4 +1,5 @@
 use peripherals::{Addressable, Peripheral};
+use std::ops::Deref;
 
 pub struct Mem {
     read_only: bool,
@@ -25,6 +26,14 @@ impl Mem {
         }
     }
 }
+
+impl Deref for Mem {
+    type Target = [u8];
+    fn deref(&self) -> &Self::Target {
+        &self.mem
+    }
+}
+
 impl Peripheral for Mem {}
 
 impl Addressable for Mem {

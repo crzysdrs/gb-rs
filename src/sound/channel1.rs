@@ -1,7 +1,8 @@
 use super::{AudioChannel, Clocks};
+use std::ops::{Deref, DerefMut};
 
 use sound::channel::{
-    ChannelRegs, Duty, DutyPass, Freq, HasRegs, Length, Length64Pass, LengthPass, Sweep, SweepPass,
+    ChannelRegs, Duty, DutyPass, Freq, HasRegs, Length, LengthPass, Sweep, SweepPass,
     Timer, Vol, VolumePass,
 };
 
@@ -11,7 +12,7 @@ pub struct Channel1 {
     vol: Vol,
     timer: Timer,
     sweep: Sweep,
-    length: Length,
+    length: Length<u8>,
     duty: Duty,
 }
 
@@ -20,7 +21,7 @@ impl Channel1 {
         Channel1 {
             regs: Channel1Regs(ChannelRegs::new()),
             vol: Vol::new(),
-            timer: Timer::new(),
+            timer: Timer::new(1),
             sweep: Sweep::new(),
             length: Length::new(),
             duty: Duty::new(),
@@ -30,6 +31,9 @@ impl Channel1 {
 }
 
 impl AudioChannel for Channel1 {
+    fn regs(&mut self) -> &mut ChannelRegs {
+        &mut self.regs
+    }
     fn reset(&mut self) {
         self.sweep.reset();
         self.timer.reset();
@@ -38,7 +42,7 @@ impl AudioChannel for Channel1 {
         self.vol.reset();
         self.enabled = true;
     }
-    fn sample(&mut self, clocks: &Clocks) -> Option<i16> {
+    fn sample(&mut self, _wave : &[u8], clocks: &Clocks) -> Option<i16> {
         if !self.enabled && !self.regs.trigger() {
             return None;
         } else if self.regs.trigger() {
@@ -59,26 +63,24 @@ impl AudioChannel for Channel1 {
 }
 
 struct Channel1Regs(ChannelRegs);
-
-impl HasRegs for Channel1 {
-    fn regs(&self) -> &ChannelRegs {
-        self.regs.regs()
-    }
-    fn mut_regs(&mut self) -> &mut ChannelRegs {
-        self.regs.mut_regs()
-    }
-}
-impl HasRegs for Channel1Regs {
-    fn regs(&self) -> &ChannelRegs {
+impl  Deref for Channel1Regs {
+    type Target=ChannelRegs;
+    fn deref(&self) -> &ChannelRegs {
         &self.0
     }
-    fn mut_regs(&mut self) -> &mut ChannelRegs {
+}
+impl DerefMut for Channel1Regs {
+    fn deref_mut(&mut self) -> &mut ChannelRegs {
         &mut self.0
     }
 }
-
+impl HasRegs for Channel1Regs {}
 impl Freq for Channel1Regs {}
 impl DutyPass for Channel1Regs {}
-impl Length64Pass for Channel1Regs {}
 impl VolumePass for Channel1Regs {}
+impl LengthPass<u8> for Channel1Regs {
+    fn length(&self) -> u8 {
+        self.deref().length()
+    }
+}
 impl SweepPass for Channel1Regs {}

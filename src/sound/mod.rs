@@ -2,37 +2,41 @@ use cpu;
 use cpu::InterruptFlag;
 use enum_primitive::FromPrimitive;
 use fakemem::FakeMem;
+use mem::Mem;
 use mmu::MemRegister;
 use peripherals::{Addressable, Peripheral, PeripheralData};
 
 mod channel;
 mod channel1;
 mod channel2;
+mod channel3;
 
-use self::channel::HasRegs;
+use self::channel::{ChannelRegs};
 use self::channel1::Channel1;
 use self::channel2::Channel2;
+use self::channel3::Channel3;
 
-pub trait AudioChannel: HasRegs {
+pub trait AudioChannel {
     fn reset(&mut self);
-    fn sample(&mut self, clocks: &Clocks) -> Option<i16>;
+    fn regs(&mut self) -> &mut ChannelRegs;
+    fn sample(&mut self, wave : &[u8], clocks: &Clocks) -> Option<i16>;
     fn lookup(&mut self, addr: u16) -> &mut u8 {
         if let Some(reg) = MemRegister::from_u64(addr.into()) {
             match reg {
                 MemRegister::NR10 | MemRegister::NR20 | MemRegister::NR30 | MemRegister::NR40 => {
-                    &mut self.mut_regs().nrx0
+                    &mut self.regs().nrx0
                 }
                 MemRegister::NR11 | MemRegister::NR21 | MemRegister::NR31 | MemRegister::NR41 => {
-                    &mut self.mut_regs().nrx1
+                    &mut self.regs().nrx1
                 }
                 MemRegister::NR12 | MemRegister::NR22 | MemRegister::NR32 | MemRegister::NR42 => {
-                    &mut self.mut_regs().nrx2
+                    &mut self.regs().nrx2
                 }
                 MemRegister::NR13 | MemRegister::NR23 | MemRegister::NR33 | MemRegister::NR43 => {
-                    &mut self.mut_regs().nrx3
+                    &mut self.regs().nrx3
                 }
                 MemRegister::NR14 | MemRegister::NR24 | MemRegister::NR34 | MemRegister::NR44 => {
-                    &mut self.mut_regs().nrx4
+                    &mut self.regs().nrx4
                 }
                 _ => unreachable!("Invalid register in AudioChannel"),
             }
@@ -136,10 +140,12 @@ pub struct Mixer {
     frame_seq: FrameSequencer,
     channel1: Channel1,
     channel2: Channel2,
+    channel3: Channel3,
     mem: FakeMem,
     nr50: u8,
     nr51: u8,
     nr52: u8,
+    wave : Mem,
 }
 
 impl Mixer {
@@ -150,9 +156,11 @@ impl Mixer {
             frame_seq: FrameSequencer::new(),
             channel1: Channel1::new(),
             channel2: Channel2::new(),
+            channel3: Channel3::new(),
             nr50: 0,
             nr51: 0,
             nr52: 0,
+            wave : Mem::new(false, 0xff30, vec![0u8; 32]),
         }
     }
     fn lookup(&mut self, addr: u16) -> &mut Addressable {
@@ -168,9 +176,9 @@ impl Mixer {
         match addr {
             CH1_START...CH1_END => &mut self.channel1,
             CH2_START...CH2_END => &mut self.channel2,
-            CH3_START...CH3_END => &mut self.mem,
+            CH3_START...CH3_END => &mut self.channel3,
             CH4_START...CH4_END => &mut self.mem,
-            0xff30...0xff3f => &mut self.mem, /* TODO: wave pattern RAM */
+            0xff30...0xff3f => &mut self.wave,
             _ => unreachable!("out of bounds mixer access {:x}", addr),
         }
     }
@@ -216,10 +224,15 @@ impl Peripheral for Mixer {
                     let mut right: i16 = 0;
                     let clocks = self.frame_seq.step(wait_time);
                     let channels: &mut [&mut AudioChannel] =
-                        &mut [&mut self.channel1, &mut self.channel2];
+                        &mut [&mut self.channel1,
+                              &mut self.channel2,
+                              &mut self.channel3,
+                        ];
+                    //self.nr51 = 0b0100_0100;
+
                     for (i, channel) in channels.iter_mut().enumerate() {
                         if self.nr52 & (1 << 7) != 0 {
-                            if let Some(val) = channel.sample(&clocks) {
+                            if let Some(val) = channel.sample(&self.wave, &clocks) {
                                 if self.nr51 & (1 << i) != 0 {
                                     left = left.saturating_add(val);
                                 }
