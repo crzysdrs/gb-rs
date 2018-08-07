@@ -47,7 +47,7 @@ impl ChannelRegs {
         self.nrx4 &= !0b1000_0000;
     }
     pub fn wave_enabled(&self) -> bool {
-        (self.nrx0 & 0b01000_0000) != 0
+        (self.nrx0 & 0b1000_0000) != 0
     }
 }
 pub trait LengthPass<T> {
@@ -63,6 +63,22 @@ impl LengthPass<u8> for ChannelRegs {
 impl LengthPass<u16> for ChannelRegs {
     fn length(&self) -> u16 {
         256 - self.nrx1 as u16
+    }
+}
+
+pub trait LFSRPass: HasRegs {
+    fn shift(&self) -> u16 {
+        1 << (((self.nrx3 & 0b1111_0000) >> 4) + 1)
+    }
+    fn width_mode(&self) -> bool {
+        (self.nrx3 & 0b0000_1000) != 0
+    }
+    fn period(&self) -> u8 {
+        let b = self.nrx3 & 0b0000_0111;
+        match b {
+            0 => 8,
+            _ => b << 4,
+        }
     }
 }
 
@@ -142,25 +158,25 @@ impl Vol {
 
 pub struct Timer {
     period_wait: WaitTimer<u16>,
-    speed: u16,
 }
 
 impl Timer {
-    pub fn new(speed: u16) -> Timer {
+    pub fn new() -> Timer {
         Timer {
             period_wait: WaitTimer::new(),
-            speed,
         }
     }
     pub fn reset(&mut self) {
         self.period_wait.reset();
     }
-    pub fn step(&mut self, regs: &mut Freq<Target = ChannelRegs>, clocks: &Clocks) -> u8 {
+    pub fn step(
+        &mut self,
+        period: u16,
+        _regs: &mut Freq<Target = ChannelRegs>,
+        clocks: &Clocks,
+    ) -> u8 {
         let mut ticks = 0;
-        if let Some(count) = self
-            .period_wait
-            .ready(clocks.cycles as u16, Freq::period(regs) / self.speed)
-        {
+        if let Some(count) = self.period_wait.ready(clocks.cycles as u16, period) {
             ticks += count as u8;
         }
         ticks
@@ -189,6 +205,43 @@ impl Duty {
         self.offset += ticks;
         self.offset %= 8;
         DUTY_CYCLES[regs.duty() as usize][self.offset as usize]
+    }
+}
+
+pub struct LFSR {
+    shift_reg: u16,
+    wait: WaitTimer<u16>,
+}
+
+impl LFSR {
+    pub fn new() -> LFSR {
+        LFSR {
+            shift_reg: 0xaa,
+            wait: WaitTimer::new(),
+        }
+    }
+    pub fn reset(&mut self) {
+        self.wait.reset();
+    }
+    pub fn step(
+        &mut self,
+        ticks: u8,
+        regs: &mut LFSRPass<Target = ChannelRegs>,
+        _clocks: &Clocks,
+    ) -> bool {
+        if let Some(count) = self.wait.ready(ticks as u16, regs.shift()) {
+            for _ in 0..count {
+                let b0 = self.shift_reg & 0b1;
+                let b1 = (self.shift_reg & 0b10) >> 1;
+                let high_bit = (b0 ^ b1) & 0b1;
+                self.shift_reg = (self.shift_reg >> 1) | (high_bit << 14);
+                if regs.width_mode() {
+                    self.shift_reg |= high_bit << 6;
+                }
+                self.shift_reg &= 0x7fff;
+            }
+        }
+        !self.shift_reg & 0b1 == 1
     }
 }
 

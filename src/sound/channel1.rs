@@ -21,7 +21,7 @@ impl Channel1 {
         Channel1 {
             regs: Channel1Regs(ChannelRegs::new()),
             vol: Vol::new(),
-            timer: Timer::new(1),
+            timer: Timer::new(),
             sweep: Sweep::new(),
             length: Length::new(),
             duty: Duty::new(),
@@ -33,6 +33,9 @@ impl Channel1 {
 impl AudioChannel for Channel1 {
     fn regs(&mut self) -> &mut ChannelRegs {
         &mut self.regs
+    }
+    fn disable(&mut self) {
+        self.enabled = false;
     }
     fn reset(&mut self) {
         self.sweep.reset();
@@ -50,7 +53,9 @@ impl AudioChannel for Channel1 {
             self.reset();
         }
         self.sweep.step(&mut self.regs, clocks)?;
-        let ticks = self.timer.step(&mut self.regs, clocks);
+        let ticks = self
+            .timer
+            .step(Freq::period(&self.regs), &mut self.regs, clocks);
         let high = self.duty.step(&mut self.regs, ticks);
         self.length.step(&mut self.regs, clocks)?;
         let vol = self.vol.step(&mut self.regs, clocks);

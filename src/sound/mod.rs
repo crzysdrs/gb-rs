@@ -1,7 +1,6 @@
 use cpu;
 use cpu::InterruptFlag;
 use enum_primitive::FromPrimitive;
-use fakemem::FakeMem;
 use mem::Mem;
 use mmu::MemRegister;
 use peripherals::{Addressable, Peripheral, PeripheralData};
@@ -10,14 +9,17 @@ mod channel;
 mod channel1;
 mod channel2;
 mod channel3;
+mod channel4;
 
 use self::channel::ChannelRegs;
 use self::channel1::Channel1;
 use self::channel2::Channel2;
 use self::channel3::Channel3;
+use self::channel4::Channel4;
 
 pub trait AudioChannel {
     fn reset(&mut self);
+    fn disable(&mut self);
     fn regs(&mut self) -> &mut ChannelRegs;
     fn sample(&mut self, wave: &[u8], clocks: &Clocks) -> Option<i16>;
     fn lookup(&mut self, addr: u16) -> &mut u8 {
@@ -141,7 +143,7 @@ pub struct Mixer {
     channel1: Channel1,
     channel2: Channel2,
     channel3: Channel3,
-    mem: FakeMem,
+    channel4: Channel4,
     nr50: u8,
     nr51: u8,
     nr52: u8,
@@ -151,12 +153,12 @@ pub struct Mixer {
 impl Mixer {
     pub fn new() -> Mixer {
         Mixer {
-            mem: FakeMem::new(),
             wait: WaitTimer::new(),
             frame_seq: FrameSequencer::new(),
             channel1: Channel1::new(),
             channel2: Channel2::new(),
             channel3: Channel3::new(),
+            channel4: Channel4::new(),
             nr50: 0,
             nr51: 0,
             nr52: 0,
@@ -177,7 +179,7 @@ impl Mixer {
             CH1_START...CH1_END => &mut self.channel1,
             CH2_START...CH2_END => &mut self.channel2,
             CH3_START...CH3_END => &mut self.channel3,
-            CH4_START...CH4_END => &mut self.mem,
+            CH4_START...CH4_END => &mut self.channel4,
             0xff30...0xff3f => &mut self.wave,
             _ => unreachable!("out of bounds mixer access {:x}", addr),
         }
@@ -223,9 +225,14 @@ impl Peripheral for Mixer {
                     let mut left: i16 = 0;
                     let mut right: i16 = 0;
                     let clocks = self.frame_seq.step(wait_time);
-                    let channels: &mut [&mut AudioChannel] =
-                        &mut [&mut self.channel1, &mut self.channel2, &mut self.channel3];
-                    //self.nr51 = 0b0100_0100;
+                    let channels: &mut [&mut AudioChannel] = &mut [
+                        &mut self.channel1,
+                        &mut self.channel2,
+                        &mut self.channel3,
+                        &mut self.channel4,
+                    ];
+                    //let chan = 3;
+                    //self.nr51 = (1 << chan) | (1 << chan + 4);
 
                     for (i, channel) in channels.iter_mut().enumerate() {
                         if self.nr52 & (1 << 7) != 0 {
@@ -236,7 +243,11 @@ impl Peripheral for Mixer {
                                 if self.nr51 & (1 << (i + 4)) != 0 {
                                     right = right.saturating_add(val);
                                 }
+                            } else {
+                                channel.disable();
                             }
+                        } else {
+                            channel.disable();
                         }
                     }
                     let left_vol = self.nr50 & 0b111;

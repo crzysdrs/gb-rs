@@ -15,7 +15,7 @@ impl Channel3 {
     pub fn new() -> Channel3 {
         Channel3 {
             regs: Channel3Regs(ChannelRegs::new()),
-            timer: Timer::new(2),
+            timer: Timer::new(),
             length: Length::new(),
             pos: None,
             enabled: false,
@@ -33,6 +33,9 @@ impl AudioChannel for Channel3 {
         self.pos = None;
         self.enabled = true;
     }
+    fn disable(&mut self) {
+        self.enabled = false;
+    }
     fn sample(&mut self, wave: &[u8], clocks: &Clocks) -> Option<i16> {
         if !self.regs.wave_enabled() {
             self.enabled = false;
@@ -43,7 +46,9 @@ impl AudioChannel for Channel3 {
             self.regs.clear_trigger();
             self.reset();
         }
-        let ticks = self.timer.step(&mut self.regs, clocks);
+        let ticks = self
+            .timer
+            .step(Freq::period(&self.regs) / 2, &mut self.regs, clocks);
         self.length.step(&mut self.regs, clocks)?;
         let pos = self.pos.get_or_insert(0);
         *pos += ticks as usize;
