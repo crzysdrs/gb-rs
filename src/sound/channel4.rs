@@ -1,4 +1,5 @@
 use super::{AudioChannel, Clocks};
+use mmu::MemRegister;
 use std::ops::{Deref, DerefMut};
 
 use sound::channel::{
@@ -17,7 +18,10 @@ pub struct Channel4 {
 impl Channel4 {
     pub fn new() -> Channel4 {
         Channel4 {
-            regs: Channel4Regs(ChannelRegs::new()),
+            regs: Channel4Regs(ChannelRegs::new(
+                MemRegister::NR40 as u16,
+                &[0xff, 0xff, 0x00, 0x00, 0xbf],
+            )),
             vol: Vol::new(),
             timer: Timer::new(),
             length: Length::new(),
@@ -41,6 +45,9 @@ impl AudioChannel for Channel4 {
     fn disable(&mut self) {
         self.enabled = false;
     }
+    fn off(&mut self) {
+        self.regs.reset();
+    }
     fn sample(&mut self, _wave: &[u8], clocks: &Clocks) -> Option<i16> {
         if !self.enabled && !self.regs.trigger() {
             return None;
@@ -59,6 +66,9 @@ impl AudioChannel for Channel4 {
         } else {
             Some(-(vol as i16))
         }
+    }
+    fn enabled(&self) -> bool {
+        self.enabled
     }
 }
 

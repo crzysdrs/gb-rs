@@ -1,29 +1,25 @@
-use std::io;
-use std::io::{Read, Write};
+use peripherals::{Addressable, Peripheral};
 
-#[allow(dead_code)]
-pub struct EmptyMem {}
-#[allow(dead_code)]
+pub struct EmptyMem {
+    default: u8,
+    base: u16,
+    len: u16,
+}
+
 impl EmptyMem {
-    pub fn new() -> EmptyMem {
-        EmptyMem {}
+    pub fn new(default: u8, base: u16, len: u16) -> EmptyMem {
+        EmptyMem { base, default, len }
     }
 }
-#[allow(dead_code)]
-impl Read for EmptyMem {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        for (_, b) in buf.iter_mut().enumerate() {
-            *b = 0;
-        }
-        Ok(buf.len())
+
+impl Peripheral for EmptyMem {}
+
+impl Addressable for EmptyMem {
+    fn write_byte(&mut self, addr: u16, _val: u8) {
+        assert!(addr >= self.base && addr <= self.base + self.len);
     }
-}
-#[allow(dead_code)]
-impl Write for EmptyMem {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        Ok(buf.len())
-    }
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
+    fn read_byte(&mut self, addr: u16) -> u8 {
+        assert!(addr >= self.base && addr <= self.base + self.len);
+        self.default
     }
 }

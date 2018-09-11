@@ -15,9 +15,16 @@ impl Mem {
             mem,
         }
     }
-    fn lookup(&mut self, addr: u16) -> &mut u8 {
+    fn offset(&self, addr: u16) -> Option<usize> {
         if addr >= self.base && (addr as usize) < self.mem.len() + self.base as usize {
-            &mut self.mem[(addr - self.base) as usize]
+            Some((addr - self.base) as usize)
+        } else {
+            None
+        }
+    }
+    fn lookup(&mut self, addr: u16) -> &mut u8 {
+        if let Some(offset) = self.offset(addr) {
+            &mut self.mem[offset]
         } else {
             panic!(
                 "Outside of range access Addr: {:x} Base: {:x}",

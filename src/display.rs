@@ -250,6 +250,18 @@ impl Display {
         let idx = win_map + (y / 8) as u16 * 32 + (x / 8) as u16;
         Tile::Window(BGIdx(self.vram[idx as usize]), Coord(0, y % 8))
     }
+
+    #[cfg(test)]
+    pub fn all_bgs(&self) -> [u8; 1024] {
+        let mut bgs = [0u8; 1024];
+
+        for y in 0..32 {
+            for x in 0..32 {
+                bgs[y as usize * 32 + x as usize] = self.get_bg_tile(x, y).0;
+            }
+        }
+        bgs
+    }
     pub fn dump(&mut self) {
         println!("BG Tile Map");
         for y in 0..32 {

@@ -39,6 +39,10 @@ impl<'a> GB<'a> {
     pub fn magic_breakpoint(&mut self) {
         self.cpu.magic_breakpoint();
     }
+    #[cfg(test)]
+    pub fn get_mem(&mut self) -> &'a mut MMU {
+        &mut self.mem
+    }
     fn update_interrupts(&mut self, real: &mut PeripheralData, cycles: u64) -> u8 {
         let mut interrupt_flag = 0;
         self.mem

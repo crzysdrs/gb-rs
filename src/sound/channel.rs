@@ -1,24 +1,76 @@
 use super::Clocks;
 use super::WaitTimer;
+use peripherals::Addressable;
 use std::ops::{Deref, DerefMut};
 
+use super::MaskReg;
+
 pub struct ChannelRegs {
-    pub nrx0: u8,
-    pub nrx1: u8,
-    pub nrx2: u8,
-    pub nrx3: u8,
-    pub nrx4: u8,
+    base: u16,
+    nrx0: MaskReg,
+    nrx1: MaskReg,
+    nrx2: MaskReg,
+    nrx3: MaskReg,
+    nrx4: MaskReg,
 }
 
 impl ChannelRegs {
-    pub fn new() -> ChannelRegs {
+    pub fn new(addr: u16, mask: &[u8; 5]) -> ChannelRegs {
         ChannelRegs {
-            nrx0: 0,
-            nrx1: 0,
-            nrx2: 0,
-            nrx3: 0,
-            nrx4: 0,
+            base: addr,
+            nrx0: MaskReg {
+                value: 0,
+                mask: mask[0],
+            },
+            nrx1: MaskReg {
+                value: 0,
+                mask: mask[1],
+            },
+            nrx2: MaskReg {
+                value: 0,
+                mask: mask[2],
+            },
+            nrx3: MaskReg {
+                value: 0,
+                mask: mask[3],
+            },
+            nrx4: MaskReg {
+                value: 0,
+                mask: mask[4],
+            },
         }
+    }
+    pub fn reset(&mut self) {
+        self.nrx0.set(0);
+        self.nrx1.set(0);
+        self.nrx2.set(0);
+        self.nrx3.set(0);
+        self.nrx4.set(0);
+    }
+}
+
+impl Addressable for ChannelRegs {
+    fn read_byte(&mut self, addr: u16) -> u8 {
+        let r = match addr - self.base {
+            0 => &self.nrx0,
+            1 => &self.nrx1,
+            2 => &self.nrx2,
+            3 => &self.nrx3,
+            4 => &self.nrx4,
+            _ => unreachable!("Bad Channel Read"),
+        };
+        r.read()
+    }
+    fn write_byte(&mut self, addr: u16, v: u8) {
+        let r = match addr - self.base {
+            0 => &mut self.nrx0,
+            1 => &mut self.nrx1,
+            2 => &mut self.nrx2,
+            3 => &mut self.nrx3,
+            4 => &mut self.nrx4,
+            _ => unreachable!("Bad Channel Write"),
+        };
+        r.set(v);
     }
 }
 
@@ -26,28 +78,28 @@ pub trait HasRegs: DerefMut + Deref<Target = ChannelRegs> {}
 
 pub trait SweepPass: HasRegs {
     fn period(&self) -> u8 {
-        (self.nrx0 & 0b0111_0000) >> 4
+        (*self.nrx0 & 0b0111_0000) >> 4
     }
     fn negated(&self) -> bool {
-        (self.nrx0 & 0b0000_1000) != 0
+        (*self.nrx0 & 0b0000_1000) != 0
     }
     fn shift(&self) -> u8 {
-        (self.nrx0 & 0b0000_0111)
+        (*self.nrx0 & 0b0000_0111)
     }
 }
 
 impl ChannelRegs {
     pub fn enabled(&self) -> bool {
-        self.nrx4 & 0b0100_0000 != 0
+        *self.nrx4 & 0b0100_0000 != 0
     }
     pub fn trigger(&self) -> bool {
-        self.nrx4 & 0b1000_0000 != 0
+        *self.nrx4 & 0b1000_0000 != 0
     }
     pub fn clear_trigger(&mut self) {
-        self.nrx4 &= !0b1000_0000;
+        self.nrx4.set(*self.nrx4 & !0b1000_0000);
     }
     pub fn wave_enabled(&self) -> bool {
-        (self.nrx0 & 0b1000_0000) != 0
+        (*self.nrx0 & 0b1000_0000) != 0
     }
 }
 pub trait LengthPass<T> {
@@ -56,25 +108,29 @@ pub trait LengthPass<T> {
 
 impl LengthPass<u8> for ChannelRegs {
     fn length(&self) -> u8 {
-        64 - (self.nrx1 & 0b0011_1111)
+        64 - (*self.nrx1 & 0b0011_1111)
     }
 }
 
 impl LengthPass<u16> for ChannelRegs {
     fn length(&self) -> u16 {
-        256 - self.nrx1 as u16
+        256 - *self.nrx1 as u16
     }
 }
 
 pub trait LFSRPass: HasRegs {
     fn shift(&self) -> u16 {
-        1 << (((self.nrx3 & 0b1111_0000) >> 4) + 1)
+        let mut shift = (((*self.nrx3 & 0b1111_0000) >> 4) + 1) as u16;
+        if shift > 0xf {
+            shift = 0xf;
+        }
+        1 << shift
     }
     fn width_mode(&self) -> bool {
-        (self.nrx3 & 0b0000_1000) != 0
+        (*self.nrx3 & 0b0000_1000) != 0
     }
     fn period(&self) -> u8 {
-        let b = self.nrx3 & 0b0000_0111;
+        let b = *self.nrx3 & 0b0000_0111;
         match b {
             0 => 8,
             _ => b << 4,
@@ -84,30 +140,30 @@ pub trait LFSRPass: HasRegs {
 
 pub trait VolumePass: HasRegs {
     fn vol_start(&self) -> u8 {
-        (self.nrx2 & 0b1111_0000) >> 4
+        (*self.nrx2 & 0b1111_0000) >> 4
     }
     fn vol_add(&self) -> bool {
-        (self.nrx2 & 0b0000_1000) != 0
+        (*self.nrx2 & 0b0000_1000) != 0
     }
     fn vol_period(&self) -> u8 {
-        (self.nrx2 & 0b0000_0111)
+        (*self.nrx2 & 0b0000_0111)
     }
 }
 pub trait DutyPass: HasRegs {
     fn duty(&self) -> u8 {
-        (self.nrx1 & 0b1100_0000) >> 6
+        (*self.nrx1 & 0b1100_0000) >> 6
     }
 }
 
 pub trait VolumeCode: HasRegs {
     fn vol_code(&self) -> u8 {
-        (self.nrx2 & 0b0110_0000) >> 5
+        (*self.nrx2 & 0b0110_0000) >> 5
     }
 }
 
 pub trait Freq: HasRegs {
     fn freq(&self) -> u16 {
-        let f = u16::from_bytes([self.nrx3, self.nrx4 & 0b111]);
+        let f = u16::from_bytes([*self.nrx3, *self.nrx4 & 0b111]);
         f
     }
     fn period(&self) -> u16 {
@@ -115,9 +171,9 @@ pub trait Freq: HasRegs {
     }
     fn set_freq(&mut self, new_freq: u16) {
         let [x0, x1] = new_freq.to_bytes();
-        self.nrx4 &= !0b111;
-        self.nrx4 |= x1 & 0b111;
-        self.nrx3 = x0;
+        let tmp = *self.nrx4;
+        self.nrx4.set((tmp & !0b111) | (x1 & 0b111));
+        self.nrx3.set(x0);
     }
 }
 

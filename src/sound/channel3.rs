@@ -1,7 +1,7 @@
 use super::{AudioChannel, Clocks};
-use std::ops::{Deref, DerefMut};
-
+use mmu::MemRegister;
 use sound::channel::{ChannelRegs, Freq, HasRegs, Length, LengthPass, Timer, VolumeCode};
+use std::ops::{Deref, DerefMut};
 
 pub struct Channel3 {
     enabled: bool,
@@ -14,7 +14,10 @@ pub struct Channel3 {
 impl Channel3 {
     pub fn new() -> Channel3 {
         Channel3 {
-            regs: Channel3Regs(ChannelRegs::new()),
+            regs: Channel3Regs(ChannelRegs::new(
+                MemRegister::NR30 as u16,
+                &[0x7f, 0xff, 0x9f, 0xff, 0xbf],
+            )),
             timer: Timer::new(),
             length: Length::new(),
             pos: None,
@@ -35,6 +38,9 @@ impl AudioChannel for Channel3 {
     }
     fn disable(&mut self) {
         self.enabled = false;
+    }
+    fn off(&mut self) {
+        self.regs.reset();
     }
     fn sample(&mut self, wave: &[u8], clocks: &Clocks) -> Option<i16> {
         if !self.regs.wave_enabled() {
@@ -63,6 +69,9 @@ impl AudioChannel for Channel3 {
             3 => Some(sample >> 2),
             _ => unreachable!("Bad Volume Code"),
         }
+    }
+    fn enabled(&self) -> bool {
+        self.enabled
     }
 }
 

@@ -18,6 +18,21 @@ impl PeripheralData<'a> {
             audio_spec: None,
         }
     }
+    // pub fn test() -> (Vec<u8>, Box<FnMut(&[i16]) -> bool>, PeripheralData<'a>) {
+    //     let v = vec![0u8; 166 * 144];
+    //     let func = |_x| { true };
+
+    //     (v, Box::new(func),
+    //      PeripheralData {
+    //          lcd: Some(&mut v),
+    //          audio_spec: Some(AudioSpec {
+    //              queue: Box::new(&mut func),
+    //              freq: 16384 * 4,
+    //              silence: 0,
+    //          })
+    //      }
+    //      )
+    // }
     pub fn new(
         lcd: Option<&'a mut [u8]>,
         audio_spec: Option<AudioSpec<'a, i16>>,

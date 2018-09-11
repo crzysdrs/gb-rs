@@ -1,9 +1,11 @@
 use cpu;
 use cpu::InterruptFlag;
+use emptymem::EmptyMem;
 use enum_primitive::FromPrimitive;
 use mem::Mem;
 use mmu::MemRegister;
 use peripherals::{Addressable, Peripheral, PeripheralData};
+use std::ops::Deref;
 
 mod channel;
 mod channel1;
@@ -16,36 +18,59 @@ use self::channel1::Channel1;
 use self::channel2::Channel2;
 use self::channel3::Channel3;
 use self::channel4::Channel4;
+struct MaskReg {
+    value: u8,
+    mask: u8,
+}
+
+impl MaskReg {
+    fn set(&mut self, byte: u8) {
+        self.value = byte;
+    }
+    fn read(&self) -> u8 {
+        self.value | self.mask
+    }
+}
+
+impl Deref for MaskReg {
+    type Target = u8;
+
+    fn deref(&self) -> &u8 {
+        &self.value
+    }
+}
 
 pub trait AudioChannel {
     fn reset(&mut self);
     fn disable(&mut self);
+    fn off(&mut self);
+    fn enabled(&self) -> bool;
     fn regs(&mut self) -> &mut ChannelRegs;
     fn sample(&mut self, wave: &[u8], clocks: &Clocks) -> Option<i16>;
-    fn lookup(&mut self, addr: u16) -> &mut u8 {
-        if let Some(reg) = MemRegister::from_u64(addr.into()) {
-            match reg {
-                MemRegister::NR10 | MemRegister::NR20 | MemRegister::NR30 | MemRegister::NR40 => {
-                    &mut self.regs().nrx0
-                }
-                MemRegister::NR11 | MemRegister::NR21 | MemRegister::NR31 | MemRegister::NR41 => {
-                    &mut self.regs().nrx1
-                }
-                MemRegister::NR12 | MemRegister::NR22 | MemRegister::NR32 | MemRegister::NR42 => {
-                    &mut self.regs().nrx2
-                }
-                MemRegister::NR13 | MemRegister::NR23 | MemRegister::NR33 | MemRegister::NR43 => {
-                    &mut self.regs().nrx3
-                }
-                MemRegister::NR14 | MemRegister::NR24 | MemRegister::NR34 | MemRegister::NR44 => {
-                    &mut self.regs().nrx4
-                }
-                _ => unreachable!("Invalid register in AudioChannel"),
-            }
-        } else {
-            unreachable!("Invalid addr in AudioChannel");
-        }
-    }
+    // fn lookup(&mut self, addr: u16) -> &mut u8 {
+    //     if let Some(reg) = MemRegister::from_u64(addr.into()) {
+    //         match reg {
+    //             MemRegister::NR10 | MemRegister::NR20 | MemRegister::NR30 | MemRegister::NR40 => {
+    //                 &mut self.regs().nrx0
+    //             }
+    //             MemRegister::NR11 | MemRegister::NR21 | MemRegister::NR31 | MemRegister::NR41 => {
+    //                 &mut self.regs().nrx1
+    //             }
+    //             MemRegister::NR12 | MemRegister::NR22 | MemRegister::NR32 | MemRegister::NR42 => {
+    //                 &mut self.regs().nrx2
+    //             }
+    //             MemRegister::NR13 | MemRegister::NR23 | MemRegister::NR33 | MemRegister::NR43 => {
+    //                 &mut self.regs().nrx3
+    //             }
+    //             MemRegister::NR14 | MemRegister::NR24 | MemRegister::NR34 | MemRegister::NR44 => {
+    //                 &mut self.regs().nrx4
+    //             }
+    //             _ => unreachable!("Invalid register in AudioChannel"),
+    //         }
+    //     } else {
+    //         unreachable!("Invalid addr in AudioChannel");
+    //     }
+    // }
 }
 
 impl<T> Addressable for T
@@ -53,10 +78,10 @@ where
     T: AudioChannel,
 {
     fn read_byte(&mut self, addr: u16) -> u8 {
-        *self.lookup(addr)
+        self.regs().read_byte(addr)
     }
     fn write_byte(&mut self, addr: u16, v: u8) {
-        *self.lookup(addr) = v;
+        self.regs().write_byte(addr, v);
     }
 }
 
@@ -144,10 +169,11 @@ pub struct Mixer {
     channel2: Channel2,
     channel3: Channel3,
     channel4: Channel4,
-    nr50: u8,
-    nr51: u8,
-    nr52: u8,
+    nr50: MaskReg,
+    nr51: MaskReg,
+    nr52: MaskReg,
     wave: Mem,
+    unused: EmptyMem,
 }
 
 impl Mixer {
@@ -159,20 +185,30 @@ impl Mixer {
             channel2: Channel2::new(),
             channel3: Channel3::new(),
             channel4: Channel4::new(),
-            nr50: 0,
-            nr51: 0,
-            nr52: 0,
+            nr50: MaskReg {
+                value: 0,
+                mask: 0x00,
+            },
+            nr51: MaskReg {
+                value: 0,
+                mask: 0x00,
+            },
+            nr52: MaskReg {
+                value: 0,
+                mask: 0x70,
+            },
+            unused: EmptyMem::new(0xff, 0xff1f, 17),
             wave: Mem::new(false, 0xff30, vec![0u8; 32]),
         }
     }
     fn lookup(&mut self, addr: u16) -> &mut Addressable {
         const CH1_START: u16 = MemRegister::NR10 as u16;
         const CH1_END: u16 = MemRegister::NR14 as u16;
-        const CH2_START: u16 = MemRegister::NR21 as u16;
+        const CH2_START: u16 = MemRegister::NR20 as u16;
         const CH2_END: u16 = MemRegister::NR24 as u16;
         const CH3_START: u16 = MemRegister::NR30 as u16;
         const CH3_END: u16 = MemRegister::NR34 as u16;
-        const CH4_START: u16 = MemRegister::NR41 as u16;
+        const CH4_START: u16 = MemRegister::NR40 as u16;
         const CH4_END: u16 = MemRegister::NR44 as u16;
 
         match addr {
@@ -180,11 +216,12 @@ impl Mixer {
             CH2_START...CH2_END => &mut self.channel2,
             CH3_START...CH3_END => &mut self.channel3,
             CH4_START...CH4_END => &mut self.channel4,
+            0xff1f...0xff2f => &mut self.unused,
             0xff30...0xff3f => &mut self.wave,
             _ => unreachable!("out of bounds mixer access {:x}", addr),
         }
     }
-    fn lookup_internal(&mut self, addr: u16) -> Option<&mut u8> {
+    fn lookup_internal(&mut self, addr: u16) -> Option<&mut MaskReg> {
         if let Some(reg) = MemRegister::from_u64(addr.into()) {
             match reg {
                 MemRegister::NR50 => Some(&mut self.nr50),
@@ -201,7 +238,7 @@ impl Mixer {
 impl Addressable for Mixer {
     fn read_byte(&mut self, addr: u16) -> u8 {
         if let Some(b) = self.lookup_internal(addr) {
-            *b
+            b.read()
         } else {
             self.lookup(addr).read_byte(addr)
         }
@@ -209,7 +246,7 @@ impl Addressable for Mixer {
 
     fn write_byte(&mut self, addr: u16, v: u8) {
         if let Some(b) = self.lookup_internal(addr) {
-            *b = v;
+            b.set(v);
         } else {
             self.lookup(addr).write_byte(addr, v);
         }
@@ -218,6 +255,21 @@ impl Addressable for Mixer {
 
 impl Peripheral for Mixer {
     fn step(&mut self, real: &mut PeripheralData, time: u64) -> Option<InterruptFlag> {
+        let channels: &mut [&mut AudioChannel] = &mut [
+            &mut self.channel1,
+            &mut self.channel2,
+            &mut self.channel3,
+            &mut self.channel4,
+        ];
+        let mut status = *self.nr52;
+        if status & (1 << 7) == 0 {
+            self.nr51.set(0);
+            self.nr50.set(0);
+            for channel in channels.iter_mut() {
+                channel.disable();
+                channel.off();
+            }
+        }
         if let Some(ref mut audio) = real.audio_spec {
             let wait_time: u64 = (cpu::CYCLES_PER_S / audio.freq) as u64;
             if let Some(count) = self.wait.ready(time, wait_time) {
@@ -225,33 +277,25 @@ impl Peripheral for Mixer {
                     let mut left: i16 = 0;
                     let mut right: i16 = 0;
                     let clocks = self.frame_seq.step(wait_time);
-                    let channels: &mut [&mut AudioChannel] = &mut [
-                        &mut self.channel1,
-                        &mut self.channel2,
-                        &mut self.channel3,
-                        &mut self.channel4,
-                    ];
+
                     //let chan = 3;
                     //self.nr51 = (1 << chan) | (1 << chan + 4);
-
                     for (i, channel) in channels.iter_mut().enumerate() {
-                        if self.nr52 & (1 << 7) != 0 {
+                        if *self.nr52 & (1 << 7) != 0 {
                             if let Some(val) = channel.sample(&self.wave, &clocks) {
-                                if self.nr51 & (1 << i) != 0 {
+                                if *self.nr51 & (1 << i) != 0 {
                                     left = left.saturating_add(val);
                                 }
-                                if self.nr51 & (1 << (i + 4)) != 0 {
+                                if *self.nr51 & (1 << (i + 4)) != 0 {
                                     right = right.saturating_add(val);
                                 }
                             } else {
                                 channel.disable();
                             }
-                        } else {
-                            channel.disable();
                         }
                     }
-                    let left_vol = self.nr50 & 0b111;
-                    let right_vol = (self.nr50 & 0b0111_0000) >> 4;
+                    let left_vol = *self.nr50 & 0b111;
+                    let right_vol = (*self.nr50 & 0b0111_0000) >> 4;
 
                     (audio.queue)(&[
                         audio.silence + left.saturating_mul((1 << 7) * left_vol as i16),
@@ -260,7 +304,11 @@ impl Peripheral for Mixer {
                 }
             }
         }
-
+        status &= 0xf0;
+        for (i, channel) in channels.iter_mut().enumerate() {
+            status |= if channel.enabled() { 1 << i } else { 0 };
+        }
+        self.nr52.set(status);
         None
     }
 }

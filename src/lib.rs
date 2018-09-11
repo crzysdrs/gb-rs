@@ -66,7 +66,10 @@ fn make_u16(h: u8, l: u8) -> u16 {
 fn split_u16(r: u16) -> (u8, u8) {
     (((r & 0xff00) >> 8) as u8, (r & 0xff) as u8)
 }
-
+#[cfg(test)]
+fn test_data() -> (Vec<u8>, impl Fn(&[i16]) -> bool) {
+    (vec![0u8; 160 * 144 * 4], |_| true)
+}
 #[cfg(test)]
 fn disasm_file(file: &str, filter_nops: bool) -> std::io::Result<()> {
     use std::fs::File;
@@ -111,24 +114,43 @@ fn disasm_file(file: &str, filter_nops: bool) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    fn read_screen(gb: &mut ::gb::GB) -> String {
+        use itertools::Itertools;
+        let bg_tiles = gb.get_mem().get_display().all_bgs();
+        bg_tiles
+            .chunks(32)
+            .map(|line| std::str::from_utf8(line).unwrap().trim())
+            .intersperse(&"\n".to_owned())
+            .collect::<String>()
+            .trim_right()
+            .to_owned()
+    }
+
     macro_rules! blarg_test {
         ($name:tt, $path:expr, $test:expr) => {
             #[test]
             fn $name() {
                 use cart::Cart;
                 let mut buf = ::std::io::BufWriter::new(Vec::new());
-                {
+                let (mut v, mut f) = ::test_data();
+                let mut p = ::peripherals::PeripheralData::new(
+                    Some(&mut v),
+                    Some(::peripherals::AudioSpec {
+                        queue: Box::new(&mut f),
+                        freq: 16384 * 4,
+                        silence: 0,
+                    }),
+                );
+                let screen = {
                     let mut gb = ::gb::GB::new(
                         Cart::new(include_bytes!($path).to_vec()),
                         Some(&mut buf),
                         false,
                     );
-                    gb.step_timeout(30 * 1000000, &mut ::peripherals::PeripheralData::empty());
-                }
-                assert_eq!(
-                    ::std::str::from_utf8(&buf.into_inner().unwrap()).unwrap(),
-                    concat!("Test: ", $test, "\n\n\nPassed\n")
-                );
+                    gb.step_timeout(30 * 1000000, &mut p);
+                    read_screen(&mut gb)
+                };
+                assert_eq!(screen, concat!($test, "\n\n\nPassed"));
             }
         };
     }
@@ -307,61 +329,122 @@ mod tests {
     blarg_test!(
         blarg_cpu_instrs_01_special_gb,
         "../blarg/cpu_instrs/01-special.gb",
-        "01-special"
+        "Test: 01-special"
     );
     blarg_test!(
         blarg_cpu_instrs_02_interrupts_gb,
         "../blarg/cpu_instrs/02-interrupts.gb",
-        "02-interrupts"
+        "Test: 02-interrupts"
     );
     blarg_test!(
         blarg_cpu_instrs_03_op_sp_hl_gb,
         "../blarg/cpu_instrs/03-op_sp,hl.gb",
-        "03-op_sp,hl"
+        "Test: 03-op_sp,hl"
     );
     blarg_test!(
         blarg_cpu_instrs_04_op_r_imm_gb,
         "../blarg/cpu_instrs/04-op_r,imm.gb",
-        "04-op_r,imm"
+        "Test: 04-op_r,imm"
     );
     blarg_test!(
         blarg_cpu_instrs_05_op_rp_gb,
         "../blarg/cpu_instrs/05-op_rp.gb",
-        "05-op_rp"
+        "Test: 05-op_rp"
     );
     blarg_test!(
         blarg_cpu_instrs_06_ld_r_r_gb,
         "../blarg/cpu_instrs/06-ld_r,r.gb",
-        "06-ld_r,r"
+        "Test: 06-ld_r,r"
     );
     blarg_test!(
         blarg_cpu_instrs_07_jr_jp_call_ret_rst_gb,
         "../blarg/cpu_instrs/07-jr,jp,call,ret,rst.gb",
-        "07-jr,jp,call,ret,rst"
+        "Test: 07-jr,jp,call,\nret,rst"
     );
     blarg_test!(
         blarg_cpu_instrs_08_misc_instrs_gb,
         "../blarg/cpu_instrs/08-misc_instrs.gb",
-        "08-misc_instrs"
+        "Test: 08-misc_instrs"
     );
     blarg_test!(
         blarg_cpu_instrs_09_op_r_r_gb,
         "../blarg/cpu_instrs/09-op_r,r.gb",
-        "09-op_r,r"
+        "Test: 09-op_r,r"
     );
     blarg_test!(
         blarg_cpu_instrs_10_bit_ops_gb,
         "../blarg/cpu_instrs/10-bit_ops.gb",
-        "10-bit_ops"
+        "Test: 10-bit_ops"
     );
     blarg_test!(
         blarg_cpu_instrs_11_op_a_hl_gb,
         "../blarg/cpu_instrs/11-op_a,(hl).gb",
-        "11-op_a,(hl)"
+        "Test: 11-op_a,(hl)"
     );
     blarg_test!(
         blarg_cpu_instr_timing,
         "../blarg/instr_timing/instr_timing.gb",
-        "instr_timing"
+        "Test: instr_timing"
     );
+    blarg_test!(
+        blarg_sound_01_registers,
+        "../blarg/dmg_sound/rom_singles/01-registers.gb",
+        "01-registers"
+    );
+    // blarg_test!(
+    //     blarg_sound_02_len_ctr,
+    //     "../blarg/dmg_sound/rom_singles/02-len ctr.gb",
+    //     "02-len ctr"
+    // );
+    // blarg_test!(
+    //     blarg_sound_03_trigger,
+    //     "../blarg/dmg_sound/rom_singles/03-trigger.gb",
+    //     "03-trigger"
+    // );
+    // blarg_test!(
+    //     blarg_sound_04_sweep,
+    //     "../blarg/dmg_sound/rom_singles/04-sweep.gb",
+    //     "04-sweep"
+    // );
+    // blarg_test!(
+    //     blarg_sound_05_sweep_details,
+    //     "../blarg/dmg_sound/rom_singles/05-sweep details.gb",
+    //     "05-sweep details"
+    // );
+    // blarg_test!(
+    //     blarg_sound_06_overflow_on_trigger,
+    //     "../blarg/dmg_sound/rom_singles/06-overflow on trigger.gb",
+    //     "06-overflow on trigger"
+    // );
+    // blarg_test!(
+    //     blarg_sound_07_len_sweep_period_sync,
+    //     "../blarg/dmg_sound/rom_singles/07-len sweep period sync.gb",
+    //     "07-len sweep period sync"
+    // );
+    // blarg_test!(
+    //     blarg_sound_08_len_ctr_during_power,
+    //     "../blarg/dmg_sound/rom_singles/08-len ctr during power.gb",
+    //     "08-len ctr during power"
+    // );
+    // blarg_test!(
+    //     blarg_sound_09_wave_read_while_on,
+    //     "../blarg/dmg_sound/rom_singles/09-wave read while on.gb",
+    //     "09-wave read while on"
+    // );
+    // blarg_test!(
+    //     blarg_sound_10_wave_trigger_while_on,
+    //     "../blarg/dmg_sound/rom_singles/10-wave trigger while on.gb",
+    //     "10-wave trigger while on"
+    // );
+    // blarg_test!(
+    //     blarg_sound_11_regs_after_power,
+    //     "../blarg/dmg_sound/rom_singles/11-regs after power.gb",
+    //     "11-regs after power"
+    // );
+    // blarg_test!(
+    //     blarg_sound_12_wave_write_while_on,
+    //     "../blarg/dmg_sound/rom_singles/12-wave write while on.gb",
+    //     "12-wave write while on"
+    // );
+
 }

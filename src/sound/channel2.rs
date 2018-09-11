@@ -1,4 +1,5 @@
 use super::{AudioChannel, Clocks};
+use mmu::MemRegister;
 use std::ops::{Deref, DerefMut};
 
 use sound::channel::{
@@ -17,7 +18,10 @@ pub struct Channel2 {
 impl Channel2 {
     pub fn new() -> Channel2 {
         Channel2 {
-            regs: Channel2Regs(ChannelRegs::new()),
+            regs: Channel2Regs(ChannelRegs::new(
+                MemRegister::NR20 as u16,
+                &[0xff, 0x3f, 0x00, 0xff, 0xbf],
+            )),
             vol: Vol::new(),
             timer: Timer::new(),
             length: Length::new(),
@@ -33,6 +37,9 @@ impl AudioChannel for Channel2 {
     }
     fn disable(&mut self) {
         self.enabled = false;
+    }
+    fn off(&mut self) {
+        self.regs.reset();
     }
     fn reset(&mut self) {
         self.timer.reset();
@@ -59,6 +66,9 @@ impl AudioChannel for Channel2 {
         } else {
             Some(-(vol as i16))
         }
+    }
+    fn enabled(&self) -> bool {
+        self.enabled
     }
 }
 
