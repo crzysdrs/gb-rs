@@ -1,7 +1,6 @@
 use cpu;
 use cpu::InterruptFlag;
 use emptymem::EmptyMem;
-use enum_primitive::FromPrimitive;
 use mem::Mem;
 use mmu::MemRegister;
 use peripherals::{Addressable, Peripheral, PeripheralData};
@@ -13,7 +12,7 @@ mod channel2;
 mod channel3;
 mod channel4;
 
-use self::channel::ChannelRegs;
+use self::channel::{AddressableChannel, ChannelRegs};
 use self::channel1::Channel1;
 use self::channel2::Channel2;
 use self::channel3::Channel3;
@@ -23,14 +22,14 @@ struct MaskReg {
     mask: u8,
 }
 
-impl MaskReg {
-    fn set(&mut self, byte: u8) {
-        self.value = byte;
-    }
-    fn read(&self) -> u8 {
-        self.value | self.mask
-    }
-}
+// impl MaskReg {
+//     fn set(&mut self, byte: u8) {
+//         self.value = byte;
+//     }
+//     fn unmasked(&self) -> u8 {
+//         self.value | self.mask
+//     }
+// }
 
 impl Deref for MaskReg {
     type Target = u8;
@@ -40,13 +39,23 @@ impl Deref for MaskReg {
     }
 }
 
+impl Addressable for MaskReg {
+    fn write_byte(&mut self, addr: u16, val: u8) {
+        self.value = val;
+        self.wrote(addr, val);
+    }
+    fn read_byte(&mut self, _addr: u16) -> u8 {
+        self.value | self.mask
+    }
+}
+
 pub trait AudioChannel {
-    fn reset(&mut self);
+    fn reset(&mut self, clks: &Clocks, enable: bool, trigger: bool);
     fn disable(&mut self);
-    fn off(&mut self);
+    fn power(&mut self, powered: bool);
     fn enabled(&self) -> bool;
     fn regs(&mut self) -> &mut ChannelRegs;
-    fn sample(&mut self, wave: &[u8], clocks: &Clocks) -> Option<i16>;
+    fn sample(&mut self, wave: &[u8], cycles: u64, clocks: &Clocks) -> Option<i16>;
     // fn lookup(&mut self, addr: u16) -> &mut u8 {
     //     if let Some(reg) = MemRegister::from_u64(addr.into()) {
     //         match reg {
@@ -73,27 +82,72 @@ pub trait AudioChannel {
     // }
 }
 
-impl<T> Addressable for T
-where
-    T: AudioChannel,
-{
-    fn read_byte(&mut self, addr: u16) -> u8 {
-        self.regs().read_byte(addr)
+// impl<T> Addressable for T
+// where
+//     T: AudioChannel,
+// {
+//     fn read_byte(&mut self, addr: u16) -> u8 {
+//         self.regs().read_byte(addr)
+//     }
+//     fn write_byte(&mut self, addr: u16, v: u8) {
+//         self.regs().write_byte(addr, v);
+//     }
+// }
+
+enum Clk {
+    High,
+    Low,
+    Rising,
+    Falling,
+}
+
+impl Clk {
+    fn settle(&self) -> Clk {
+        match *self {
+            Clk::High => Clk::High,
+            Clk::Low => Clk::Low,
+            Clk::Rising => Clk::High,
+            Clk::Falling => Clk::Low,
+        }
     }
-    fn write_byte(&mut self, addr: u16, v: u8) {
-        self.regs().write_byte(addr, v);
+    fn changing(&self) -> bool {
+        match *self {
+            Clk::Rising | Clk::Falling => true,
+            _ => false,
+        }
+    }
+    fn tick(&self) -> u32 {
+        if let Clk::Rising = *self {
+            1
+        } else {
+            0
+        }
+    }
+    fn fall(&self) -> Clk {
+        match self {
+            Clk::Rising | Clk::High => Clk::Falling,
+            _ => Clk::Low,
+        }
     }
 }
 
 pub struct Clocks {
-    length: u8,
-    vol: u8,
-    sweep: u8,
-    cycles: u64,
+    length: Clk,
+    vol: Clk,
+    sweep: Clk,
 }
+
+impl Clocks {
+    #[allow(dead_code)]
+    fn ticked(&self) -> bool {
+        self.length.changing() || self.vol.changing() || self.sweep.changing()
+    }
+}
+
 struct FrameSequencer {
     time: u64,
     wait: WaitTimer<u64>,
+    clks: Clocks,
 }
 
 impl FrameSequencer {
@@ -101,31 +155,71 @@ impl FrameSequencer {
         FrameSequencer {
             time: 0,
             wait: WaitTimer::new(),
+            clks: Clocks {
+                length: Clk::Low,
+                vol: Clk::Low,
+                sweep: Clk::Low,
+            },
         }
     }
-    fn step(&mut self, cycles: u64) -> Clocks {
+    fn clks(&self) -> &Clocks {
+        &self.clks
+    }
+    fn settle(&mut self) {
+        for c in [
+            &mut self.clks.length,
+            &mut self.clks.vol,
+            &mut self.clks.sweep,
+        ]
+            .iter_mut()
+        {
+            std::mem::replace(*c, c.settle());
+        }
+    }
+    fn step(&mut self, cycles: u64) {
         /* 512 hz clock */
-        let mut new = Clocks {
-            length: 0,
-            vol: 0,
-            sweep: 0,
-            cycles: cycles,
-        };
+        self.settle();
         if let Some(count) = self.wait.ready(cycles, (cpu::CYCLES_PER_S / 512).into()) {
             for _ in 0..count {
-                self.time = (self.time + 1) % 8;
                 if self.time % 2 == 0 {
-                    new.length += 1;
+                    self.clks.length = Clk::Rising;
+                } else {
+                    self.clks.length = self.clks.length.fall();
                 }
                 if self.time == 7 {
-                    new.vol += 1;
+                    self.clks.vol = Clk::Rising;
+                } else {
+                    self.clks.vol = self.clks.vol.fall();
                 }
                 if self.time == 3 || self.time == 6 {
-                    new.sweep += 1;
+                    self.clks.sweep = Clk::Rising;
+                } else {
+                    self.clks.sweep = self.clks.sweep.fall();
                 }
+                self.time = (self.time + 1) % 8;
+                #[cfg(feature = "vcd_dump")]
+                VCD.as_ref().map(|m| {
+                    m.lock().unwrap().as_mut().map(|v| {
+                        for (name, val) in &[
+                            ("vol", &mut self.clks.vol),
+                            ("length", &mut self.clks.length),
+                            ("sweep", &mut self.clks.sweep),
+                        ] {
+                            let (mut writer, mem) = v.writer();
+                            let (wire, id) = mem.get(*name).unwrap();
+                            wire.write(
+                                &mut writer,
+                                *id,
+                                match *val {
+                                    Clk::Rising | Clk::High => 1,
+                                    Clk::Falling | Clk::Low => 0,
+                                },
+                            );
+                        }
+                    })
+                });
             }
         }
-        new
     }
 }
 
@@ -176,6 +270,17 @@ pub struct Mixer {
     unused: EmptyMem,
 }
 
+impl<T> AddressableChannel for T
+where
+    T: Addressable,
+{
+    fn read_channel_byte(&mut self, _clks: &Clocks, addr: u16) -> u8 {
+        self.read_byte(addr)
+    }
+    fn write_channel_byte(&mut self, _clks: &Clocks, addr: u16, val: u8) {
+        self.write_byte(addr, val)
+    }
+}
 impl Mixer {
     pub fn new() -> Mixer {
         Mixer {
@@ -201,7 +306,7 @@ impl Mixer {
             wave: Mem::new(false, 0xff30, vec![0u8; 32]),
         }
     }
-    fn lookup(&mut self, addr: u16) -> &mut Addressable {
+    fn lookup(&mut self, addr: u16) -> (&Clocks, Option<&mut AddressableChannel>) {
         const CH1_START: u16 = MemRegister::NR10 as u16;
         const CH1_END: u16 = MemRegister::NR14 as u16;
         const CH2_START: u16 = MemRegister::NR20 as u16;
@@ -211,89 +316,122 @@ impl Mixer {
         const CH4_START: u16 = MemRegister::NR40 as u16;
         const CH4_END: u16 = MemRegister::NR44 as u16;
 
-        match addr {
-            CH1_START...CH1_END => &mut self.channel1,
-            CH2_START...CH2_END => &mut self.channel2,
-            CH3_START...CH3_END => &mut self.channel3,
-            CH4_START...CH4_END => &mut self.channel4,
-            0xff1f...0xff2f => &mut self.unused,
-            0xff30...0xff3f => &mut self.wave,
-            _ => unreachable!("out of bounds mixer access {:x}", addr),
-        }
-    }
-    fn lookup_internal(&mut self, addr: u16) -> Option<&mut MaskReg> {
-        if let Some(reg) = MemRegister::from_u64(addr.into()) {
-            match reg {
-                MemRegister::NR50 => Some(&mut self.nr50),
-                MemRegister::NR51 => Some(&mut self.nr51),
-                MemRegister::NR52 => Some(&mut self.nr52),
+        const NR50: u16 = MemRegister::NR50 as u16;
+        const NR51: u16 = MemRegister::NR51 as u16;
+        const NR52: u16 = MemRegister::NR52 as u16;
+
+        (
+            &self.frame_seq.clks,
+            match addr {
+                CH1_START...CH1_END => Some(&mut self.channel1),
+                CH2_START...CH2_END => Some(&mut self.channel2),
+                CH3_START...CH3_END => Some(&mut self.channel3),
+                CH4_START...CH4_END => Some(&mut self.channel4),
+                0xff27...0xff2f => Some(&mut self.unused),
+                0xff30...0xff3f => Some(&mut self.wave),
+                NR50 => Some(&mut self.nr50),
+                NR51 => Some(&mut self.nr51),
+                NR52 => Some(&mut self.nr52),
                 _ => None,
-            }
-        } else {
-            None
-        }
+            },
+        )
     }
 }
 
 impl Addressable for Mixer {
     fn read_byte(&mut self, addr: u16) -> u8 {
-        if let Some(b) = self.lookup_internal(addr) {
-            b.read()
+        if let (clks, Some(b)) = self.lookup(addr) {
+            let r = b.read_channel_byte(&clks, addr);
+            //println!("Read {:04x} {:x}", addr, r);
+            r
         } else {
-            self.lookup(addr).read_byte(addr)
+            panic!("Unhandled Read in Mixer {:x}", addr);
         }
     }
 
     fn write_byte(&mut self, addr: u16, v: u8) {
-        if let Some(b) = self.lookup_internal(addr) {
-            b.set(v);
+        const NR52: u16 = MemRegister::NR52 as u16;
+        let ignored = self.nr52.read_byte(0) & (1 << 7) == 0;
+        if let (clks, Some(b)) = self.lookup(addr) {
+            if !ignored || addr == NR52 {
+                b.write_channel_byte(&clks, addr, v);
+            }
+            match addr {
+                NR52 => {
+                    if v & (1 << 7) == 0 {
+                        self.nr51.write_byte(MemRegister::NR51 as u16, 0);
+                        self.nr50.write_byte(MemRegister::NR50 as u16, 0);
+                    }
+                    let channels: &mut [&mut AudioChannel] = &mut [
+                        &mut self.channel1,
+                        &mut self.channel2,
+                        &mut self.channel3,
+                        &mut self.channel4,
+                    ];
+                    for channel in channels.iter_mut() {
+                        if v & (1 << 7) == 0 {
+                            //println!("Power Disable Channels");
+                            channel.disable();
+                            channel.power(false);
+                        } else {
+                            channel.power(true);
+                        }
+                    }
+                }
+                _ => {}
+            }
         } else {
-            self.lookup(addr).write_byte(addr, v);
+            panic!("Unhandled Write In Mixer {:x}", addr);
         }
     }
 }
 
 impl Peripheral for Mixer {
     fn step(&mut self, real: &mut PeripheralData, time: u64) -> Option<InterruptFlag> {
+        let orig_status = *self.nr52;
+        let mut status = *self.nr52;
         let channels: &mut [&mut AudioChannel] = &mut [
             &mut self.channel1,
             &mut self.channel2,
             &mut self.channel3,
             &mut self.channel4,
         ];
-        let mut status = *self.nr52;
-        if status & (1 << 7) == 0 {
-            self.nr51.set(0);
-            self.nr50.set(0);
-            for channel in channels.iter_mut() {
-                channel.disable();
-                channel.off();
-            }
-        }
         if let Some(ref mut audio) = real.audio_spec {
+            {
+                self.frame_seq.step(time);
+                //if self.frame_seq.clks().ticked() {
+                for (_i, channel) in channels.iter_mut().enumerate() {
+                    if *self.nr52 & (1 << 7) != 0 {
+                        if let None = channel.sample(&self.wave, time, &self.frame_seq.clks()) {
+                            if channel.enabled() {
+                                //println!("Disable Channel {}", i);
+                                channel.disable();
+                            }
+                        }
+                    }
+                }
+                //}
+            }
+            self.frame_seq.settle();
             let wait_time: u64 = (cpu::CYCLES_PER_S / audio.freq) as u64;
             if let Some(count) = self.wait.ready(time, wait_time) {
                 for _ in 0..count {
                     let mut left: i16 = 0;
                     let mut right: i16 = 0;
-                    let clocks = self.frame_seq.step(wait_time);
-
-                    //let chan = 3;
-                    //self.nr51 = (1 << chan) | (1 << chan + 4);
                     for (i, channel) in channels.iter_mut().enumerate() {
                         if *self.nr52 & (1 << 7) != 0 {
-                            if let Some(val) = channel.sample(&self.wave, &clocks) {
+                            if let Some(val) = channel.sample(&self.wave, 0, &self.frame_seq.clks())
+                            {
                                 if *self.nr51 & (1 << i) != 0 {
                                     left = left.saturating_add(val);
                                 }
                                 if *self.nr51 & (1 << (i + 4)) != 0 {
                                     right = right.saturating_add(val);
                                 }
-                            } else {
-                                channel.disable();
                             }
                         }
                     }
+
                     let left_vol = *self.nr50 & 0b111;
                     let right_vol = (*self.nr50 & 0b0111_0000) >> 4;
 
@@ -308,7 +446,10 @@ impl Peripheral for Mixer {
         for (i, channel) in channels.iter_mut().enumerate() {
             status |= if channel.enabled() { 1 << i } else { 0 };
         }
-        self.nr52.set(status);
+        self.wave.set_readonly(status & (1 << 2) != 0);
+        if status != orig_status {
+            self.write_byte(MemRegister::NR52 as u16, status);
+        }
         None
     }
 }

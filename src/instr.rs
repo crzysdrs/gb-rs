@@ -3888,8 +3888,7 @@ pub fn disasm<R: Read, W: Write, F: Fn(&Instr) -> bool>(
                     }
                     Ok((_, op)) => Ok(op),
                 }
-            })
-            .or_else(|_| {
+            }).or_else(|_| {
                 size = 1;
                 Ok(Instr::INVALID(opcode))
             });

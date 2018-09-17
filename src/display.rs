@@ -206,11 +206,9 @@ impl Display {
                     .filter(
                         /* ignored invisible sprites */
                         |oam| oam.x != 0 && oam.x < 168 && oam.y != 0 && oam.y < 144 + 16,
-                    )
-                    .filter(/* filter only items in this row */ |oam| {
+                    ).filter(/* filter only items in this row */ |oam| {
                         self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size()
-                    })
-                    .sorted_by_key(|oam| oam.x)
+                    }).sorted_by_key(|oam| oam.x)
                     .into_iter()
                     .take(10)
                     .map(|x| *x),
@@ -531,12 +529,12 @@ impl Tile {
         let line = match *self {
             Tile::Sprite(oam, _) => {
                 if oam.flags & mask_u8!(OAMFlag::FlipX) != 0 {
-                    u16::from_bytes([b1.reverse_bits(), b2.reverse_bits()])
+                    u16::from_le_bytes([b1.reverse_bits(), b2.reverse_bits()])
                 } else {
-                    u16::from_bytes([b1, b2])
+                    u16::from_le_bytes([b1, b2])
                 }
             }
-            _ => u16::from_bytes([b1, b2]),
+            _ => u16::from_le_bytes([b1, b2]),
         };
 
         let (priority, palette) = match *self {
@@ -721,15 +719,13 @@ impl Peripheral for Display {
             let state_trig = flag_u8!(
                 StatFlag::OAMInterrupt,
                 next_state == DisplayState::OAMSearch
-            )
-                | flag_u8!(
-                    StatFlag::VBlankInterrupt,
-                    next_state == DisplayState::VBlank
-                )
-                | flag_u8!(
-                    StatFlag::HBlankInterrupt,
-                    next_state == DisplayState::HBlank
-                );
+            ) | flag_u8!(
+                StatFlag::VBlankInterrupt,
+                next_state == DisplayState::VBlank
+            ) | flag_u8!(
+                StatFlag::HBlankInterrupt,
+                next_state == DisplayState::HBlank
+            );
             self.state = next_state;
             triggers |= state_trig;
         };
@@ -748,7 +744,8 @@ impl Peripheral for Display {
             DisplayState::VBlank => StatFlag::VBlank,
             DisplayState::HBlank => StatFlag::HBlank,
             DisplayState::PixelTransfer => StatFlag::PixelTransfer,
-        } as u8 & 0b11;
+        } as u8
+            & 0b11;
         self.stat |= if self.ly == self.lyc {
             mask_u8!(StatFlag::Coincidence)
         } else {

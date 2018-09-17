@@ -1,13 +1,16 @@
 use super::{AudioChannel, Clocks};
 use mmu::MemRegister;
-use sound::channel::{ChannelRegs, Freq, HasRegs, Length, LengthPass, Timer, VolumeCode};
+use peripherals::Addressable;
+use sound::channel::{
+    AddressableChannel, ChannelRegs, Freq, HasRegs, Length, LengthPass, Timer, VolumeCode,
+};
 use std::ops::{Deref, DerefMut};
 
 pub struct Channel3 {
     enabled: bool,
     regs: Channel3Regs,
     timer: Timer,
-    length: Length<u16>,
+    length: Length,
     pos: Option<usize>,
 }
 
@@ -19,7 +22,7 @@ impl Channel3 {
                 &[0x7f, 0xff, 0x9f, 0xff, 0xbf],
             )),
             timer: Timer::new(),
-            length: Length::new(),
+            length: Length::new(256),
             pos: None,
             enabled: false,
         }
@@ -30,32 +33,28 @@ impl AudioChannel for Channel3 {
     fn regs(&mut self) -> &mut ChannelRegs {
         &mut self.regs
     }
-    fn reset(&mut self) {
+    fn reset(&mut self, clks: &Clocks, enable: bool, trigger: bool) {
         self.timer.reset();
-        self.length.reset();
+        self.length.update(clks, enable, trigger);
         self.pos = None;
         self.enabled = true;
     }
     fn disable(&mut self) {
         self.enabled = false;
     }
-    fn off(&mut self) {
-        self.regs.reset();
+    fn power(&mut self, power: bool) {
+        self.regs.power(power);
     }
-    fn sample(&mut self, wave: &[u8], clocks: &Clocks) -> Option<i16> {
-        if !self.regs.wave_enabled() {
+    fn sample(&mut self, wave: &[u8], cycles: u64, clocks: &Clocks) -> Option<i16> {
+        if !self.enabled {
             self.enabled = false;
+            self.length.step(clocks)?;
             return None;
-        } else if !self.enabled && !self.regs.trigger() {
-            return None;
-        } else if self.regs.trigger() {
-            self.regs.clear_trigger();
-            self.reset();
         }
         let ticks = self
             .timer
-            .step(Freq::period(&self.regs) / 2, &mut self.regs, clocks);
-        self.length.step(&mut self.regs, clocks)?;
+            .step(Freq::period(&self.regs) / 2, cycles, clocks);
+        self.length.step(clocks)?;
         let pos = self.pos.get_or_insert(0);
         *pos += ticks as usize;
         *pos %= 32;
@@ -75,6 +74,34 @@ impl AudioChannel for Channel3 {
     }
 }
 
+impl AddressableChannel for Channel3 {
+    fn read_channel_byte(&mut self, _clks: &Clocks, addr: u16) -> u8 {
+        self.regs().read_byte(addr)
+    }
+    fn write_channel_byte(&mut self, clks: &Clocks, addr: u16, v: u8) {
+        println!("Write to Channel3 {:x} {:x}", addr, v);
+        self.regs().write_byte(addr, v);
+        match addr {
+            0xff1a => if !self.regs().dac_enabled(true) {
+                self.enabled = false
+            },
+            0xff1b => self.length.reload(self.regs.length(self.length.max_len())),
+            0xff1e => {
+                match v & 0xc0 {
+                    0xC0 => self.reset(clks, true, true),
+                    0x80 => self.reset(clks, false, true),
+                    0x40 => self.length.update(clks, true, false),
+                    _ => self.length.update(clks, false, false),
+                }
+                if v & 0x80 != 0 {
+                    self.enabled = self.regs.dac_enabled(true);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 struct Channel3Regs(ChannelRegs);
 
 impl HasRegs for Channel3Regs {}
@@ -91,9 +118,5 @@ impl DerefMut for Channel3Regs {
 }
 
 impl Freq for Channel3Regs {}
-impl LengthPass<u16> for Channel3Regs {
-    fn length(&self) -> u16 {
-        self.deref().length()
-    }
-}
+impl LengthPass for Channel3Regs {}
 impl VolumeCode for Channel3Regs {}

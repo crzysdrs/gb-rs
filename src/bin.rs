@@ -255,30 +255,25 @@ fn main() -> Result<(), std::io::Error> {
                 .value_name("FILE")
                 .help("Sets a serial output file")
                 .takes_value(true),
-        )
-        .arg(
+        ).arg(
             Arg::with_name("ROM")
                 .help("Sets the rom file to use")
                 .required(true)
                 .index(1),
-        )
-        .arg(
+        ).arg(
             Arg::with_name("trace")
                 .short("t")
                 .help("Enables Traced Runs"),
-        )
-        .arg(
+        ).arg(
             Arg::with_name("no-display")
                 .short("n")
                 .help("Don't show a display (useful for testing, benchmarks)"),
-        )
-        .arg(
+        ).arg(
             Arg::with_name("v")
                 .short("v")
                 .multiple(true)
                 .help("Sets the level of verbosity"),
-        )
-        .get_matches();
+        ).get_matches();
 
     let rom = std::path::Path::new(matches.value_of("ROM").unwrap());
     let maybe_rom: std::io::Result<Vec<u8>> = match rom.extension() {
@@ -321,13 +316,13 @@ fn main() -> Result<(), std::io::Error> {
 
     let cart = Cart::new(rom_vec);
 
-    let mut serial: Box<Write> = matches.value_of("serial").map_or(
-        Box::new(std::io::sink()),
-        |p| {
-            let f = File::create(p).expect("Unable to create serial output file");
-            Box::new(std::io::BufWriter::new(f))
-        },
-    );
+    let mut serial: Box<Write> =
+        matches
+            .value_of("serial")
+            .map_or(Box::new(std::io::sink()), |p| {
+                let f = File::create(p).expect("Unable to create serial output file");
+                Box::new(std::io::BufWriter::new(f))
+            });
 
     let mut gb = GB::new(
         cart,

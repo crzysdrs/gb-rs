@@ -1,4 +1,6 @@
 use cpu::InterruptFlag;
+#[cfg(feature = "vcd_dump")]
+use VCDDump::VCD;
 
 pub struct AudioSpec<'a, T: 'a> {
     pub queue: Box<&'a mut FnMut(&[T]) -> bool>,
@@ -11,7 +13,7 @@ pub struct PeripheralData<'a> {
     pub audio_spec: Option<AudioSpec<'a, i16>>,
 }
 
-impl PeripheralData<'a> {
+impl<'a> PeripheralData<'a> {
     pub fn empty() -> PeripheralData<'a> {
         PeripheralData {
             lcd: None,
@@ -50,4 +52,42 @@ pub trait Peripheral: Addressable {
 pub trait Addressable {
     fn read_byte(&mut self, addr: u16) -> u8;
     fn write_byte(&mut self, addr: u16, v: u8);
+    #[allow(unused_variables)]
+    fn main_bus(&mut self, write: bool, addr: u16, v: u8) {
+        #[cfg(feature = "vcd_dump")]
+        {
+            let (vcd_addr, vcd_val) = if write {
+                ("write_addr", "write_data")
+            } else {
+                ("read_addr", "read_data")
+            };
+
+            VCD.as_ref().map(|m| {
+                m.lock().unwrap().as_mut().map(|vcd| {
+                    let (mut writer, mem) = vcd.writer();
+                    let (wire, id) = mem.get(vcd_addr).unwrap();
+                    wire.write(&mut writer, *id, addr as u64);
+                    let (wire, id) = mem.get(vcd_val).unwrap();
+                    wire.write(&mut writer, *id, v as u64);
+                })
+            });
+        }
+    }
+    #[allow(unused_variables)]
+    fn wrote(&mut self, addr: u16, _v: u8) {
+        #[cfg(feature = "vcd_dump")]
+        {
+            let read = self.read_byte(addr); // just in case it modified the value
+            VCD.as_ref().map(|m| {
+                m.lock().unwrap().as_mut().map(|vcd| {
+                    let (mut writer, mem) = vcd.writer();
+                    if let Some((wire, id)) =
+                        mem.get(&std::borrow::Cow::Owned(format!("0x{:04x}", addr)))
+                    {
+                        wire.write(&mut writer, *id, read as u64);
+                    }
+                })
+            });
+        }
+    }
 }

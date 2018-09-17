@@ -4,8 +4,11 @@ use cart::Cart;
 #[cfg(test)]
 use cpu::Registers;
 use dma::DMA;
-use peripherals::PeripheralData;
+use peripherals::{Addressable, PeripheralData};
 use std::io::Write;
+
+#[cfg(feature = "vcd_dump")]
+use VCDDump::VCD;
 
 pub struct GB<'a> {
     cpu: CPU,
@@ -22,12 +25,15 @@ pub enum GBReason {
 
 impl<'a> GB<'a> {
     pub fn new<'b>(cart: Cart, serial: Option<&'b mut Write>, trace: bool) -> GB<'b> {
-        GB {
+        let mut gb = GB {
             cpu: CPU::new(trace),
             mem: MMU::new(cart, serial),
             cpu_cycles: 0,
-        }
+        };
+        gb.cpu.initialize(&mut gb.mem);
+        gb
     }
+
     pub fn toggle_trace(&mut self) {
         self.cpu.toggle_trace()
     }
@@ -52,14 +58,16 @@ impl<'a> GB<'a> {
                 }
                 None => {}
             });
-
-        let mut rhs = self.mem.read_byte(0xff0f) | interrupt_flag;
-        if !self.mem.get_display().display_enabled() {
-            /* remove vblank from IF when display disabled.
-            We still want it to synchronize speed with display */
-            rhs &= !mask_u8!(InterruptFlag::VBlank);
+        let flags = self.mem.read_byte_silent(0xff0f);
+        let rhs = flags | interrupt_flag;
+        // if !self.mem.get_display().display_enabled() {
+        //     /* remove vblank from IF when display disabled.
+        //     We still want it to synchronize speed with display */
+        //     rhs &= !mask_u8!(InterruptFlag::VBlank);
+        // }
+        if rhs != flags {
+            self.mem.write_byte(0xff0f, rhs);
         }
-        self.mem.write_byte(0xff0f, rhs);
         interrupt_flag
     }
 
@@ -91,8 +99,14 @@ impl<'a> GB<'a> {
         //time in us
         let mut timeout_cycles = 0;
         while time == 0 || timeout_cycles < time {
+            #[cfg(feature = "vcd_dump")]
+            VCD.as_ref().map(|m| {
+                m.lock().unwrap().as_mut().map(|v| {
+                    let c = self.cpu_cycles;
+                    v.now = c;
+                })
+            });
             let cycles: u64 = self.cpu.execute(&mut self.mem, self.cpu_cycles) as u64;
-
             let new_interrupt = self.update_interrupts(real, cycles);
             if self.mem.dma_active() {
                 self.run_dma();

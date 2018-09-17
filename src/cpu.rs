@@ -2,6 +2,8 @@ use super::alu::{ALUOps, ALU};
 use super::instr::{disasm, get_op, Instr};
 use super::mmu::MMU;
 use super::{make_u16, split_u16};
+use mmu::MemRegister;
+use peripherals::Addressable;
 use std::io::{Read, Seek, SeekFrom, Write};
 
 pub const CYCLES_PER_S: u32 = 4194304 / 4;
@@ -314,6 +316,35 @@ impl CPU {
         mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
             .expect("Can't request outside of memory");
         mem.write(&[lo, hi]).expect("Memory wraps");
+    }
+
+    pub fn initialize(&mut self, mem: &mut MMU) {
+        //if boot_rom {
+        //.set_bootrom();
+        //} else {
+        let regs: &[(Reg16, u16)] = &[
+            (Reg16::AF, 0x0001),
+            (Reg16::BC, 0x0013),
+            (Reg16::DE, 0x00d8),
+            (Reg16::HL, 0x014d),
+            (Reg16::SP, 0xfffe),
+            (Reg16::PC, 0x0100),
+        ];
+        for (reg, val) in regs.iter() {
+            self.reg.write(*reg, *val);
+        }
+        let mem_bytes: &[(MemRegister, u8)] = &[
+            (MemRegister::NR50, 0x77),
+            (MemRegister::NR51, 0xf3),
+            (MemRegister::NR52, 0xf1),
+            (MemRegister::LCDC, 0x91),
+            (MemRegister::BGP, 0xfc),
+            (MemRegister::OBP0, 0xff),
+            (MemRegister::OBP1, 0xff),
+        ];
+        for (addr, val) in mem_bytes.iter() {
+            mem.write_byte(*addr as u16, *val);
+        }
     }
 
     pub fn execute_instr(&mut self, mut mem: &mut MMU, op: u16, instr: Instr) -> u32 {

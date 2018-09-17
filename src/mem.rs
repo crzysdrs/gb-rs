@@ -32,6 +32,9 @@ impl Mem {
             );
         }
     }
+    pub fn set_readonly(&mut self, readonly: bool) {
+        self.read_only = readonly;
+    }
 }
 
 impl Deref for Mem {
@@ -47,6 +50,7 @@ impl Addressable for Mem {
     fn write_byte(&mut self, addr: u16, val: u8) {
         if !self.read_only {
             *self.lookup(addr) = val;
+            self.wrote(addr, val);
         }
     }
     fn read_byte(&mut self, addr: u16) -> u8 {

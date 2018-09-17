@@ -1,13 +1,139 @@
 #![feature(nll)]
-#![feature(extern_prelude)]
 #![cfg_attr(feature = "strict", deny(warnings))]
 #![feature(reverse_bits)]
 #![feature(range_is_empty)]
 #![feature(rust_2018_preview)]
+#![feature(int_to_from_bytes)]
+
 #[macro_use]
 extern crate enum_primitive;
 extern crate itertools;
 extern crate num;
+extern crate vcd;
+
+#[cfg(feature = "vcd_dump")]
+mod VCDDump {
+    #[macro_use]
+    extern crate lazy_static;
+
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    type VCDMap = HashMap<std::borrow::Cow<'static, str>, (Wire, vcd::IdCode)>;
+    pub struct VCDItems {
+        vcd: std::fs::File,
+        last_emit: u64,
+        now: u64,
+        mem: VCDMap,
+    }
+
+    impl VCDItems {
+        pub fn writer(&mut self) -> (vcd::Writer, &mut VCDMap) {
+            let mut w = vcd::Writer::new(&mut self.vcd);
+            if self.now > self.last_emit {
+                self.last_emit = self.now;
+                w.timestamp(self.now);
+            }
+            (w, &mut self.mem)
+        }
+    }
+
+    pub struct Wire {
+        typ: WireType,
+        name: std::borrow::Cow<'static, str>,
+    }
+
+    impl Wire {
+        fn num_to_vcd(width: u32, num: u64) -> Vec<vcd::Value> {
+            (0..width)
+                .into_iter()
+                .rev()
+                .map(|i| {
+                    if num & (1 << i) != 0 {
+                        vcd::Value::V1
+                    } else {
+                        vcd::Value::V0
+                    }
+                }).collect()
+        }
+
+        fn size(&self) -> u32 {
+            match self.typ {
+                WireType::Scalar => 1,
+                WireType::Vector(s) => s,
+            }
+        }
+        pub fn write(&self, writer: &mut vcd::Writer, id: vcd::IdCode, val: u64) {
+            match self.typ {
+                WireType::Scalar => writer.change_scalar(id, Wire::num_to_vcd(self.size(), val)[0]),
+                WireType::Vector(_) => {
+                    writer.change_vector(id, &Wire::num_to_vcd(self.size(), val))
+                }
+            };
+        }
+    }
+    enum WireType {
+        Scalar,
+        Vector(u32),
+    }
+
+    use std::borrow::Cow;
+
+    lazy_static! {
+        static ref VCD : Option<Mutex<Option<VCDItems>>> = {
+            fn make_vcd() -> std::io::Result<VCDItems> {
+                let mut file = std::fs::File::create("test.vcd")?;
+                let mut h = HashMap::new();
+                let mut writer = vcd::Writer::new(&mut file);
+                writer.timescale(1, vcd::TimescaleUnit::US)?;
+                writer.add_module("mem")?;
+                let mut wires = vec![
+                    Wire {typ: WireType::Vector(16), name:Cow::Borrowed("write_addr")},
+                    Wire {typ: WireType::Vector(8), name:Cow::Borrowed("write_data")},
+                    Wire {typ: WireType::Vector(16), name:Cow::Borrowed("read_addr")},
+                    Wire {typ: WireType::Vector(8), name:Cow::Borrowed("read_data")},
+                    Wire {typ: WireType::Scalar, name:Cow::Borrowed("length")},
+                    Wire {typ: WireType::Scalar, name:Cow::Borrowed("vol")},
+                    Wire {typ: WireType::Scalar, name:Cow::Borrowed("sweep")},
+                ];
+                wires.extend((0xff00..0xff50).into_iter().map(
+                    |addr|
+                    Wire {typ: WireType::Vector(8), name:Cow::Owned(format!("0x{:04x}", addr))}
+                )
+                );
+
+                for w in wires.drain(0..) {
+                    let id = writer.add_wire(
+                        w.size(), &w.name)?;
+                    h.insert(w.name.to_owned(), (w, id));
+                }
+                writer.upscope()?;
+                writer.enddefinitions()?;
+                // Write the initial values
+                writer.begin(vcd::SimulationCommand::Dumpvars)?;
+                for (_name, (wire, id)) in &h {
+                    match wire.typ {
+                        WireType::Vector(s) => writer.change_vector(*id, &vec![vcd::Value::X; s as usize]),
+                        WireType::Scalar => writer.change_scalar(*id, vcd::Value::X),
+                    };
+                }
+                writer.end()?;
+
+                Ok(VCDItems {
+                    last_emit: 0,
+                    now: 0,
+                    vcd: file,
+                    mem: h,
+                })
+            }
+            if cfg!(not(test)) && cfg!(debug_assertions) {
+                Some(Mutex::new(make_vcd().ok()))
+            } else {
+                None
+            }
+
+        };
+    }
+}
 
 macro_rules! flag_u8 {
     ($x:path, $cond:expr) => {
@@ -126,6 +252,11 @@ mod tests {
             .to_owned()
     }
 
+    macro_rules! passed {
+        ($test: expr) => {
+            concat!($test, "\n\n\nPassed")
+        };
+    }
     macro_rules! blarg_test {
         ($name:tt, $path:expr, $test:expr) => {
             #[test]
@@ -150,7 +281,7 @@ mod tests {
                     gb.step_timeout(30 * 1000000, &mut p);
                     read_screen(&mut gb)
                 };
-                assert_eq!(screen, concat!($test, "\n\n\nPassed"));
+                assert_eq!(screen, $test);
             }
         };
     }
@@ -329,122 +460,122 @@ mod tests {
     blarg_test!(
         blarg_cpu_instrs_01_special_gb,
         "../blarg/cpu_instrs/01-special.gb",
-        "Test: 01-special"
+        passed!("Test: 01-special")
     );
     blarg_test!(
         blarg_cpu_instrs_02_interrupts_gb,
         "../blarg/cpu_instrs/02-interrupts.gb",
-        "Test: 02-interrupts"
+        passed!("Test: 02-interrupts")
     );
     blarg_test!(
         blarg_cpu_instrs_03_op_sp_hl_gb,
         "../blarg/cpu_instrs/03-op_sp,hl.gb",
-        "Test: 03-op_sp,hl"
+        passed!("Test: 03-op_sp,hl")
     );
     blarg_test!(
         blarg_cpu_instrs_04_op_r_imm_gb,
         "../blarg/cpu_instrs/04-op_r,imm.gb",
-        "Test: 04-op_r,imm"
+        passed!("Test: 04-op_r,imm")
     );
     blarg_test!(
         blarg_cpu_instrs_05_op_rp_gb,
         "../blarg/cpu_instrs/05-op_rp.gb",
-        "Test: 05-op_rp"
+        passed!("Test: 05-op_rp")
     );
     blarg_test!(
         blarg_cpu_instrs_06_ld_r_r_gb,
         "../blarg/cpu_instrs/06-ld_r,r.gb",
-        "Test: 06-ld_r,r"
+        passed!("Test: 06-ld_r,r")
     );
     blarg_test!(
         blarg_cpu_instrs_07_jr_jp_call_ret_rst_gb,
         "../blarg/cpu_instrs/07-jr,jp,call,ret,rst.gb",
-        "Test: 07-jr,jp,call,\nret,rst"
+        passed!("Test: 07-jr,jp,call,\nret,rst")
     );
     blarg_test!(
         blarg_cpu_instrs_08_misc_instrs_gb,
         "../blarg/cpu_instrs/08-misc_instrs.gb",
-        "Test: 08-misc_instrs"
+        passed!("Test: 08-misc_instrs")
     );
     blarg_test!(
         blarg_cpu_instrs_09_op_r_r_gb,
         "../blarg/cpu_instrs/09-op_r,r.gb",
-        "Test: 09-op_r,r"
+        passed!("Test: 09-op_r,r")
     );
     blarg_test!(
         blarg_cpu_instrs_10_bit_ops_gb,
         "../blarg/cpu_instrs/10-bit_ops.gb",
-        "Test: 10-bit_ops"
+        passed!("Test: 10-bit_ops")
     );
     blarg_test!(
         blarg_cpu_instrs_11_op_a_hl_gb,
         "../blarg/cpu_instrs/11-op_a,(hl).gb",
-        "Test: 11-op_a,(hl)"
+        passed!("Test: 11-op_a,(hl)")
     );
     blarg_test!(
         blarg_cpu_instr_timing,
         "../blarg/instr_timing/instr_timing.gb",
-        "Test: instr_timing"
+        passed!("Test: instr_timing")
     );
     blarg_test!(
         blarg_sound_01_registers,
         "../blarg/dmg_sound/rom_singles/01-registers.gb",
-        "01-registers"
+        passed!("01-registers")
     );
-    // blarg_test!(
-    //     blarg_sound_02_len_ctr,
-    //     "../blarg/dmg_sound/rom_singles/02-len ctr.gb",
-    //     "02-len ctr"
-    // );
-    // blarg_test!(
-    //     blarg_sound_03_trigger,
-    //     "../blarg/dmg_sound/rom_singles/03-trigger.gb",
-    //     "03-trigger"
-    // );
+    blarg_test!(
+        blarg_sound_02_len_ctr,
+        "../blarg/dmg_sound/rom_singles/02-len ctr.gb",
+        "02-len ctr\n\n0 1 2 3\nPassed"
+    );
+    blarg_test!(
+        blarg_sound_03_trigger,
+        "../blarg/dmg_sound/rom_singles/03-trigger.gb",
+        "03-trigger\n\n0 1 2 3\nPassed"
+    );
     // blarg_test!(
     //     blarg_sound_04_sweep,
     //     "../blarg/dmg_sound/rom_singles/04-sweep.gb",
-    //     "04-sweep"
+    //     passed!("04-sweep")
     // );
     // blarg_test!(
     //     blarg_sound_05_sweep_details,
     //     "../blarg/dmg_sound/rom_singles/05-sweep details.gb",
-    //     "05-sweep details"
+    //     passed!("05-sweep details")
     // );
     // blarg_test!(
     //     blarg_sound_06_overflow_on_trigger,
     //     "../blarg/dmg_sound/rom_singles/06-overflow on trigger.gb",
-    //     "06-overflow on trigger"
+    //     passed!("06-overflow on trigger")
     // );
     // blarg_test!(
     //     blarg_sound_07_len_sweep_period_sync,
     //     "../blarg/dmg_sound/rom_singles/07-len sweep period sync.gb",
-    //     "07-len sweep period sync"
+    //     passed!("07-len sweep period sync")
     // );
     // blarg_test!(
     //     blarg_sound_08_len_ctr_during_power,
     //     "../blarg/dmg_sound/rom_singles/08-len ctr during power.gb",
-    //     "08-len ctr during power"
+    //     passed!("08-len ctr during power")
     // );
     // blarg_test!(
     //     blarg_sound_09_wave_read_while_on,
     //     "../blarg/dmg_sound/rom_singles/09-wave read while on.gb",
-    //     "09-wave read while on"
+    //     passed!("09-wave read while on")
     // );
     // blarg_test!(
     //     blarg_sound_10_wave_trigger_while_on,
     //     "../blarg/dmg_sound/rom_singles/10-wave trigger while on.gb",
-    //     "10-wave trigger while on"
+    //     passed!("10-wave trigger while on")
     // );
     // blarg_test!(
     //     blarg_sound_11_regs_after_power,
     //     "../blarg/dmg_sound/rom_singles/11-regs after power.gb",
-    //     "11-regs after power"
+    //     passed!("11-regs after power")
     // );
     // blarg_test!(
     //     blarg_sound_12_wave_write_while_on,
     //     "../blarg/dmg_sound/rom_singles/12-wave write while on.gb",
-    //     "12-wave write while on"
+    //     passed!("12-wave write while on")
     // );
 
 }

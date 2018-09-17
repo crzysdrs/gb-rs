@@ -9,11 +9,10 @@ use super::serial::Serial;
 use super::timer::Timer;
 use cart::Cart;
 use dma::DMA;
-use peripherals::Peripheral;
+use peripherals::{Addressable, Peripheral};
 use sound::Mixer;
-
 enum_from_primitive! {
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, PartialEq, Clone, Copy)]
     pub enum MemRegister {
         //Port/Mode Registers
         P1 = 0xff00,
@@ -107,6 +106,7 @@ pub struct MMU<'a> {
 }
 
 impl<'a> MMU<'a> {
+    #[allow(dead_code)]
     pub fn get_display(&self) -> &Display {
         &self.display
     }
@@ -139,7 +139,8 @@ impl<'a> MMU<'a> {
         }
     }
     pub fn new(cart: Cart, serial: Option<&mut Write>) -> MMU {
-        let bios = Mem::new(true, 0, include_bytes!("../boot_rom.gb").to_vec());
+        //let bios = Mem::new(true, 0, include_bytes!("../boot_rom.gb").to_vec());
+        let bios = Mem::new(true, 0, vec![0u8; 256]);
         let ram0 = Mem::new(false, 0xc000, vec![0; 8 << 10]);
         let ram1 = Mem::new(false, 0xff80, vec![0; 0xffff - 0xff80 + 1]);
         let ram2 = Mem::new(false, 0xfea0, vec![0; 0xff00 - 0xfea0 + 1]);
@@ -166,12 +167,7 @@ impl<'a> MMU<'a> {
     pub fn disable_bios(&mut self) {
         self.bios_exists = false;
     }
-    fn breakbreakbreak() {}
-
     fn lookup_peripheral(&mut self, addr: &mut u16) -> &mut Peripheral {
-        if *addr == 0xff85 {
-            MMU::breakbreakbreak();
-        }
         match addr {
             0x0000...0x00ff => if self.bios_exists {
                 &mut self.bios as &mut Peripheral
@@ -205,16 +201,26 @@ impl<'a> MMU<'a> {
         }
     }
 
-    pub fn read_byte(&mut self, mut addr: u16) -> u8 {
-        self.lookup_peripheral(&mut addr).read_byte(addr)
-    }
-    pub fn write_byte(&mut self, mut addr: u16, v: u8) {
-        self.lookup_peripheral(&mut addr).write_byte(addr, v);
-    }
     // fn dump(&mut self) {
     //     self.seek(SeekFrom::Start(0));
     //     disasm(0, self, &mut std::io::stdout(), &|i| match i {Instr::NOP => false, _ => true});
     // }
+    pub fn read_byte_silent(&mut self, mut addr: u16) -> u8 {
+        let v = self.lookup_peripheral(&mut addr).read_byte(addr);
+        v
+    }
+}
+
+impl<'a> Addressable for MMU<'a> {
+    fn read_byte(&mut self, mut addr: u16) -> u8 {
+        let v = self.lookup_peripheral(&mut addr).read_byte(addr);
+        self.main_bus(false, addr, v);
+        v
+    }
+    fn write_byte(&mut self, mut addr: u16, v: u8) {
+        self.main_bus(true, addr, v);
+        self.lookup_peripheral(&mut addr).write_byte(addr, v);
+    }
 }
 
 impl<'a> Write for MMU<'a> {
