@@ -1,7 +1,7 @@
 use super::mmu::MemRegister;
-use cpu::InterruptFlag;
+use crate::cpu::InterruptFlag;
+use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use enum_primitive::FromPrimitive;
-use peripherals::{Addressable, Peripheral, PeripheralData};
 
 pub struct Controller {
     p1: u8,

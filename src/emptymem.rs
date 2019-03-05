@@ -1,4 +1,4 @@
-use peripherals::{Addressable, Peripheral};
+use crate::peripherals::{Addressable, Peripheral};
 
 pub struct EmptyMem {
     default: u8,

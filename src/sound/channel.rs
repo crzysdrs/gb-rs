@@ -1,7 +1,7 @@
 use super::Clk;
 use super::Clocks;
 use super::WaitTimer;
-use peripherals::Addressable;
+use crate::peripherals::Addressable;
 use std::ops::{Deref, DerefMut};
 
 use super::MaskReg;

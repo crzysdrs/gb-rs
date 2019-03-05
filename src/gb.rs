@@ -1,10 +1,10 @@
 use super::cpu::*;
 use super::mmu::*;
-use cart::Cart;
+use crate::cart::Cart;
 #[cfg(test)]
-use cpu::Registers;
-use dma::DMA;
-use peripherals::{Addressable, PeripheralData};
+use crate::cpu::Registers;
+use crate::dma::DMA;
+use crate::peripherals::{Addressable, PeripheralData};
 use std::io::Write;
 
 #[cfg(feature = "vcd_dump")]

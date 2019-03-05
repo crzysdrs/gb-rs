@@ -1,7 +1,7 @@
 use super::mmu::MemRegister;
+use crate::mmu::MMU;
+use crate::peripherals::{Addressable, Peripheral};
 use enum_primitive::FromPrimitive;
-use mmu::MMU;
-use peripherals::{Addressable, Peripheral};
 
 pub struct DMA {
     active: bool,

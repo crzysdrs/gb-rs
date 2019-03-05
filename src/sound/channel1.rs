@@ -1,9 +1,9 @@
 use super::{AudioChannel, Clocks};
-use mmu::MemRegister;
-use peripherals::Addressable;
+use crate::mmu::MemRegister;
+use crate::peripherals::Addressable;
 use std::ops::{Deref, DerefMut};
 
-use sound::channel::{
+use crate::sound::channel::{
     AddressableChannel, ChannelRegs, Duty, DutyPass, Freq, HasRegs, Length, LengthPass, Sweep,
     SweepPass, Timer, Vol, VolumePass,
 };

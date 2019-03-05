@@ -1,9 +1,9 @@
-use cpu;
-use cpu::InterruptFlag;
-use emptymem::EmptyMem;
-use mem::Mem;
-use mmu::MemRegister;
-use peripherals::{Addressable, Peripheral, PeripheralData};
+use crate::cpu;
+use crate::cpu::InterruptFlag;
+use crate::emptymem::EmptyMem;
+use crate::mem::Mem;
+use crate::mmu::MemRegister;
+use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use std::ops::Deref;
 
 mod channel;

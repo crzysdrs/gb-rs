@@ -1,5 +1,5 @@
-use cpu::InterruptFlag;
-use peripherals::{Addressable, Peripheral, PeripheralData};
+use crate::cpu::InterruptFlag;
+use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 
 pub struct FakeMem {}
 

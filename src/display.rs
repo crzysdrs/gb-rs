@@ -1,6 +1,6 @@
-use cpu::InterruptFlag;
+use crate::cpu::InterruptFlag;
+use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use itertools::Itertools;
-use peripherals::{Addressable, Peripheral, PeripheralData};
 use std::collections::VecDeque;
 
 pub const SCREEN_X: usize = 160;

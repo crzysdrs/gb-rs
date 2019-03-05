@@ -239,7 +239,7 @@ fn disasm_file(file: &str, filter_nops: bool) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    fn read_screen(gb: &mut ::gb::GB) -> String {
+    fn read_screen(gb: &mut crate::gb::GB) -> String {
         use itertools::Itertools;
         let bg_tiles = gb.get_mem().get_display().all_bgs();
         bg_tiles
@@ -260,19 +260,19 @@ mod tests {
         ($name:tt, $path:expr, $test:expr) => {
             #[test]
             fn $name() {
-                use cart::Cart;
+                use crate::cart::Cart;
                 let mut buf = ::std::io::BufWriter::new(Vec::new());
-                let (mut v, mut f) = ::test_data();
-                let mut p = ::peripherals::PeripheralData::new(
+                let (mut v, mut f) = crate::test_data();
+                let mut p = crate::peripherals::PeripheralData::new(
                     Some(&mut v),
-                    Some(::peripherals::AudioSpec {
+                    Some(crate::peripherals::AudioSpec {
                         queue: Box::new(&mut f),
                         freq: 16384 * 4,
                         silence: 0,
                     }),
                 );
                 let screen = {
-                    let mut gb = ::gb::GB::new(
+                    let mut gb = crate::gb::GB::new(
                         Cart::new(include_bytes!($path).to_vec()),
                         Some(&mut buf),
                         false,
@@ -290,13 +290,13 @@ mod tests {
         ($name:tt, $path:expr) => {
             #[test]
             fn $name() {
-                use cart::Cart;
-                use cpu::Reg8;
-                use cpu::RegType;
+                use crate::cart::Cart;
+                use crate::cpu::Reg8;
+                use crate::cpu::RegType;
 
                 let mut buf = ::std::io::BufWriter::new(Vec::new());
                 let (finished, reg) = {
-                    let mut gb = ::gb::GB::new(
+                    let mut gb = crate::gb::GB::new(
                         Cart::new(include_bytes!($path).to_vec()),
                         Some(&mut buf),
                         false,
@@ -305,7 +305,10 @@ mod tests {
                     gb.magic_breakpoint();
 
                     (
-                        gb.step_timeout(30 * 1000000, &mut ::peripherals::PeripheralData::empty()),
+                        gb.step_timeout(
+                            30 * 1000000,
+                            &mut crate::peripherals::PeripheralData::empty(),
+                        ),
                         gb.get_reg(),
                     )
                 };
@@ -313,7 +316,7 @@ mod tests {
                 let output = ::std::str::from_utf8(&buf).unwrap();
                 println!("{}", output);
                 assert_eq!(output, "TEST OK");
-                assert_eq!(finished, ::gb::GBReason::Dead);
+                assert_eq!(finished, crate::gb::GBReason::Dead);
                 assert_eq!(reg.read(Reg8::B), 3);
                 assert_eq!(reg.read(Reg8::C), 5);
                 assert_eq!(reg.read(Reg8::D), 8);
@@ -327,17 +330,17 @@ mod tests {
     fn it_works() {
         let s = Vec::new();
         assert_eq!(
-            ::instr::Instr::disasm(&mut [0u8].as_ref()).unwrap(),
-            (0, ::instr::Instr::NOP)
+            crate::instr::Instr::disasm(&mut [0u8].as_ref()).unwrap(),
+            (0, crate::instr::Instr::NOP)
         );
         let mut b = ::std::io::Cursor::new(s);
-        ::instr::disasm(0, &mut [0u8, 0u8].as_ref(), &mut b, &|_| true).unwrap();
+        crate::instr::disasm(0, &mut [0u8, 0u8].as_ref(), &mut b, &|_| true).unwrap();
         assert_eq!(
             String::from_utf8(b.into_inner()).unwrap(),
             "0x0000: 00       NOP\n0x0001: 00       NOP\n"
         );
         //::disasm_file("cpu_instrs/cpu_instrs.gb", true);
-        ::disasm_file("blarg/cpu_instrs/10-bit_ops.gb", true).unwrap();
+        crate::disasm_file("blarg/cpu_instrs/10-bit_ops.gb", true).unwrap();
         // let mut mem = ::MMU::::new();
         // mem.dump();
     }

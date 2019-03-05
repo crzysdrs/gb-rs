@@ -1,4 +1,4 @@
-use peripherals::{Addressable, Peripheral};
+use crate::peripherals::{Addressable, Peripheral};
 use std::ops::Deref;
 
 pub struct Mem {

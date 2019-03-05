@@ -1,4 +1,4 @@
-use cpu::InterruptFlag;
+use crate::cpu::InterruptFlag;
 #[cfg(feature = "vcd_dump")]
 use VCDDump::VCD;
 

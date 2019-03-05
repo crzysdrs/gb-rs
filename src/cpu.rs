@@ -2,8 +2,8 @@ use super::alu::{ALUOps, ALU};
 use super::instr::{disasm, get_op, Instr};
 use super::mmu::MMU;
 use super::{make_u16, split_u16};
-use mmu::MemRegister;
-use peripherals::Addressable;
+use crate::mmu::MemRegister;
+use crate::peripherals::Addressable;
 use std::io::{Read, Seek, SeekFrom, Write};
 
 pub const CYCLES_PER_S: u32 = 4194304 / 4;
@@ -935,9 +935,9 @@ impl CPU {
 
 #[cfg(test)]
 mod tests {
-    use cpu::{Reg8, RegType, CPU};
-    use instr::Instr;
-    use mmu::MMU;
+    use crate::cpu::{Reg8, RegType, CPU};
+    use crate::instr::Instr;
+    use crate::mmu::MMU;
 
     macro_rules! test_state {
         ($instr:expr, $reg:expr, $val:expr) => {
@@ -953,7 +953,7 @@ mod tests {
 
     #[test]
     fn targeted() {
-        use cart::Cart;
+        use crate::cart::Cart;
         test_state!(
             vec![Instr::ADD_r8_d8(Reg8::A, 0x05), Instr::DAA],
             Reg8::A,

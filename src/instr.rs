@@ -2,7 +2,7 @@ use std::fmt;
 use std::io;
 use std::io::{Read, Write};
 
-use cpu::{Cond, Reg16, Reg8};
+use crate::cpu::{Cond, Reg16, Reg8};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq)]

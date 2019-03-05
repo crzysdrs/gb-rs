@@ -7,10 +7,10 @@ use super::fakemem::FakeMem;
 use super::mem::Mem;
 use super::serial::Serial;
 use super::timer::Timer;
-use cart::Cart;
-use dma::DMA;
-use peripherals::{Addressable, Peripheral};
-use sound::Mixer;
+use crate::cart::Cart;
+use crate::dma::DMA;
+use crate::peripherals::{Addressable, Peripheral};
+use crate::sound::Mixer;
 enum_from_primitive! {
     #[derive(Debug, PartialEq, Clone, Copy)]
     pub enum MemRegister {
