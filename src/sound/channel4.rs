@@ -82,9 +82,11 @@ impl AddressableChannel for Channel4 {
         self.regs().write_byte(addr, v);
         match addr {
             0xff20 => self.length.reload(self.regs.length(self.length.max_len())),
-            0xff21 => if !self.regs().dac_enabled(false) {
-                self.enabled = false
-            },
+            0xff21 => {
+                if !self.regs().dac_enabled(false) {
+                    self.enabled = false
+                }
+            }
             0xff23 => {
                 match v & 0xc0 {
                     0xC0 => self.reset(clks, true, true),

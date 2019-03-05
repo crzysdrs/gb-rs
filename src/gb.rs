@@ -24,13 +24,20 @@ pub enum GBReason {
 }
 
 impl<'a> GB<'a> {
-    pub fn new<'b>(cart: Cart, serial: Option<&'b mut Write>, trace: bool) -> GB<'b> {
+    pub fn new<'b>(
+        cart: Cart,
+        serial: Option<&'b mut Write>,
+        trace: bool,
+        fast_boot: bool,
+    ) -> GB<'b> {
         let mut gb = GB {
             cpu: CPU::new(trace),
             mem: MMU::new(cart, serial),
             cpu_cycles: 0,
         };
-        gb.cpu.initialize(&mut gb.mem);
+        if fast_boot {
+            gb.cpu.initialize(&mut gb.mem);
+        }
         gb
     }
 
@@ -46,7 +53,7 @@ impl<'a> GB<'a> {
         self.cpu.magic_breakpoint();
     }
     #[cfg(test)]
-    pub fn get_mem(&mut self) -> &'a mut MMU {
+    pub fn get_mem(&mut self) -> &mut MMU<'a> {
         &mut self.mem
     }
     fn update_interrupts(&mut self, real: &mut PeripheralData, cycles: u64) -> u8 {

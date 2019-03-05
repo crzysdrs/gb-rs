@@ -139,8 +139,8 @@ impl<'a> MMU<'a> {
         }
     }
     pub fn new(cart: Cart, serial: Option<&mut Write>) -> MMU {
-        //let bios = Mem::new(true, 0, include_bytes!("../boot_rom.gb").to_vec());
-        let bios = Mem::new(true, 0, vec![0u8; 256]);
+        let bios = Mem::new(true, 0, include_bytes!("../boot_rom.gb").to_vec());
+        //let bios = Mem::new(true, 0, vec![0u8; 256]);
         let ram0 = Mem::new(false, 0xc000, vec![0; 8 << 10]);
         let ram1 = Mem::new(false, 0xff80, vec![0; 0xffff - 0xff80 + 1]);
         let ram2 = Mem::new(false, 0xfea0, vec![0; 0xff00 - 0xfea0 + 1]);
@@ -169,11 +169,13 @@ impl<'a> MMU<'a> {
     }
     fn lookup_peripheral(&mut self, addr: &mut u16) -> &mut Peripheral {
         match addr {
-            0x0000...0x00ff => if self.bios_exists {
-                &mut self.bios as &mut Peripheral
-            } else {
-                &mut self.cart as &mut Peripheral
-            },
+            0x0000...0x00ff => {
+                if self.bios_exists {
+                    &mut self.bios as &mut Peripheral
+                } else {
+                    &mut self.cart as &mut Peripheral
+                }
+            }
             0x0100...0x7FFF => &mut self.cart as &mut Peripheral,
             0x8000...0x9FFF => &mut self.display as &mut Peripheral,
             0xA000...0xBFFF => &mut self.cart as &mut Peripheral,

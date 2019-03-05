@@ -171,7 +171,7 @@ impl FrameSequencer {
             &mut self.clks.vol,
             &mut self.clks.sweep,
         ]
-            .iter_mut()
+        .iter_mut()
         {
             std::mem::replace(*c, c.settle());
         }

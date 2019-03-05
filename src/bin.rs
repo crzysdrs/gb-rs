@@ -255,25 +255,35 @@ fn main() -> Result<(), std::io::Error> {
                 .value_name("FILE")
                 .help("Sets a serial output file")
                 .takes_value(true),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("ROM")
                 .help("Sets the rom file to use")
                 .required(true)
                 .index(1),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("trace")
                 .short("t")
                 .help("Enables Traced Runs"),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("no-display")
                 .short("n")
                 .help("Don't show a display (useful for testing, benchmarks)"),
-        ).arg(
+        )
+        .arg(
+            Arg::with_name("fast-boot")
+                .short("f")
+                .help("Don't run the boot rom."),
+        )
+        .arg(
             Arg::with_name("v")
                 .short("v")
                 .multiple(true)
                 .help("Sets the level of verbosity"),
-        ).get_matches();
+        )
+        .get_matches();
 
     let rom = std::path::Path::new(matches.value_of("ROM").unwrap());
     let maybe_rom: std::io::Result<Vec<u8>> = match rom.extension() {
@@ -328,6 +338,7 @@ fn main() -> Result<(), std::io::Error> {
         cart,
         Some(&mut *serial),
         matches.occurrences_of("trace") > 0,
+        matches.occurrences_of("fast-boot") > 0,
     );
 
     if matches.occurrences_of("no-display") > 0 {

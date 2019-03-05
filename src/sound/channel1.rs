@@ -86,9 +86,11 @@ impl AddressableChannel for Channel1 {
             0xff11 => {
                 self.length.reload(self.regs.length(self.length.max_len()));
             }
-            0xff12 => if !self.regs().dac_enabled(false) {
-                self.enabled = false
-            },
+            0xff12 => {
+                if !self.regs().dac_enabled(false) {
+                    self.enabled = false
+                }
+            }
             0xff14 => {
                 match v & 0xc0 {
                     0xC0 => self.reset(clks, true, true),

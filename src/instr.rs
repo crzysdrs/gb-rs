@@ -3475,7 +3475,6 @@ impl Instr {
             0xfd => Instr::SET_l8_r8(7, Reg8::L),
             0xfe => Instr::SET_l8_ir16(7, Reg16::HL),
             0xff => Instr::SET_l8_r8(7, Reg8::A),
-            _ => Instr::INVALID(real),
         };
         Ok((real, i))
     }
@@ -3888,7 +3887,8 @@ pub fn disasm<R: Read, W: Write, F: Fn(&Instr) -> bool>(
                     }
                     Ok((_, op)) => Ok(op),
                 }
-            }).or_else(|_| {
+            })
+            .or_else(|_| {
                 size = 1;
                 Ok(Instr::INVALID(opcode))
             });

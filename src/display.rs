@@ -206,9 +206,11 @@ impl Display {
                     .filter(
                         /* ignored invisible sprites */
                         |oam| oam.x != 0 && oam.x < 168 && oam.y != 0 && oam.y < 144 + 16,
-                    ).filter(/* filter only items in this row */ |oam| {
+                    )
+                    .filter(/* filter only items in this row */ |oam| {
                         self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size()
-                    }).sorted_by_key(|oam| oam.x)
+                    })
+                    .sorted_by_key(|oam| oam.x)
                     .into_iter()
                     .take(10)
                     .map(|x| *x),

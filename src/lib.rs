@@ -2,8 +2,6 @@
 #![cfg_attr(feature = "strict", deny(warnings))]
 #![feature(reverse_bits)]
 #![feature(range_is_empty)]
-#![feature(rust_2018_preview)]
-#![feature(int_to_from_bytes)]
 
 #[macro_use]
 extern crate enum_primitive;
@@ -53,7 +51,8 @@ mod VCDDump {
                     } else {
                         vcd::Value::V0
                     }
-                }).collect()
+                })
+                .collect()
         }
 
         fn size(&self) -> u32 {
@@ -248,7 +247,7 @@ mod tests {
             .map(|line| std::str::from_utf8(line).unwrap().trim())
             .intersperse(&"\n".to_owned())
             .collect::<String>()
-            .trim_right()
+            .trim_end()
             .to_owned()
     }
 
@@ -277,6 +276,7 @@ mod tests {
                         Cart::new(include_bytes!($path).to_vec()),
                         Some(&mut buf),
                         false,
+                        true,
                     );
                     gb.step_timeout(30 * 1000000, &mut p);
                     read_screen(&mut gb)
@@ -300,6 +300,7 @@ mod tests {
                         Cart::new(include_bytes!($path).to_vec()),
                         Some(&mut buf),
                         false,
+                        true,
                     );
                     gb.magic_breakpoint();
 

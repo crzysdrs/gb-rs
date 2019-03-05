@@ -319,9 +319,7 @@ impl CPU {
     }
 
     pub fn initialize(&mut self, mem: &mut MMU) {
-        //if boot_rom {
-        //.set_bootrom();
-        //} else {
+        mem.disable_bios();
         let regs: &[(Reg16, u16)] = &[
             (Reg16::AF, 0x0001),
             (Reg16::BC, 0x0013),

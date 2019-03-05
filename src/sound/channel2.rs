@@ -80,9 +80,11 @@ impl AddressableChannel for Channel2 {
         println!("Write to Channel2 {:x} {:x}", addr, v);
         match addr {
             0xff16 => self.length.reload(self.regs.length(self.length.max_len())),
-            0xff17 => if !self.regs().dac_enabled(false) {
-                self.enabled = false
-            },
+            0xff17 => {
+                if !self.regs().dac_enabled(false) {
+                    self.enabled = false
+                }
+            }
             0xff19 => {
                 match v & 0xc0 {
                     0xC0 => self.reset(clks, true, true),

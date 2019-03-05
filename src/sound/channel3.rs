@@ -82,9 +82,11 @@ impl AddressableChannel for Channel3 {
         println!("Write to Channel3 {:x} {:x}", addr, v);
         self.regs().write_byte(addr, v);
         match addr {
-            0xff1a => if !self.regs().dac_enabled(true) {
-                self.enabled = false
-            },
+            0xff1a => {
+                if !self.regs().dac_enabled(true) {
+                    self.enabled = false
+                }
+            }
             0xff1b => self.length.reload(self.regs.length(self.length.max_len())),
             0xff1e => {
                 match v & 0xc0 {
