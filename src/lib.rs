@@ -1,7 +1,4 @@
-#![feature(nll)]
 #![cfg_attr(feature = "strict", deny(warnings))]
-#![feature(reverse_bits)]
-#![feature(range_is_empty)]
 
 #[macro_use]
 extern crate enum_primitive;
