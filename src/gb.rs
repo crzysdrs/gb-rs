@@ -66,12 +66,12 @@ impl<'a> GB<'a> {
                 None => {}
             });
         let flags = self.mem.read_byte_silent(0xff0f);
-        let rhs = flags | interrupt_flag;
-        // if !self.mem.get_display().display_enabled() {
-        //     /* remove vblank from IF when display disabled.
-        //     We still want it to synchronize speed with display */
-        //     rhs &= !mask_u8!(InterruptFlag::VBlank);
-        // }
+        let mut rhs = flags | interrupt_flag;
+        if !self.mem.get_display().display_enabled() {
+            /* remove vblank from IF when display disabled.
+            We still want it to synchronize speed with display */
+            rhs &= !mask_u8!(InterruptFlag::VBlank);
+        }
         if rhs != flags {
             self.mem.write_byte(0xff0f, rhs);
         }
