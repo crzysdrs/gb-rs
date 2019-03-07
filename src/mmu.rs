@@ -7,7 +7,6 @@ use super::fakemem::FakeMem;
 use super::mem::Mem;
 use super::serial::Serial;
 use super::timer::Timer;
-use crate::cart::Cart;
 use crate::dma::DMA;
 use crate::peripherals::{Addressable, Peripheral};
 use crate::sound::Mixer;
@@ -95,7 +94,7 @@ pub struct MMU<'a> {
     controller: Controller,
     dma: DMA,
     bios: Mem,
-    cart: Cart,
+    cart: Box<Peripheral>,
     ram0: Mem,
     fake_mem: FakeMem,
     serial: Serial<'a>,
@@ -133,12 +132,13 @@ impl<'a> MMU<'a> {
             &mut self.serial as &mut Peripheral,
             &mut self.controller as &mut Peripheral,
             &mut self.sound as &mut Peripheral,
+            &mut *self.cart as &mut Peripheral,
         ];
         for p in ps.iter_mut() {
             walk(*p)
         }
     }
-    pub fn new(cart: Cart, serial: Option<&mut Write>) -> MMU {
+    pub fn new(cart: Box<Peripheral>, serial: Option<&mut Write>) -> MMU {
         let bios = Mem::new(true, 0, include_bytes!("../boot_rom.gb").to_vec());
         //let bios = Mem::new(true, 0, vec![0u8; 256]);
         let ram0 = Mem::new(false, 0xc000, vec![0; 8 << 10]);
@@ -173,12 +173,12 @@ impl<'a> MMU<'a> {
                 if self.bios_exists {
                     &mut self.bios as &mut Peripheral
                 } else {
-                    &mut self.cart as &mut Peripheral
+                    &mut *self.cart as &mut Peripheral
                 }
             }
-            0x0100...0x7FFF => &mut self.cart as &mut Peripheral,
+            0x0100...0x7FFF => &mut *self.cart as &mut Peripheral,
             0x8000...0x9FFF => &mut self.display as &mut Peripheral,
-            0xA000...0xBFFF => &mut self.cart as &mut Peripheral,
+            0xA000...0xBFFF => &mut *self.cart as &mut Peripheral,
             0xC000...0xDFFF => &mut self.ram0 as &mut Peripheral,
             0xE000...0xFDFF => {
                 /* echo of ram0 */

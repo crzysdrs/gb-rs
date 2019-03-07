@@ -1,10 +1,9 @@
 use super::cpu::*;
 use super::mmu::*;
-use crate::cart::Cart;
 #[cfg(test)]
 use crate::cpu::Registers;
 use crate::dma::DMA;
-use crate::peripherals::{Addressable, PeripheralData};
+use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use std::io::Write;
 
 #[cfg(feature = "vcd_dump")]
@@ -25,7 +24,7 @@ pub enum GBReason {
 
 impl<'a> GB<'a> {
     pub fn new<'b>(
-        cart: Cart,
+        cart: Box<Peripheral>,
         serial: Option<&'b mut Write>,
         trace: bool,
         fast_boot: bool,

@@ -1,4 +1,5 @@
-use crate::peripherals::{Addressable, Peripheral};
+use crate::cpu::InterruptFlag;
+use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 
 enum CGBStatus {
     GB,
@@ -37,8 +38,8 @@ enum BankMode {
 }
 
 impl Cart {
-    pub fn fake() -> Cart {
-        Cart {
+    pub fn fake() -> Box<Peripheral> {
+        let cart = Cart {
             title: "Fake ROM".to_string(),
             cgb: CGBStatus::GB,
             mbc: None,
@@ -49,9 +50,10 @@ impl Cart {
             ram_reg: 0,
             bank_mode: BankMode::ROM,
             ram_enable: false,
-        }
+        };
+        Box::new(CartMBC1 { cart })
     }
-    pub fn new(rom: Vec<u8>) -> Cart {
+    pub fn new(rom: Vec<u8>) -> Box<Peripheral> {
         let cgb = match rom[0x143] {
             0x80 => CGBStatus::SupportsCGB,
             0xC0 => CGBStatus::CGBOnly,
@@ -83,8 +85,8 @@ impl Cart {
 
         println!("MBC: {:?}", mbc);
         match mbc {
-            None | Some(MBC1) => {}
-            _ => panic!("Unhandled MBC"),
+            None | Some(MBC1) | Some(MBC3) => {}
+            Some(m) => panic!("Unhandled MBC {:?}", m),
         };
 
         let battery = match rom[0x147] {
@@ -112,7 +114,7 @@ impl Cart {
         println!("ROM Size: {}", rom.len());
         println!("ROM Claimed Size: {}", (32 << 10) << rom[0x148]);
         println!("ROM: {:4x}", rom[0x148]);
-        Cart {
+        let cart = Cart {
             title,
             cgb,
             mbc,
@@ -123,6 +125,15 @@ impl Cart {
             ram_reg: 0,
             bank_mode: BankMode::ROM,
             ram_enable: false,
+        };
+        match cart.mbc {
+            None | Some(MBC1) => Box::new(CartMBC1 { cart }),
+            Some(MBC3) => Box::new(CartMBC3 {
+                cart,
+                rtc_latch: None,
+                rtc: RTC::new(),
+            }),
+            _ => unimplemented!("Unhandled MBC Cart type {:?}", cart.mbc),
         }
     }
 
@@ -155,22 +166,26 @@ impl Cart {
     }
 }
 
-impl Peripheral for Cart {}
+struct CartMBC1 {
+    cart: Cart,
+}
 
-impl Addressable for Cart {
+impl Peripheral for CartMBC1 {}
+
+impl Addressable for CartMBC1 {
     fn read_byte(&mut self, addr: u16) -> u8 {
         match addr {
             0x0000...0x3FFF => {
-                let addr = self.rom_offset(0x0000, addr);
-                self.rom[addr]
+                let addr = self.cart.rom_offset(0x0000, addr);
+                self.cart.rom[addr]
             }
             0x4000...0x7FFF => {
-                let addr = self.rom_offset(0x4000, addr);
-                self.rom[addr]
+                let addr = self.cart.rom_offset(0x4000, addr);
+                self.cart.rom[addr]
             }
             0xA000...0xBFFF => {
-                if let Some(addr) = self.ram_offset(addr) {
-                    self.ram[addr]
+                if let Some(addr) = self.cart.ram_offset(addr) {
+                    self.cart.ram[addr]
                 } else {
                     0xff
                 }
@@ -181,41 +196,202 @@ impl Addressable for Cart {
     fn write_byte(&mut self, addr: u16, v: u8) {
         match addr {
             0x0000...0x1fff => {
-                self.ram_enable = (v & 0xF) == 0xA;
+                self.cart.ram_enable = (v & 0xF) == 0xA;
             }
             0x2000...0x3fff => {
-                self.rom_reg &= 0x60;
+                self.cart.rom_reg &= 0x60;
                 let new_v = (v & 0b11111) as usize;
-                self.rom_reg |= new_v;
+                self.cart.rom_reg |= new_v;
                 if new_v == 0 {
-                    self.rom_reg |= 1;
+                    self.cart.rom_reg |= 1;
                 }
             }
-            0x4000...0x5fff => {
-                match self.bank_mode {
-                    BankMode::RAM => {
-                        //self.rom_reg &= 0x1f;
-                        self.ram_reg = (v & 0b11) as usize;
-                    }
-                    BankMode::ROM => {
-                        self.rom_reg &= 0x1f;
-                        self.rom_reg |= ((v & 0b11) << 5) as usize;
-                        //self.ram_reg = 0;
-                    }
+            0x4000...0x5fff => match self.cart.bank_mode {
+                BankMode::RAM => {
+                    self.cart.ram_reg = (v & 0b11) as usize;
                 }
-            }
+                BankMode::ROM => {
+                    self.cart.rom_reg &= 0x1f;
+                    self.cart.rom_reg |= ((v & 0b11) << 5) as usize;
+                }
+            },
             0x6000...0x7FFF => {
-                self.bank_mode = match v & 0x1 {
+                self.cart.bank_mode = match v & 0x1 {
                     0 => BankMode::ROM,
                     1 => BankMode::RAM,
                     _ => panic!("unhandled bank mode"),
                 }
             }
             0xA000...0xBFFF => {
-                if let Some(addr) = self.ram_offset(addr) {
-                    self.ram[addr] = v;
+                if let Some(addr) = self.cart.ram_offset(addr) {
+                    self.cart.ram[addr] = v;
                 }
             }
+            _ => panic!("Unhandled Cart Write Access {:04x}", addr),
+        }
+    }
+}
+#[derive(Clone)]
+struct RTC {
+    microseconds: u64,
+    seconds: u8,
+    minutes: u8,
+    hours: u8,
+    days: u16,
+    halt: bool,
+}
+impl RTC {
+    fn new() -> RTC {
+        RTC {
+            microseconds: 0,
+            seconds: 0,
+            minutes: 0,
+            hours: 0,
+            days: 0,
+            halt: false,
+        }
+    }
+    fn step(&mut self, time: u64) {
+        if !self.halt {
+            self.microseconds += time;
+            if self.microseconds >= 1_000_000 {
+                let seconds = self.microseconds / 1_000_000;
+                self.microseconds %= 1_000_000;
+                self.seconds += seconds as u8;
+                let minutes = self.seconds / 60;
+                self.seconds %= 60;
+                self.minutes += minutes;
+                let hours = self.minutes / 60;
+                self.hours += hours;
+                self.minutes %= 60;
+                let days = self.hours / 24;
+                self.days += days as u16;
+                self.days %= 2 << 10; // 9 bit counter + 1 bit overflow
+            }
+        }
+    }
+    fn rtc_read(&self, mode: RTCMode) -> u8 {
+        match mode {
+            RTCMode::Seconds => self.seconds,
+            RTCMode::Minutes => self.minutes,
+            RTCMode::Hours => self.hours,
+            RTCMode::DayLow => u8::from((self.days & 0xff) as u8),
+            RTCMode::DayHigh => {
+                (self.days & 0x100 >> 8) as u8
+                    | if self.halt { 1 } else { 0 } << 6
+                    | (self.days & 0x200 >> (9 - 7)) as u8
+            }
+        }
+    }
+    fn rtc_write(&mut self, mode: RTCMode, v: u8) {
+        match mode {
+            RTCMode::Seconds => self.seconds = v % 60,
+            RTCMode::Minutes => self.minutes = v % 60,
+            RTCMode::Hours => self.hours = v % 24,
+            RTCMode::DayLow => self.days = (self.days & !0xff) | v as u16,
+            RTCMode::DayHigh => {
+                self.days = self.days & 0xff | (u16::from(v) & (1 << 7) >> 6) | (u16::from(v) & 1);
+                self.halt = if v & (1 << 6) != 0 { true } else { false };
+            }
+        }
+    }
+}
+
+struct CartMBC3 {
+    cart: Cart,
+    rtc: RTC,
+    rtc_latch: Option<RTC>,
+}
+
+enum RTCMode {
+    Seconds,
+    Minutes,
+    Hours,
+    DayLow,
+    DayHigh,
+}
+
+impl CartMBC3 {
+    fn rtc_select(&self) -> Option<RTCMode> {
+        match self.cart.ram_reg {
+            0x08 => Some(RTCMode::Seconds),
+            0x09 => Some(RTCMode::Minutes),
+            0x0A => Some(RTCMode::Hours),
+            0x0B => Some(RTCMode::DayLow),
+            0x0C => Some(RTCMode::DayHigh),
+            _ => None,
+        }
+    }
+}
+
+impl Peripheral for CartMBC3 {
+    fn step(&mut self, _real: &mut PeripheralData, time: u64) -> Option<InterruptFlag> {
+        self.rtc.step(time);
+        None
+    }
+}
+
+impl Addressable for CartMBC3 {
+    fn read_byte(&mut self, addr: u16) -> u8 {
+        match addr {
+            0x0000...0x3FFF => {
+                let addr = self.cart.rom_offset(0x0000, addr);
+                self.cart.rom[addr]
+            }
+            0x4000...0x7FFF => {
+                let addr = self.cart.rom_offset(0x4000, addr);
+                self.cart.rom[addr]
+            }
+            0xA000...0xBFFF => {
+                if let Some(rtc_mode) = self.rtc_select() {
+                    let rtc = match self.rtc_latch.as_ref() {
+                        Some(latched) => latched,
+                        None => &self.rtc,
+                    };
+                    rtc.rtc_read(rtc_mode)
+                } else {
+                    if let Some(addr) = self.cart.ram_offset(addr) {
+                        self.cart.ram[addr]
+                    } else {
+                        0xff
+                    }
+                }
+            }
+            _ => panic!("Unhandled Cart Read Access {:04x}", addr),
+        }
+    }
+    fn write_byte(&mut self, addr: u16, v: u8) {
+        match addr {
+            0x0000...0x1fff => {
+                self.cart.ram_enable = (v & 0xF) == 0xA;
+            }
+            0x2000...0x3fff => {
+                let new_v = (v & 0x7f) as usize;
+                self.cart.rom_reg = new_v;
+                if new_v == 0 {
+                    self.cart.rom_reg |= 1;
+                }
+            }
+            0x4000...0x5fff => {
+                self.cart.ram_reg = usize::from(v);
+            }
+            0x6000...0x7FFF => {
+                if v > 0 {
+                    self.rtc_latch = Some(self.rtc.clone());
+                } else {
+                    self.rtc_latch = None;
+                }
+            }
+            0xA000...0xBFFF => match self.rtc_select() {
+                Some(rtc) => {
+                    self.rtc.rtc_write(rtc, v);
+                }
+                None => {
+                    if let Some(addr) = self.cart.ram_offset(addr) {
+                        self.cart.ram[addr] = v;
+                    }
+                }
+            },
             _ => panic!("Unhandled Cart Write Access {:04x}", addr),
         }
     }

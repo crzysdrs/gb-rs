@@ -260,7 +260,7 @@ impl Display {
     }
     fn get_win_tile(&self, x: u8) -> Tile {
         let x = x.wrapping_sub(self.wx.wrapping_sub(7));
-        let y = self.ly - self.wy;
+        let y = self.ly.wrapping_sub(self.wy);
         let win_map = if self.lcdc & mask_u8!(LCDCFlag::WindowTileMapDisplaySelect) == 0 {
             0x1800u16
         } else {
