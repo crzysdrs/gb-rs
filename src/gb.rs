@@ -3,7 +3,7 @@ use super::mmu::*;
 #[cfg(test)]
 use crate::cpu::Registers;
 use crate::dma::DMA;
-use crate::peripherals::{Addressable, Peripheral, PeripheralData};
+use crate::peripherals::{Peripheral, PeripheralData};
 use std::io::Write;
 
 #[cfg(feature = "vcd_dump")]
@@ -12,7 +12,6 @@ use VCDDump::VCD;
 pub struct GB<'a> {
     cpu: CPU,
     mem: MMU<'a>,
-    cpu_cycles: u64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -32,7 +31,6 @@ impl<'a> GB<'a> {
         let mut gb = GB {
             cpu: CPU::new(trace),
             mem: MMU::new(cart, serial),
-            cpu_cycles: 0,
         };
         if fast_boot {
             gb.cpu.initialize(&mut gb.mem);
@@ -40,6 +38,9 @@ impl<'a> GB<'a> {
         gb
     }
 
+    pub fn cpu_cycles(&self) -> u64 {
+        self.mem.time()
+    }
     pub fn toggle_trace(&mut self) {
         self.cpu.toggle_trace()
     }
@@ -72,7 +73,7 @@ impl<'a> GB<'a> {
             rhs &= !mask_u8!(InterruptFlag::VBlank);
         }
         if rhs != flags {
-            self.mem.write_byte(0xff0f, rhs);
+            self.mem.write_byte_silent(0xff0f, rhs);
         }
         interrupt_flag
     }
@@ -87,24 +88,21 @@ impl<'a> GB<'a> {
         self.mem.set_controls(controls);
     }
 
-    pub fn cpu_cycles(&self) -> u64 {
-        self.cpu_cycles
-    }
-
     pub fn step_timeout(&mut self, mut time: u64, real: &mut PeripheralData) -> GBReason {
         loop {
-            let cycles = self.cpu_cycles;
+            let start_time = self.mem.time();
             match self.step(time, real) {
                 r @ GBReason::Dead | r @ GBReason::Timeout => return r,
                 _ => {}
             }
-            time -= self.cpu_cycles - cycles;
+            time -= self.mem.time() - start_time;
         }
     }
     pub fn step(&mut self, time: u64, real: &mut PeripheralData) -> GBReason {
         //time in us
         let mut timeout_cycles = 0;
         while time == 0 || timeout_cycles < time {
+            let start_time = self.mem.time();
             #[cfg(feature = "vcd_dump")]
             VCD.as_ref().map(|m| {
                 m.lock().unwrap().as_mut().map(|v| {
@@ -112,12 +110,12 @@ impl<'a> GB<'a> {
                     v.now = c;
                 })
             });
-            let cycles: u64 = self.cpu.execute(&mut self.mem, self.cpu_cycles) as u64;
+            self.cpu.execute(&mut self.mem);
+            let cycles = self.mem.time() - start_time;
             let new_interrupt = self.update_interrupts(real, cycles);
             if self.mem.dma_active() {
                 self.run_dma();
             }
-            self.cpu_cycles += cycles;
             timeout_cycles += cycles;
             //self.mem.get_display().render::<C, P>(display);
             if self.cpu.is_dead(&mut self.mem) {

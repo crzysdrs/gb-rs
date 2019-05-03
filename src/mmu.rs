@@ -102,6 +102,7 @@ pub struct MMU<'a> {
     ram2: Mem,
     sound: Mixer,
     interrupt_flag: Mem,
+    time: u64,
 }
 
 impl<'a> MMU<'a> {
@@ -109,8 +110,11 @@ impl<'a> MMU<'a> {
     pub fn get_display(&self) -> &Display {
         &self.display
     }
-    pub fn get_current_pos(&self) -> u16 {
-        self.seek_pos
+    pub fn set_time(&mut self, v: u64) {
+        self.time = v;
+    }
+    pub fn time(&self) -> u64 {
+        self.time
     }
     pub fn set_controls(&mut self, controls: u8) {
         self.controller.set_controls(controls);
@@ -146,6 +150,7 @@ impl<'a> MMU<'a> {
         let ram2 = Mem::new(false, 0xfea0, vec![0; 0xff00 - 0xfea0 + 1]);
         let interrupt_flag = Mem::new(false, 0xff0f, vec![0; 1]);
         let mem = MMU {
+            time: 0,
             seek_pos: 0,
             bios_exists: true,
             bios,
@@ -166,6 +171,9 @@ impl<'a> MMU<'a> {
     }
     pub fn disable_bios(&mut self) {
         self.bios_exists = false;
+    }
+    pub fn cycles_passed(&mut self, time: u64) {
+        self.time += time;
     }
     fn lookup_peripheral(&mut self, addr: &mut u16) -> &mut Peripheral {
         match addr {
@@ -211,15 +219,20 @@ impl<'a> MMU<'a> {
         let v = self.lookup_peripheral(&mut addr).read_byte(addr);
         v
     }
+    pub fn write_byte_silent(&mut self, mut addr: u16, v: u8) {
+        self.lookup_peripheral(&mut addr).write_byte(addr, v);
+    }
 }
 
 impl<'a> Addressable for MMU<'a> {
     fn read_byte(&mut self, mut addr: u16) -> u8 {
+        self.cycles_passed(1);
         let v = self.lookup_peripheral(&mut addr).read_byte(addr);
         self.main_bus(false, addr, v);
         v
     }
     fn write_byte(&mut self, mut addr: u16, v: u8) {
+        self.cycles_passed(1);
         self.main_bus(true, addr, v);
         self.lookup_peripheral(&mut addr).write_byte(addr, v);
     }
@@ -228,10 +241,7 @@ impl<'a> Addressable for MMU<'a> {
 impl<'a> Write for MMU<'a> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         for (i, w) in buf.iter().enumerate() {
-            let pos = self.seek_pos;
-            {
-                self.write_byte(pos, *w);
-            }
+            self.write_byte(self.seek_pos, *w);
             if self.seek_pos == std::u16::MAX {
                 return Ok(i);
             }
@@ -248,10 +258,7 @@ impl<'a> Write for MMU<'a> {
 impl<'a> Read for MMU<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         for (i, b) in buf.iter_mut().enumerate() {
-            {
-                let pos = self.seek_pos;
-                *b = self.read_byte(pos);
-            }
+            *b = self.read_byte(self.seek_pos);
             if self.seek_pos == std::u16::MAX {
                 return Ok(i);
             }

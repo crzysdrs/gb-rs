@@ -192,47 +192,47 @@ fn split_u16(r: u16) -> (u8, u8) {
 fn test_data() -> (Vec<u8>, impl Fn(&[i16]) -> bool) {
     (vec![0u8; 160 * 144 * 4], |_| true)
 }
-#[cfg(test)]
-fn disasm_file(file: &str, filter_nops: bool) -> std::io::Result<()> {
-    use std::fs::File;
-    use std::io::Cursor;
-    use std::io::{Read, Write};
-    let mut f = File::open(file)?;
-    let regions = [
-        (0x0000, 8, "Restart"),
-        (0x0008, 8, "Restart"),
-        (0x0010, 8, "Restart"),
-        (0x0018, 8, "Restart"),
-        (0x0020, 8, "Restart"),
-        (0x0028, 8, "Restart"),
-        (0x0030, 8, "Restart"),
-        (0x0038, 8, "Restart"),
-        (0x0040, 8, "VBlank"),
-        (0x0048, 8, "LCDC"),
-        (0x0050, 8, "Timer Overflow"),
-        (0x0058, 8, "Serial Transfer"),
-        (0x0060, (0x100 - 0x60), "P10-P13"),
-        (0x0100, 4, "Start"),
-        (0x0104, (0x134 - 0x104), "GameBoy Logo"),
-        (0x0134, (0x143 - 0x134), "Title"),
-        (0x0143, (0x150 - 0x143), "Other Data"),
-        (0x0150, (0xffff - 0x0150), "The Rest"),
-    ];
-    let mut dst = std::io::stdout();
-    let mut filter = move |i: &instr::Instr| match i {
-        instr::Instr::NOP => !filter_nops,
-        _ => true,
-    };
+// #[cfg(test)]
+// fn disasm_file(file: &str, filter_nops: bool) -> std::io::Result<()> {
+//     use std::fs::File;
+//     use std::io::Cursor;
+//     use std::io::{Read, Write};
+//     let mut f = File::open(file)?;
+//     let regions = [
+//         (0x0000, 8, "Restart"),
+//         (0x0008, 8, "Restart"),
+//         (0x0010, 8, "Restart"),
+//         (0x0018, 8, "Restart"),
+//         (0x0020, 8, "Restart"),
+//         (0x0028, 8, "Restart"),
+//         (0x0030, 8, "Restart"),
+//         (0x0038, 8, "Restart"),
+//         (0x0040, 8, "VBlank"),
+//         (0x0048, 8, "LCDC"),
+//         (0x0050, 8, "Timer Overflow"),
+//         (0x0058, 8, "Serial Transfer"),
+//         (0x0060, (0x100 - 0x60), "P10-P13"),
+//         (0x0100, 4, "Start"),
+//         (0x0104, (0x134 - 0x104), "GameBoy Logo"),
+//         (0x0134, (0x143 - 0x134), "Title"),
+//         (0x0143, (0x150 - 0x143), "Other Data"),
+//         (0x0150, (0xffff - 0x0150), "The Rest"),
+//     ];
+//     let mut dst = std::io::stdout();
+//     let mut filter = move |i: &instr::Instr| match i {
+//         instr::Instr::NOP => !filter_nops,
+//         _ => true,
+//     };
 
-    for r in regions.iter() {
-        let taken = f.take(r.1);
-        let mut buf = Cursor::new(taken);
-        writeln!(dst, "{}:", r.2)?;
-        instr::disasm(r.0, buf.get_mut(), &mut dst, &mut filter).unwrap();
-        f = buf.into_inner().into_inner();
-    }
-    Ok(())
-}
+//     for r in regions.iter() {
+//         let taken = f.take(r.1);
+//         let mut buf = Cursor::new(taken);
+//         writeln!(dst, "{}:", r.2)?;
+//         instr::disasm(r.0, buf.get_mut(), &mut dst, &mut filter).unwrap();
+//         f = buf.into_inner().into_inner();
+//     }
+//     Ok(())
+// }
 
 #[cfg(test)]
 mod tests {
@@ -323,24 +323,24 @@ mod tests {
             }
         };
     }
-    #[test]
-    fn it_works() {
-        let s = Vec::new();
-        assert_eq!(
-            crate::instr::Instr::disasm(&mut [0u8].as_ref()).unwrap(),
-            (0, crate::instr::Instr::NOP)
-        );
-        let mut b = ::std::io::Cursor::new(s);
-        crate::instr::disasm(0, &mut [0u8, 0u8].as_ref(), &mut b, &|_| true).unwrap();
-        assert_eq!(
-            String::from_utf8(b.into_inner()).unwrap(),
-            "0x0000: 00       NOP\n0x0001: 00       NOP\n"
-        );
-        //::disasm_file("cpu_instrs/cpu_instrs.gb", true);
-        crate::disasm_file("blarg/cpu_instrs/10-bit_ops.gb", true).unwrap();
-        // let mut mem = ::MMU::::new();
-        // mem.dump();
-    }
+    // #[test]
+    // fn it_works() {
+    //     let s = Vec::new();
+    //     assert_eq!(
+    //         crate::instr::Instr::disasm(&mut [0u8].as_ref()).unwrap(),
+    //         (0, crate::instr::Instr::NOP)
+    //     );
+    //     let mut b = ::std::io::Cursor::new(s);
+    //     crate::instr::disasm(0, &mut [0u8, 0u8].as_ref(), &mut b, &|_| true).unwrap();
+    //     assert_eq!(
+    //         String::from_utf8(b.into_inner()).unwrap(),
+    //         "0x0000: 00       NOP\n0x0001: 00       NOP\n"
+    //     );
+    //     //::disasm_file("cpu_instrs/cpu_instrs.gb", true);
+    //     crate::disasm_file("blarg/cpu_instrs/10-bit_ops.gb", true).unwrap();
+    //     // let mut mem = ::MMU::::new();
+    //     // mem.dump();
+    // }
     #[should_panic]
     // mooneye_test!(mooneye_gb_tests_build_acceptance_add_sp_e_timing_gb, "../mooneye-gb/tests/build/acceptance/add_sp_e_timing.gb");
     // mooneye_test!(mooneye_gb_tests_build_acceptance_bits_mem_oam_gb, "../mooneye-gb/tests/build/acceptance/bits/mem_oam.gb");
