@@ -11,6 +11,7 @@ pub struct AudioSpec<'a, T: 'a> {
 pub struct PeripheralData<'a> {
     pub lcd: Option<&'a mut [u8]>,
     pub audio_spec: Option<AudioSpec<'a, i16>>,
+    pub vblank : bool,
 }
 
 impl<'a> PeripheralData<'a> {
@@ -18,7 +19,11 @@ impl<'a> PeripheralData<'a> {
         PeripheralData {
             lcd: None,
             audio_spec: None,
+            vblank: false
         }
+    }
+    pub fn reset_vblank(&mut self) {
+        self.vblank = false;
     }
     // pub fn test() -> (Vec<u8>, Box<FnMut(&[i16]) -> bool>, PeripheralData<'a>) {
     //     let v = vec![0u8; 166 * 144];
@@ -39,7 +44,7 @@ impl<'a> PeripheralData<'a> {
         lcd: Option<&'a mut [u8]>,
         audio_spec: Option<AudioSpec<'a, i16>>,
     ) -> PeripheralData<'a> {
-        PeripheralData { lcd, audio_spec }
+        PeripheralData { lcd, audio_spec, vblank: false}
     }
 }
 
@@ -52,27 +57,7 @@ pub trait Peripheral: Addressable {
 pub trait Addressable {
     fn read_byte(&mut self, addr: u16) -> u8;
     fn write_byte(&mut self, addr: u16, v: u8);
-    #[allow(unused_variables)]
-    fn main_bus(&mut self, write: bool, addr: u16, v: u8) {
-        #[cfg(feature = "vcd_dump")]
-        {
-            let (vcd_addr, vcd_val) = if write {
-                ("write_addr", "write_data")
-            } else {
-                ("read_addr", "read_data")
-            };
 
-            VCD.as_ref().map(|m| {
-                m.lock().unwrap().as_mut().map(|vcd| {
-                    let (mut writer, mem) = vcd.writer();
-                    let (wire, id) = mem.get(vcd_addr).unwrap();
-                    wire.write(&mut writer, *id, addr as u64);
-                    let (wire, id) = mem.get(vcd_val).unwrap();
-                    wire.write(&mut writer, *id, v as u64);
-                })
-            });
-        }
-    }
     #[allow(unused_variables)]
     fn wrote(&mut self, addr: u16, _v: u8) {
         #[cfg(feature = "vcd_dump")]

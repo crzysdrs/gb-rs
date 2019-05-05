@@ -8,7 +8,7 @@ use super::mem::Mem;
 use super::serial::Serial;
 use super::timer::Timer;
 use crate::dma::DMA;
-use crate::peripherals::{Addressable, Peripheral};
+use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use crate::sound::Mixer;
 enum_from_primitive! {
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -86,7 +86,12 @@ enum_from_primitive! {
     }
 }
 
-pub struct MMU<'a> {
+pub struct MMU<'a, 'b, 'c> {
+    pub bus: &'b mut MMUInternal<'a>,
+    data: &'b mut PeripheralData<'c>,
+}
+
+pub struct MMUInternal<'a> {
     seek_pos: u16,
     bios_exists: bool,
     timer: Timer,
@@ -103,54 +108,29 @@ pub struct MMU<'a> {
     sound: Mixer,
     interrupt_flag: Mem,
     time: u64,
+    effectful_change: bool,
+    last_sync : u64,
 }
 
-impl<'a> MMU<'a> {
-    #[allow(dead_code)]
-    pub fn get_display(&self) -> &Display {
-        &self.display
-    }
-    pub fn set_time(&mut self, v: u64) {
-        self.time = v;
-    }
-    pub fn time(&self) -> u64 {
-        self.time
-    }
-    pub fn set_controls(&mut self, controls: u8) {
-        self.controller.set_controls(controls);
-    }
-    pub fn dma_active(&mut self) -> bool {
-        self.dma.is_active()
-    }
-    pub fn swap_dma(&mut self, new_dma: DMA) -> DMA {
-        std::mem::replace(&mut self.dma, new_dma)
-    }
-    pub fn walk_peripherals<F>(&mut self, mut walk: F)
-    where
-        F: FnMut(&mut Peripheral) -> (),
-    {
-        let ps: &mut [&mut Peripheral] = &mut [
-            &mut self.bios as &mut Peripheral,
-            &mut self.timer as &mut Peripheral,
-            &mut self.display as &mut Peripheral,
-            &mut self.serial as &mut Peripheral,
-            &mut self.controller as &mut Peripheral,
-            &mut self.sound as &mut Peripheral,
-            &mut *self.cart as &mut Peripheral,
-        ];
-        for p in ps.iter_mut() {
-            walk(*p)
-        }
-    }
-    pub fn new(cart: Box<Peripheral>, serial: Option<&mut Write>) -> MMU {
+fn side_effect_free<T, F: FnMut(&mut MMUInternal) -> T>(mmu : &mut MMUInternal, mut func: F) -> T{
+    let temp = mmu.effectful_change;
+    mmu.effectful_change = false;
+    let t = func(mmu);
+    mmu.effectful_change = temp;
+    t
+}
+
+impl MMUInternal<'_> {
+    pub fn new(cart: Box<Peripheral>, serial: Option<&mut Write>) -> MMUInternal {
         let bios = Mem::new(true, 0, include_bytes!("../boot_rom.gb").to_vec());
         //let bios = Mem::new(true, 0, vec![0u8; 256]);
         let ram0 = Mem::new(false, 0xc000, vec![0; 8 << 10]);
         let ram1 = Mem::new(false, 0xff80, vec![0; 0xffff - 0xff80 + 1]);
         let ram2 = Mem::new(false, 0xfea0, vec![0; 0xff00 - 0xfea0 + 1]);
         let interrupt_flag = Mem::new(false, 0xff0f, vec![0; 1]);
-        let mem = MMU {
+        let mem = MMUInternal {
             time: 0,
+            last_sync : 0,
             seek_pos: 0,
             bios_exists: true,
             bios,
@@ -166,14 +146,9 @@ impl<'a> MMU<'a> {
             ram2,
             dma: DMA::new(),
             interrupt_flag,
+            effectful_change: true,
         };
         mem
-    }
-    pub fn disable_bios(&mut self) {
-        self.bios_exists = false;
-    }
-    pub fn cycles_passed(&mut self, time: u64) {
-        self.time += time;
     }
     fn lookup_peripheral(&mut self, addr: &mut u16) -> &mut Peripheral {
         match addr {
@@ -210,21 +185,153 @@ impl<'a> MMU<'a> {
             _ => &mut self.fake_mem as &mut Peripheral,
         }
     }
+    pub fn sync_peripherals(&mut self, data : &mut PeripheralData) {
+        if self.last_sync < self.time {
+            let mut interrupt_flag = 0;
+            let cycles = self.time - self.last_sync;
+            self
+                .walk_peripherals(
+                    |p| match p.step(data, cycles) {
+                        Some(i) => {
+                            interrupt_flag |= mask_u8!(i);
+                        }
+                        None => {}
+                    }
+                );
+            let flags = side_effect_free(
+                self,
+                |mmu|
+                mmu.read_byte(0xff0f)
+            );
+            let mut rhs = flags | interrupt_flag;
+            if !self.get_display().display_enabled() {
+                /* remove vblank from IF when display disabled.
+                We still want it to synchronize speed with display */
+                rhs &= !mask_u8!(crate::cpu::InterruptFlag::VBlank);
+            }
+            if rhs != flags {
+                side_effect_free(
+                    self,
+                    |mmu|
+                    mmu.write_byte(0xff0f, rhs)
+                );
+            }
+            if interrupt_flag & mask_u8!(crate::cpu::InterruptFlag::VBlank) != 0 {
+                data.vblank = true
+            }
+            self.last_sync = self.time;
+        }
+    }
+    pub fn time(&self) -> u64 {
+        self.time
+    }
+    pub fn swap_dma(&mut self, new_dma: DMA) -> DMA {
+        std::mem::replace(&mut self.dma, new_dma)
+    }
+    pub fn set_controls(&mut self, controls: u8) {
+        self.controller.set_controls(controls);
+    }
+    pub fn walk_peripherals<F>(&mut self, mut walk: F)
+    where
+        F: FnMut(&mut Peripheral) -> (),
+    {
+        let ps: &mut [&mut Peripheral] = &mut [
+            &mut self.bios as &mut Peripheral,
+            &mut self.timer as &mut Peripheral,
+            &mut self.display as &mut Peripheral,
+            &mut self.serial as &mut Peripheral,
+            &mut self.controller as &mut Peripheral,
+            &mut self.sound as &mut Peripheral,
+            &mut *self.cart as &mut Peripheral,
+        ];
+        for p in ps.iter_mut() {
+            walk(*p)
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn get_display(&self) -> &Display {
+        &self.display
+    }
+    pub fn set_time(&mut self, v: u64) {
+        self.time = v;
+    }
+    pub fn dma_active(&mut self) -> bool {
+        self.dma.is_active()
+    }
+    pub fn disable_bios(&mut self) {
+        self.bios_exists = false;
+    }
+    pub fn cycles_passed(&mut self, time: u64) {
+        if self.effectful_change {
+            self.time += time;
+        }
+    }
+   #[allow(unused_variables)]
+    fn main_bus(&mut self, write: bool, addr: u16, v: u8) {
+        #[cfg(feature = "vcd_dump")]
+        {
+            let (vcd_addr, vcd_val) = if write {
+                ("write_addr", "write_data")
+            } else {
+                ("read_addr", "read_data")
+            };
+
+            VCD.as_ref().map(|m| {
+                m.lock().unwrap().as_mut().map(|vcd| {
+                    let (mut writer, mem) = vcd.writer();
+                    let (wire, id) = mem.get(vcd_addr).unwrap();
+                    wire.write(&mut writer, *id, addr as u64);
+                    let (wire, id) = mem.get(vcd_val).unwrap();
+                    wire.write(&mut writer, *id, v as u64);
+                })
+            });
+        }
+    }
+}
+
+impl <'a, 'b, 'c> MMU<'a, 'b, 'c> {
 
     // fn dump(&mut self) {
     //     self.seek(SeekFrom::Start(0));
     //     disasm(0, self, &mut std::io::stdout(), &|i| match i {Instr::NOP => false, _ => true});
     // }
+    pub fn new(bus : &'b mut MMUInternal<'a>, data: &'b mut PeripheralData<'c>) -> MMU<'a, 'b, 'c> {
+        MMU { bus, data }
+    }
+
+    pub fn sync_peripherals(&mut self) {
+        self.bus.sync_peripherals(&mut self.data);
+    }
+    pub fn seen_vblank(&self) -> bool {
+        self.data.vblank
+    }
     pub fn read_byte_silent(&mut self, mut addr: u16) -> u8 {
-        let v = self.lookup_peripheral(&mut addr).read_byte(addr);
-        v
+        side_effect_free(self.bus, |bus| {
+            bus.lookup_peripheral(&mut addr).read_byte(addr)
+        })
     }
     pub fn write_byte_silent(&mut self, mut addr: u16, v: u8) {
-        self.lookup_peripheral(&mut addr).write_byte(addr, v);
+        side_effect_free(
+            self.bus,
+            |bus|
+            bus.lookup_peripheral(&mut addr).write_byte(addr, v));
+    }
+
+}
+
+impl Addressable for MMU<'_, '_, '_> {
+    fn read_byte(&mut self, addr: u16) -> u8 {
+        self.bus.sync_peripherals(&mut self.data);
+        self.bus.read_byte(addr)
+    }
+    fn write_byte(&mut self, addr: u16, v: u8) {
+        self.bus.sync_peripherals(&mut self.data);
+        self.bus.write_byte(addr, v);
     }
 }
 
-impl<'a> Addressable for MMU<'a> {
+impl MMUInternal<'_> {
     fn read_byte(&mut self, mut addr: u16) -> u8 {
         self.cycles_passed(1);
         let v = self.lookup_peripheral(&mut addr).read_byte(addr);
@@ -238,7 +345,26 @@ impl<'a> Addressable for MMU<'a> {
     }
 }
 
-impl<'a> Write for MMU<'a> {
+impl Read for MMUInternal<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        for (i, b) in buf.iter_mut().enumerate() {
+            *b = self.read_byte(self.seek_pos);
+            if self.seek_pos == std::u16::MAX {
+                return Ok(i);
+            }
+            self.seek_pos = self.seek_pos.saturating_add(1);
+        }
+        Ok(buf.len())
+    }
+}
+
+impl Read for MMU<'_, '_, '_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.bus.read(buf)
+    }
+}
+
+impl Write for MMUInternal<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         for (i, w) in buf.iter().enumerate() {
             self.write_byte(self.seek_pos, *w);
@@ -254,18 +380,15 @@ impl<'a> Write for MMU<'a> {
         Ok(())
     }
 }
-
-impl<'a> Read for MMU<'a> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        for (i, b) in buf.iter_mut().enumerate() {
-            *b = self.read_byte(self.seek_pos);
-            if self.seek_pos == std::u16::MAX {
-                return Ok(i);
-            }
-            self.seek_pos = self.seek_pos.saturating_add(1);
-        }
-        Ok(buf.len())
+impl Write for MMU<'_, '_, '_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.bus.write(buf)
     }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.bus.flush()
+    }
+
 }
 
 fn apply_offset(mut pos: u16, seek: i64) -> io::Result<u64> {
@@ -289,7 +412,7 @@ fn apply_offset(mut pos: u16, seek: i64) -> io::Result<u64> {
     Ok(pos as u64)
 }
 
-impl<'a> Seek for MMU<'a> {
+impl Seek for MMUInternal<'_> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match pos {
             SeekFrom::Start(x) => {

@@ -11,7 +11,7 @@ use VCDDump::VCD;
 
 pub struct GB<'a> {
     cpu: CPU,
-    mem: MMU<'a>,
+    mem: MMUInternal<'a>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -27,13 +27,14 @@ impl<'a> GB<'a> {
         serial: Option<&'b mut Write>,
         trace: bool,
         fast_boot: bool,
-    ) -> GB<'b> {
+    ) -> GB {
         let mut gb = GB {
             cpu: CPU::new(trace),
-            mem: MMU::new(cart, serial),
+            mem: MMUInternal::new(cart, serial),
         };
         if fast_boot {
-            gb.cpu.initialize(&mut gb.mem);
+            let mut data = PeripheralData::empty();
+            gb.cpu.initialize(&mut MMU::new(&mut gb.mem, &mut data));
         }
         gb
     }
@@ -53,36 +54,8 @@ impl<'a> GB<'a> {
         self.cpu.magic_breakpoint();
     }
     #[cfg(test)]
-    pub fn get_mem(&mut self) -> &mut MMU<'a> {
+    pub fn get_mem(&mut self) -> &mut MMUInternal<'a> {
         &mut self.mem
-    }
-    fn update_interrupts(&mut self, real: &mut PeripheralData, cycles: u64) -> u8 {
-        let mut interrupt_flag = 0;
-        self.mem
-            .walk_peripherals(|p| match p.step(real, cycles as u64) {
-                Some(i) => {
-                    interrupt_flag |= mask_u8!(i);
-                }
-                None => {}
-            });
-        let flags = self.mem.read_byte_silent(0xff0f);
-        let mut rhs = flags | interrupt_flag;
-        if !self.mem.get_display().display_enabled() {
-            /* remove vblank from IF when display disabled.
-            We still want it to synchronize speed with display */
-            rhs &= !mask_u8!(InterruptFlag::VBlank);
-        }
-        if rhs != flags {
-            self.mem.write_byte_silent(0xff0f, rhs);
-        }
-        interrupt_flag
-    }
-
-    fn run_dma(&mut self) {
-        let fake_dma = DMA::new();
-        let mut real_dma = self.mem.swap_dma(fake_dma);
-        real_dma.run(&mut self.mem);
-        self.mem.swap_dma(real_dma);
     }
     pub fn set_controls(&mut self, controls: u8) {
         self.mem.set_controls(controls);
@@ -101,8 +74,10 @@ impl<'a> GB<'a> {
     pub fn step(&mut self, time: u64, real: &mut PeripheralData) -> GBReason {
         //time in us
         let mut timeout_cycles = 0;
+        real.reset_vblank();
+        let mut mmu = MMU::new(&mut self.mem,real);
         while time == 0 || timeout_cycles < time {
-            let start_time = self.mem.time();
+            let start_time = mmu.bus.time();
             #[cfg(feature = "vcd_dump")]
             VCD.as_ref().map(|m| {
                 m.lock().unwrap().as_mut().map(|v| {
@@ -110,18 +85,21 @@ impl<'a> GB<'a> {
                     v.now = c;
                 })
             });
-            self.cpu.execute(&mut self.mem);
-            let cycles = self.mem.time() - start_time;
-            let new_interrupt = self.update_interrupts(real, cycles);
-            if self.mem.dma_active() {
-                self.run_dma();
+            self.cpu.execute(&mut mmu);
+            if mmu.bus.dma_active() {
+                let fake_dma = DMA::new();
+                let mut real_dma = mmu.bus.swap_dma(fake_dma);
+                real_dma.run(&mut mmu);
+                mmu.bus.swap_dma(real_dma);
             }
-            timeout_cycles += cycles;
-            //self.mem.get_display().render::<C, P>(display);
-            if self.cpu.is_dead(&mut self.mem) {
+            timeout_cycles += mmu.bus.time() - start_time;
+
+            mmu.sync_peripherals();
+
+            if self.cpu.is_dead(&mut mmu) {
                 /* cpu permanently halted */
                 return GBReason::Dead;
-            } else if new_interrupt & mask_u8!(InterruptFlag::VBlank) != 0 {
+            } else if mmu.seen_vblank() {
                 return GBReason::VSync;
             }
         }

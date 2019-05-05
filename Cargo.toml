@@ -19,6 +19,7 @@ zip = "0.4"
 num = "0.2.0"
 vcd = "0.4.0"
 lazy_static = "1.1.0"
+#scopegaurd = "1.0.0"
 
 [features]
 strict = []

@@ -301,7 +301,7 @@ impl CPU {
         self.trace = !self.trace;
     }
     fn pop16(&mut self, mem: &mut MMU, t: Reg16) {
-        mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
+        mem.bus.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
             .expect("Can't request outside of memory");
         let mut buf = [0u8; 2];
         mem.read(&mut buf).expect("Memory wraps");
@@ -309,20 +309,20 @@ impl CPU {
         self.reg.write(t, res);
         self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) + 2);
         if Reg16::PC == t {
-            mem.cycles_passed(1);
+            mem.bus.cycles_passed(1);
         }
     }
     fn push16(&mut self, mem: &mut MMU, v: Reg16) {
         let item = self.reg.read(v);
         let (hi, lo) = split_u16(item);
         self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) - 2);
-        mem.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
+        mem.bus.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
             .expect("Can't request outside of memory");
         mem.write(&[lo, hi]).expect("Memory wraps");
     }
 
     pub fn initialize(&mut self, mem: &mut MMU) {
-        mem.disable_bios();
+        mem.bus.disable_bios();
         let regs: &[(Reg16, u16)] = &[
             (Reg16::AF, 0x0001),
             (Reg16::BC, 0x0013),
@@ -349,7 +349,7 @@ impl CPU {
     }
     fn move_pc(&mut self, mem: &mut MMU, v: u16) {
         self.reg.write(Reg16::PC, v);
-        mem.cycles_passed(1);
+        mem.bus.cycles_passed(1);
     }
     pub fn execute_instr(&mut self, mut mem: &mut MMU, _op: u8, instr: Instr) {
         match instr {
@@ -383,13 +383,13 @@ impl CPU {
                     ALU::add(self.reg.read(x0), self.reg.read(x1)),
                     mask_u8!(Flag::N | Flag::H | Flag::C)
                 ); /*TODO: Half Carry Not Being Set Correctly */
-                mem.cycles_passed(1);
+                mem.bus.cycles_passed(1);
             }
             Instr::ADD_r16_r8(x0, x1) => {
                 let (res, _) = ALU::add(self.reg.read(x0), x1 as i16 as u16);
                 let (_, flags) = ALU::add(self.reg.read(x0) as u8, x1 as i16 as u8);
                 alu_result!(self, x0, (res, flags & !mask_u8!(Flag::Z | Flag::N)));
-                mem.cycles_passed(2);
+                mem.bus.cycles_passed(2);
             }
             Instr::ADD_r8_r8(x0, x1) => {
                 alu_result!(self, x0, ALU::add(self.reg.read(x0), self.reg.read(x1)))
@@ -499,7 +499,7 @@ impl CPU {
             ),
             Instr::DEC_r16(x0) => {
                 alu_result_mask!(self, x0, ALU::dec(self.reg.read(x0)), 0);
-                mem.cycles_passed(1);
+                mem.bus.cycles_passed(1);
             }
             Instr::DEC_r8(x0) => alu_result_mask!(
                 self,
@@ -528,7 +528,7 @@ impl CPU {
             ),
             Instr::INC_r16(x0) => {
                 alu_result_mask!(self, x0, ALU::inc(self.reg.read(x0)), 0);
-                mem.cycles_passed(1);
+                mem.bus.cycles_passed(1);
             }
             Instr::INC_r8(x0) => alu_result_mask!(
                 self,
@@ -567,7 +567,7 @@ impl CPU {
                 self.reg.write(x0, mem.read_byte(0xff00 + x1 as u16));
             }
             Instr::LD_ia16_r16(x0, x1) => {
-                mem.seek(SeekFrom::Start(x0 as u64))
+                mem.bus.seek(SeekFrom::Start(x0 as u64))
                     .expect("All addresses valid");
                 let (hi, lo) = split_u16(self.reg.read(x1));
                 mem.write(&[lo, hi]).expect("Memory wraps");
@@ -595,13 +595,13 @@ impl CPU {
             }
             Instr::LD_r16_r16(x0, x1) => {
                 self.reg.write(x0, self.reg.read(x1));
-                mem.cycles_passed(1);
+                mem.bus.cycles_passed(1);
             }
             Instr::LD_r16_r16_r8(x0, x1, x2) => {
                 let (res, _) = ALU::add(self.reg.read(x1), x2 as i16 as u16);
                 let (_, flags) = ALU::add(self.reg.read(x1) as u8, x2 as i16 as u8);
                 alu_result!(self, x0, (res, flags & !mask_u8!(Flag::Z | Flag::N)));
-                mem.cycles_passed(1);
+                mem.bus.cycles_passed(1);
             }
             Instr::LD_r8_d8(x0, x1) => {
                 self.reg.write(x0, x1);
@@ -644,7 +644,7 @@ impl CPU {
             Instr::POP_r16(x0) => self.pop16(&mut mem, x0),
             Instr::PUSH_r16(x0) => {
                 self.push16(&mut mem, x0);
-                mem.cycles_passed(1);
+                mem.bus.cycles_passed(1);
             }
             Instr::CBPrefix(PrefixInstr::RES_l8_ir16(x0, x1)) => {
                 let rhs = mem.read_byte(self.reg.read(x1)) & !(1 << x0);
@@ -661,7 +661,7 @@ impl CPU {
                 self.reg.ime = 1;
             }
             Instr::RET_COND(x0) => {
-                mem.cycles_passed(1);
+                mem.bus.cycles_passed(1);
                 if self.check_flag(x0) {
                     self.pop16(&mut mem, Reg16::PC);
                 }
@@ -894,14 +894,14 @@ impl CPU {
     }
     pub fn execute(&mut self, mem: &mut MMU) {
         self.manage_interrupt(mem);
-        let start = mem.time();
+        let start = mem.bus.time();
         if self.halted {
-            mem.cycles_passed(1);
+            mem.bus.cycles_passed(1);
             return; /* claim one cycle has passed */
         }
         let pc = self.reg.read(Reg16::PC);
         if pc == 0x100 {
-            mem.disable_bios();
+            mem.bus.disable_bios();
         }
         let (next_pc, op, i) = match Instr::disasm(mem, pc) {
             (_, _, Instr::INVALID(op)) => {
@@ -910,7 +910,7 @@ impl CPU {
             item => item,
         };
         if self.trace {
-            let reset_time = mem.time();
+            let reset_time = mem.bus.time();
             let ienable = mem.read_byte_silent(0xffff);
             let iflag = mem.read_byte_silent(0xff0f);
             let addr = self.reg.read(Reg16::PC);
@@ -937,7 +937,7 @@ impl CPU {
             print!("ppu:+{} ", 0);
             print!("|[??]");
             crate::instr::disasm(addr, next_pc, mem, &mut std::io::stdout(), &|_| true).unwrap();
-            mem.set_time(reset_time);
+            mem.bus.set_time(reset_time);
         }
         self.reg.write(Reg16::PC, next_pc);
         self.execute_instr(mem, op, i)
@@ -948,12 +948,15 @@ impl CPU {
 mod tests {
     use crate::cpu::{Reg8, RegType, CPU};
     use crate::instr::{Instr, PrefixInstr};
-    use crate::mmu::MMU;
+    use crate::mmu::{MMU, MMUInternal};
+    use crate::peripherals::{PeripheralData};
 
     macro_rules! test_state {
         ($instr:expr, $reg:expr, $val:expr) => {
             let cart = Cart::fake();
-            let mut mem = MMU::new(cart, None);
+            let mut internal = MMUInternal::new(cart, None);
+            let mut data = PeripheralData::empty();
+            let mut mem = MMU::new(&mut internal, &mut data);
             let mut cpu = CPU::new(false);
             for i in $instr {
                 cpu.execute_instr(&mut mem, 0, i);

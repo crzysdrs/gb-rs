@@ -578,5 +578,14 @@ mod tests {
     //     "../blarg/dmg_sound/rom_singles/12-wave write while on.gb",
     //     passed!("12-wave write while on")
     // );
-
+    blarg_test!(
+        blarg_mem_timing,
+        "../blarg/mem_timing/mem_timing.gb",
+        "mem_timing\n\n01:ok  02:ok  03:ok\n\nPassed all tests"
+    );
+    blarg_test!(
+        blarg_mem_timing_2,
+        "../blarg/mem_timing-2/mem_timing.gb",
+        "mem_timing\n\n01:ok  02:ok  03:ok\n\nPassed"
+    );
 }
