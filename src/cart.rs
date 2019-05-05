@@ -85,7 +85,7 @@ impl Cart {
 
         println!("MBC: {:?}", mbc);
         match mbc {
-            None | Some(MBC1) | Some(MBC3) => {}
+            None | Some(MBC1) | Some(MBC3) | Some(MBC5)=> {}
             Some(m) => panic!("Unhandled MBC {:?}", m),
         };
 
@@ -124,7 +124,7 @@ impl Cart {
             rom_reg: 1,
             ram_reg: 0,
             bank_mode: BankMode::ROM,
-            ram_enable: false,
+            ram_enable : false,
         };
         match cart.mbc {
             None | Some(MBC1) => Box::new(CartMBC1 { cart }),
@@ -132,6 +132,9 @@ impl Cart {
                 cart,
                 rtc_latch: None,
                 rtc: RTC::new(),
+            }),
+            Some(MBC5) => Box::new(CartMBC5 {
+                cart
             }),
             _ => unimplemented!("Unhandled MBC Cart type {:?}", cart.mbc),
         }
@@ -392,6 +395,62 @@ impl Addressable for CartMBC3 {
                     }
                 }
             },
+            _ => panic!("Unhandled Cart Write Access {:04x}", addr),
+        }
+    }
+}
+
+struct CartMBC5 {
+    cart: Cart,
+}
+
+impl Peripheral for CartMBC5 {}
+
+impl Addressable for CartMBC5 {
+    fn read_byte(&mut self, addr: u16) -> u8 {
+        match addr {
+            0x0000...0x3FFF => {
+                let addr = self.cart.rom_offset(0x0000, addr);
+                self.cart.rom[addr]
+            }
+            0x4000...0x7FFF => {
+                let addr = self.cart.rom_offset(0x4000, addr);
+                self.cart.rom[addr]
+            }
+            0xA000...0xBFFF => {
+                if let Some(addr) = self.cart.ram_offset(addr) {
+                    self.cart.ram[addr]
+                } else {
+                    0xff
+                }
+            }
+            _ => panic!("Unhandled Cart Read Access {:04x}", addr),
+        }
+    }
+    fn write_byte(&mut self, addr: u16, v: u8) {
+        match addr {
+            0x0000...0x1fff => {
+                self.cart.ram_enable = (v & 0xF) == 0xA;
+            }
+            0x2000...0x2fff => {
+                self.cart.rom_reg &= 0xff00;
+                self.cart.rom_reg |= usize::from(v);
+            },
+            0x3000...0x3fff => {
+                self.cart.rom_reg &= 0x00ff;
+                self.cart.rom_reg |= usize::from(v & 0b1) << 8;
+            },
+            0x4000...0x5fff => {
+                self.cart.ram_reg = usize::from(v & 0xf);
+            }
+            0x6000...0x7FFF => {
+                /* do nothing? Pokemon yellow wants to set bank mode? MBC5 doesn't have reg switch */
+            }
+            0xA000...0xBFFF => {
+                if let Some(addr) = self.cart.ram_offset(addr) {
+                    self.cart.ram[addr] = v;
+                }
+            }
             _ => panic!("Unhandled Cart Write Access {:04x}", addr),
         }
     }

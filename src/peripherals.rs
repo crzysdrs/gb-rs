@@ -11,7 +11,7 @@ pub struct AudioSpec<'a, T: 'a> {
 pub struct PeripheralData<'a> {
     pub lcd: Option<&'a mut [u8]>,
     pub audio_spec: Option<AudioSpec<'a, i16>>,
-    pub vblank : bool,
+    pub vblank: bool,
 }
 
 impl<'a> PeripheralData<'a> {
@@ -19,7 +19,7 @@ impl<'a> PeripheralData<'a> {
         PeripheralData {
             lcd: None,
             audio_spec: None,
-            vblank: false
+            vblank: false,
         }
     }
     pub fn reset_vblank(&mut self) {
@@ -44,7 +44,11 @@ impl<'a> PeripheralData<'a> {
         lcd: Option<&'a mut [u8]>,
         audio_spec: Option<AudioSpec<'a, i16>>,
     ) -> PeripheralData<'a> {
-        PeripheralData { lcd, audio_spec, vblank: false}
+        PeripheralData {
+            lcd,
+            audio_spec,
+            vblank: false,
+        }
     }
 }
 

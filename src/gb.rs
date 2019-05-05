@@ -75,7 +75,7 @@ impl<'a> GB<'a> {
         //time in us
         let mut timeout_cycles = 0;
         real.reset_vblank();
-        let mut mmu = MMU::new(&mut self.mem,real);
+        let mut mmu = MMU::new(&mut self.mem, real);
         while time == 0 || timeout_cycles < time {
             let start_time = mmu.bus.time();
             #[cfg(feature = "vcd_dump")]

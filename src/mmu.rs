@@ -109,10 +109,10 @@ pub struct MMUInternal<'a> {
     interrupt_flag: Mem,
     time: u64,
     effectful_change: bool,
-    last_sync : u64,
+    last_sync: u64,
 }
 
-fn side_effect_free<T, F: FnMut(&mut MMUInternal) -> T>(mmu : &mut MMUInternal, mut func: F) -> T{
+fn side_effect_free<T, F: FnMut(&mut MMUInternal) -> T>(mmu: &mut MMUInternal, mut func: F) -> T {
     let temp = mmu.effectful_change;
     mmu.effectful_change = false;
     let t = func(mmu);
@@ -130,7 +130,7 @@ impl MMUInternal<'_> {
         let interrupt_flag = Mem::new(false, 0xff0f, vec![0; 1]);
         let mem = MMUInternal {
             time: 0,
-            last_sync : 0,
+            last_sync: 0,
             seek_pos: 0,
             bios_exists: true,
             bios,
@@ -185,24 +185,17 @@ impl MMUInternal<'_> {
             _ => &mut self.fake_mem as &mut Peripheral,
         }
     }
-    pub fn sync_peripherals(&mut self, data : &mut PeripheralData) {
+    pub fn sync_peripherals(&mut self, data: &mut PeripheralData) {
         if self.last_sync < self.time {
             let mut interrupt_flag = 0;
             let cycles = self.time - self.last_sync;
-            self
-                .walk_peripherals(
-                    |p| match p.step(data, cycles) {
-                        Some(i) => {
-                            interrupt_flag |= mask_u8!(i);
-                        }
-                        None => {}
-                    }
-                );
-            let flags = side_effect_free(
-                self,
-                |mmu|
-                mmu.read_byte(0xff0f)
-            );
+            self.walk_peripherals(|p| match p.step(data, cycles) {
+                Some(i) => {
+                    interrupt_flag |= mask_u8!(i);
+                }
+                None => {}
+            });
+            let flags = side_effect_free(self, |mmu| mmu.read_byte(0xff0f));
             let mut rhs = flags | interrupt_flag;
             if !self.get_display().display_enabled() {
                 /* remove vblank from IF when display disabled.
@@ -210,11 +203,7 @@ impl MMUInternal<'_> {
                 rhs &= !mask_u8!(crate::cpu::InterruptFlag::VBlank);
             }
             if rhs != flags {
-                side_effect_free(
-                    self,
-                    |mmu|
-                    mmu.write_byte(0xff0f, rhs)
-                );
+                side_effect_free(self, |mmu| mmu.write_byte(0xff0f, rhs));
             }
             if interrupt_flag & mask_u8!(crate::cpu::InterruptFlag::VBlank) != 0 {
                 data.vblank = true
@@ -267,7 +256,7 @@ impl MMUInternal<'_> {
             self.time += time;
         }
     }
-   #[allow(unused_variables)]
+    #[allow(unused_variables)]
     fn main_bus(&mut self, write: bool, addr: u16, v: u8) {
         #[cfg(feature = "vcd_dump")]
         {
@@ -290,13 +279,12 @@ impl MMUInternal<'_> {
     }
 }
 
-impl <'a, 'b, 'c> MMU<'a, 'b, 'c> {
-
+impl<'a, 'b, 'c> MMU<'a, 'b, 'c> {
     // fn dump(&mut self) {
     //     self.seek(SeekFrom::Start(0));
     //     disasm(0, self, &mut std::io::stdout(), &|i| match i {Instr::NOP => false, _ => true});
     // }
-    pub fn new(bus : &'b mut MMUInternal<'a>, data: &'b mut PeripheralData<'c>) -> MMU<'a, 'b, 'c> {
+    pub fn new(bus: &'b mut MMUInternal<'a>, data: &'b mut PeripheralData<'c>) -> MMU<'a, 'b, 'c> {
         MMU { bus, data }
     }
 
@@ -312,12 +300,10 @@ impl <'a, 'b, 'c> MMU<'a, 'b, 'c> {
         })
     }
     pub fn write_byte_silent(&mut self, mut addr: u16, v: u8) {
-        side_effect_free(
-            self.bus,
-            |bus|
-            bus.lookup_peripheral(&mut addr).write_byte(addr, v));
+        side_effect_free(self.bus, |bus| {
+            bus.lookup_peripheral(&mut addr).write_byte(addr, v)
+        });
     }
-
 }
 
 impl Addressable for MMU<'_, '_, '_> {
@@ -388,7 +374,6 @@ impl Write for MMU<'_, '_, '_> {
     fn flush(&mut self) -> io::Result<()> {
         self.bus.flush()
     }
-
 }
 
 fn apply_offset(mut pos: u16, seek: i64) -> io::Result<u64> {

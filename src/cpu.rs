@@ -301,7 +301,8 @@ impl CPU {
         self.trace = !self.trace;
     }
     fn pop16(&mut self, mem: &mut MMU, t: Reg16) {
-        mem.bus.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
+        mem.bus
+            .seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
             .expect("Can't request outside of memory");
         let mut buf = [0u8; 2];
         mem.read(&mut buf).expect("Memory wraps");
@@ -316,7 +317,8 @@ impl CPU {
         let item = self.reg.read(v);
         let (hi, lo) = split_u16(item);
         self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) - 2);
-        mem.bus.seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
+        mem.bus
+            .seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
             .expect("Can't request outside of memory");
         mem.write(&[lo, hi]).expect("Memory wraps");
     }
@@ -567,7 +569,8 @@ impl CPU {
                 self.reg.write(x0, mem.read_byte(0xff00 + x1 as u16));
             }
             Instr::LD_ia16_r16(x0, x1) => {
-                mem.bus.seek(SeekFrom::Start(x0 as u64))
+                mem.bus
+                    .seek(SeekFrom::Start(x0 as u64))
                     .expect("All addresses valid");
                 let (hi, lo) = split_u16(self.reg.read(x1));
                 mem.write(&[lo, hi]).expect("Memory wraps");
@@ -948,8 +951,8 @@ impl CPU {
 mod tests {
     use crate::cpu::{Reg8, RegType, CPU};
     use crate::instr::{Instr, PrefixInstr};
-    use crate::mmu::{MMU, MMUInternal};
-    use crate::peripherals::{PeripheralData};
+    use crate::mmu::{MMUInternal, MMU};
+    use crate::peripherals::PeripheralData;
 
     macro_rules! test_state {
         ($instr:expr, $reg:expr, $val:expr) => {

@@ -302,6 +302,10 @@ fn main() -> Result<(), std::io::Error> {
                             let mut buf = Vec::new();
                             c_file.read_to_end(&mut buf)?;
                             res = Some(buf);
+                        } else if c_file.name().ends_with(".gbc") {
+                            let mut buf = Vec::new();
+                            c_file.read_to_end(&mut buf)?;
+                            res = Some(buf);
                         }
                     }
                 }
