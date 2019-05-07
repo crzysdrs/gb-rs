@@ -6,6 +6,8 @@ use crate::dma::DMA;
 use crate::peripherals::{Peripheral, PeripheralData};
 use std::io::Write;
 
+use crate::cycles;
+
 #[cfg(feature = "vcd_dump")]
 use VCDDump::VCD;
 
@@ -39,7 +41,7 @@ impl<'a> GB<'a> {
         gb
     }
 
-    pub fn cpu_cycles(&self) -> u64 {
+    pub fn cpu_cycles(&self) -> cycles::CycleCount {
         self.mem.time()
     }
     pub fn toggle_trace(&mut self) {
@@ -61,23 +63,33 @@ impl<'a> GB<'a> {
         self.mem.set_controls(controls);
     }
 
-    pub fn step_timeout(&mut self, mut time: u64, real: &mut PeripheralData) -> GBReason {
+    pub fn step_timeout(
+        &mut self,
+        time: Option<cycles::CycleCount>,
+        real: &mut PeripheralData,
+    ) -> GBReason {
+        let finish_time = time.map(|x| x + self.mem.time());
         loop {
-            let start_time = self.mem.time();
+            let time = finish_time.map(|x| x - self.mem.time());
             match self.step(time, real) {
                 r @ GBReason::Dead | r @ GBReason::Timeout => return r,
                 _ => {}
             }
-            time -= self.mem.time() - start_time;
         }
     }
-    pub fn step(&mut self, time: u64, real: &mut PeripheralData) -> GBReason {
-        //time in us
-        let mut timeout_cycles = 0;
+    pub fn step(
+        &mut self,
+        time: Option<cycles::CycleCount>,
+        real: &mut PeripheralData,
+    ) -> GBReason {
+        let finish_time = time.map(|x| x + self.mem.time());
         real.reset_vblank();
         let mut mmu = MMU::new(&mut self.mem, real);
-        while time == 0 || timeout_cycles < time {
-            let start_time = mmu.bus.time();
+        while time.is_none()
+            || finish_time
+                .map(|x| mmu.bus.time() < x)
+                .unwrap_or_else(|| false)
+        {
             #[cfg(feature = "vcd_dump")]
             VCD.as_ref().map(|m| {
                 m.lock().unwrap().as_mut().map(|v| {
@@ -92,8 +104,6 @@ impl<'a> GB<'a> {
                 real_dma.run(&mut mmu);
                 mmu.bus.swap_dma(real_dma);
             }
-            timeout_cycles += mmu.bus.time() - start_time;
-
             mmu.sync_peripherals();
 
             if self.cpu.is_dead(&mut mmu) {

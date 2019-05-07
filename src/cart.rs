@@ -1,4 +1,5 @@
 use crate::cpu::InterruptFlag;
+use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 
 enum CGBStatus {
@@ -85,7 +86,7 @@ impl Cart {
 
         println!("MBC: {:?}", mbc);
         match mbc {
-            None | Some(MBC1) | Some(MBC3) | Some(MBC5)=> {}
+            None | Some(MBC1) | Some(MBC3) | Some(MBC5) => {}
             Some(m) => panic!("Unhandled MBC {:?}", m),
         };
 
@@ -124,7 +125,7 @@ impl Cart {
             rom_reg: 1,
             ram_reg: 0,
             bank_mode: BankMode::ROM,
-            ram_enable : false,
+            ram_enable: false,
         };
         match cart.mbc {
             None | Some(MBC1) => Box::new(CartMBC1 { cart }),
@@ -133,9 +134,7 @@ impl Cart {
                 rtc_latch: None,
                 rtc: RTC::new(),
             }),
-            Some(MBC5) => Box::new(CartMBC5 {
-                cart
-            }),
+            Some(MBC5) => Box::new(CartMBC5 { cart }),
             _ => unimplemented!("Unhandled MBC Cart type {:?}", cart.mbc),
         }
     }
@@ -254,9 +253,10 @@ impl RTC {
             halt: false,
         }
     }
-    fn step(&mut self, time: u64) {
+    fn step(&mut self, time: cycles::CycleCount) {
         if !self.halt {
-            self.microseconds += time;
+            use dimensioned::Dimensionless;
+            self.microseconds += (time / (cycles::SECOND / 1_000_000)).value();
             if self.microseconds >= 1_000_000 {
                 let seconds = self.microseconds / 1_000_000;
                 self.microseconds %= 1_000_000;
@@ -328,7 +328,11 @@ impl CartMBC3 {
 }
 
 impl Peripheral for CartMBC3 {
-    fn step(&mut self, _real: &mut PeripheralData, time: u64) -> Option<InterruptFlag> {
+    fn step(
+        &mut self,
+        _real: &mut PeripheralData,
+        time: cycles::CycleCount,
+    ) -> Option<InterruptFlag> {
         self.rtc.step(time);
         None
     }
@@ -435,11 +439,11 @@ impl Addressable for CartMBC5 {
             0x2000...0x2fff => {
                 self.cart.rom_reg &= 0xff00;
                 self.cart.rom_reg |= usize::from(v);
-            },
+            }
             0x3000...0x3fff => {
                 self.cart.rom_reg &= 0x00ff;
                 self.cart.rom_reg |= usize::from(v & 0b1) << 8;
-            },
+            }
             0x4000...0x5fff => {
                 self.cart.ram_reg = usize::from(v & 0xf);
             }

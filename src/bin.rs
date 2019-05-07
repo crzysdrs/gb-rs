@@ -189,7 +189,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
             let mut count = 0;
             let r = texture.with_lock(sdl2::rect::Rect::new(0, 0, 160, 144), |mut slice, _size| {
                 gb.step(
-                    99999,
+                    None,
                     &mut PeripheralData::new(
                         Some(&mut slice),
                         //None
@@ -243,6 +243,17 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
 
 fn main() -> Result<(), std::io::Error> {
     use clap::{App, Arg};
+    use dimensioned::si;
+    use std::convert::{From, Into};
+    //let s = si::Second::from(gb::cycles::SECOND);
+    //let s : si::Second<u64> = gb::cycles::SECOND.into();
+    let s = gb::cycles::CGB::from(1.0 * si::S);
+
+    println!("Cycles from SI: {}", s);
+    let s2: si::Second<f64> = gb::cycles::SECOND.into();
+    println!("SI from Cycles: {}", s2);
+    let s3 = gb::cycles::CGB::from(1.0 * si::S / 4096.0);
+    println!("Hz {}", s3);
 
     let matches = App::new("GB Rom Emulator")
         .version("0.0.1")
@@ -347,7 +358,7 @@ fn main() -> Result<(), std::io::Error> {
 
     if matches.occurrences_of("no-display") > 0 {
         loop {
-            match gb.step(0, &mut PeripheralData::empty()) {
+            match gb.step(None, &mut PeripheralData::empty()) {
                 GBReason::Dead => break,
                 _ => {}
             }

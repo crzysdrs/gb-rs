@@ -1,6 +1,7 @@
 use super::Clk;
 use super::Clocks;
 use super::WaitTimer;
+use crate::cycles;
 use crate::peripherals::Addressable;
 use std::ops::{Deref, DerefMut};
 
@@ -202,7 +203,7 @@ pub trait Freq: HasRegs {
 
 pub struct Vol {
     volume: Option<u8>,
-    wait: WaitTimer<u8>,
+    wait: WaitTimer,
 }
 
 impl Vol {
@@ -220,7 +221,10 @@ impl Vol {
         let vol = self.volume.get_or_insert(reg.vol_start());
         if reg.vol_period() == 0 {
             /* do nothing */
-        } else if let Some(count) = self.wait.ready(c.vol.tick() as u8, reg.vol_period()) {
+        } else if let Some(count) = self.wait.ready(
+            u64::from(c.vol.tick()) * cycles::GB,
+            u64::from(reg.vol_period()) * cycles::GB,
+        ) {
             for _ in 0..count {
                 *vol = match (*vol, reg.vol_add()) {
                     (15, true) => 15,
@@ -236,7 +240,7 @@ impl Vol {
 }
 
 pub struct Timer {
-    period_wait: WaitTimer<u64>,
+    period_wait: WaitTimer,
 }
 
 impl Timer {
@@ -248,9 +252,12 @@ impl Timer {
     pub fn reset(&mut self) {
         self.period_wait.reset();
     }
-    pub fn step(&mut self, period: u16, cycles: u64, _clocks: &Clocks) -> u8 {
+    pub fn step(&mut self, period: u16, cycles: cycles::CycleCount, _clocks: &Clocks) -> u8 {
         let mut ticks = 0;
-        if let Some(count) = self.period_wait.ready(cycles, period as u64) {
+        if let Some(count) = self
+            .period_wait
+            .ready(cycles, u64::from(period) * cycles::GB)
+        {
             ticks += count as u8;
         }
         ticks
@@ -284,7 +291,7 @@ impl Duty {
 
 pub struct LFSR {
     shift_reg: u16,
-    wait: WaitTimer<u16>,
+    wait: WaitTimer,
 }
 
 impl LFSR {
@@ -303,7 +310,10 @@ impl LFSR {
         regs: &mut LFSRPass<Target = ChannelRegs>,
         _clocks: &Clocks,
     ) -> bool {
-        if let Some(count) = self.wait.ready(ticks as u16, regs.shift()) {
+        if let Some(count) = self.wait.ready(
+            u64::from(ticks) * cycles::GB,
+            u64::from(regs.shift()) * cycles::GB,
+        ) {
             for _ in 0..count {
                 let b0 = self.shift_reg & 0b1;
                 let b1 = (self.shift_reg & 0b10) >> 1;
@@ -321,7 +331,7 @@ impl LFSR {
 
 pub struct Sweep {
     shadow_freq: Option<u16>,
-    wait: WaitTimer<u8>,
+    wait: WaitTimer,
 }
 
 impl Sweep {
@@ -342,10 +352,10 @@ impl Sweep {
             self.shadow_freq = Some(regs.freq());
         }
         if SweepPass::period(regs) > 0 && regs.shift() > 0 {
-            if let Some(count) = self
-                .wait
-                .ready(clocks.sweep.tick() as u8, SweepPass::period(regs))
-            {
+            if let Some(count) = self.wait.ready(
+                u64::from(clocks.sweep.tick()) * cycles::GB,
+                u64::from(SweepPass::period(regs)) * cycles::GB,
+            ) {
                 for _ in 0..count {
                     if let Some(ref mut freq) = self.shadow_freq {
                         let shift_incr = *freq >> regs.shift();

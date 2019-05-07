@@ -1,4 +1,5 @@
 use crate::cpu::InterruptFlag;
+use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 
 pub struct FakeMem {}
@@ -21,7 +22,11 @@ impl Addressable for FakeMem {
     }
 }
 impl Peripheral for FakeMem {
-    fn step(&mut self, _real: &mut PeripheralData, _time: u64) -> Option<InterruptFlag> {
+    fn step(
+        &mut self,
+        _real: &mut PeripheralData,
+        _time: cycles::CycleCount,
+    ) -> Option<InterruptFlag> {
         None
     }
 }

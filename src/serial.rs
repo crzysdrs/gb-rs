@@ -1,5 +1,6 @@
 use super::mmu::MemRegister;
 use crate::cpu::InterruptFlag;
+use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use enum_primitive::FromPrimitive;
 use std::io::Write;
@@ -32,7 +33,11 @@ impl<'a> Addressable for Serial<'a> {
     }
 }
 impl<'a> Peripheral for Serial<'a> {
-    fn step(&mut self, _real: &mut PeripheralData, _time: u64) -> Option<InterruptFlag> {
+    fn step(
+        &mut self,
+        _real: &mut PeripheralData,
+        _time: cycles::CycleCount,
+    ) -> Option<InterruptFlag> {
         if (self.sc & 0x80) != 0 {
             //TODO: Wait appropriate amount of time to send serial data.
             if let Some(ref mut o) = self.out {

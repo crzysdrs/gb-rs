@@ -1,5 +1,6 @@
 use super::mmu::MemRegister;
 use crate::cpu::InterruptFlag;
+use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use enum_primitive::FromPrimitive;
 
@@ -19,8 +20,8 @@ pub struct Timer {
     TMA: u8,
     TAC: u8,
     DIV: u8,
-    unused_cycles: u64,
-    div_unused_cycles: u64,
+    unused_cycles: cycles::CycleCount,
+    div_unused_cycles: cycles::CycleCount,
 }
 
 impl Addressable for Timer {
@@ -32,7 +33,12 @@ impl Addressable for Timer {
     }
 }
 impl Peripheral for Timer {
-    fn step(&mut self, _real: &mut PeripheralData, time: u64) -> Option<InterruptFlag> {
+    fn step(
+        &mut self,
+        _real: &mut PeripheralData,
+        time: cycles::CycleCount,
+    ) -> Option<InterruptFlag> {
+        //use dimensioned::Dimensionless;
         self.DIV = self.DIV.wrapping_add(Timer::compute_time(
             time,
             &mut self.div_unused_cycles,
@@ -60,8 +66,8 @@ impl Timer {
             TMA: 0,
             TAC: 0,
             DIV: 0,
-            div_unused_cycles: 0,
-            unused_cycles: 0,
+            div_unused_cycles: 0 * cycles::GB,
+            unused_cycles: 0 * cycles::GB,
         }
     }
     fn freq(&self) -> TimerFlags {
@@ -74,18 +80,27 @@ impl Timer {
         }
     }
 
-    fn compute_time(time: u64, unused: &mut u64, freq: TimerFlags) -> u64 {
+    fn compute_time(
+        time: cycles::CycleCount,
+        unused: &mut cycles::CycleCount,
+        freq: TimerFlags,
+    ) -> u64 {
         *unused += time;
-        let div = match freq {
-            TimerFlags::ICS_4096hz => 256,
-            TimerFlags::ICS_262144hz => 4,
-            TimerFlags::ICS_65536hz => 16,
-            TimerFlags::ICS_16384hz => 64,
-            _ => panic!("Invalid Clock divider frequency"),
-        };
+        use dimensioned::si;
+        use dimensioned::Dimensionless;
+        let div = cycles::CycleCount::from(
+            si::S
+                / f64::from(match freq {
+                    TimerFlags::ICS_4096hz => 4096,
+                    TimerFlags::ICS_262144hz => 262144,
+                    TimerFlags::ICS_65536hz => 65536,
+                    TimerFlags::ICS_16384hz => 16384,
+                    _ => panic!("Invalid Clock divider frequency"),
+                }),
+        );
         let add = *unused / div;
         *unused -= add * div;
-        add
+        *add.value()
     }
     fn lookup(&mut self, addr: u16) -> &mut u8 {
         match MemRegister::from_u64(addr.into()).expect("Valid Register") {

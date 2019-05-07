@@ -1,4 +1,5 @@
 use super::{AudioChannel, Clocks};
+use crate::cycles;
 use crate::mmu::MemRegister;
 use crate::peripherals::Addressable;
 use std::ops::{Deref, DerefMut};
@@ -54,7 +55,7 @@ impl AudioChannel for Channel1 {
         self.vol.reset();
         self.enabled = true;
     }
-    fn sample(&mut self, _wave: &[u8], cycles: u64, clocks: &Clocks) -> Option<i16> {
+    fn sample(&mut self, _wave: &[u8], cycles: cycles::CycleCount, clocks: &Clocks) -> Option<i16> {
         if !self.enabled {
             self.length.step(clocks)?;
             return None;

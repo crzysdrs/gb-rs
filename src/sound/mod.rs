@@ -1,5 +1,5 @@
-use crate::cpu;
 use crate::cpu::InterruptFlag;
+use crate::cycles;
 use crate::emptymem::EmptyMem;
 use crate::mem::Mem;
 use crate::mmu::MemRegister;
@@ -55,7 +55,7 @@ pub trait AudioChannel {
     fn power(&mut self, powered: bool);
     fn enabled(&self) -> bool;
     fn regs(&mut self) -> &mut ChannelRegs;
-    fn sample(&mut self, wave: &[u8], cycles: u64, clocks: &Clocks) -> Option<i16>;
+    fn sample(&mut self, wave: &[u8], cycles: cycles::CycleCount, clocks: &Clocks) -> Option<i16>;
     // fn lookup(&mut self, addr: u16) -> &mut u8 {
     //     if let Some(reg) = MemRegister::from_u64(addr.into()) {
     //         match reg {
@@ -146,7 +146,7 @@ impl Clocks {
 
 struct FrameSequencer {
     time: u64,
-    wait: WaitTimer<u64>,
+    wait: WaitTimer,
     clks: Clocks,
 }
 
@@ -176,10 +176,11 @@ impl FrameSequencer {
             std::mem::replace(*c, c.settle());
         }
     }
-    fn step(&mut self, cycles: u64) {
+    fn step(&mut self, cycles: cycles::CycleCount) {
         /* 512 hz clock */
         self.settle();
-        if let Some(count) = self.wait.ready(cycles, (cpu::CYCLES_PER_S / 512).into()) {
+        use dimensioned::si;
+        if let Some(count) = self.wait.ready(cycles, cycles::Cycles::from(si::S / 512.0)) {
             for _ in 0..count {
                 if self.time % 2 == 0 {
                     self.clks.length = Clk::Rising;
@@ -223,41 +224,40 @@ impl FrameSequencer {
     }
 }
 
-struct WaitTimer<T> {
-    acc: T,
+struct WaitTimer {
+    acc: cycles::CycleCount,
 }
 
-impl<T> WaitTimer<T>
-where
-    T: num::Integer
-        + std::ops::AddAssign
-        + std::ops::SubAssign
-        + std::convert::Into<u64>
-        + std::marker::Copy,
-{
-    fn new() -> WaitTimer<T> {
-        WaitTimer { acc: T::zero() }
+impl WaitTimer {
+    fn new() -> WaitTimer {
+        WaitTimer {
+            acc: 0 * cycles::GB,
+        }
     }
-    fn ready(&mut self, new_cycles: T, required: T) -> Option<u64> {
-        if required == T::zero() {
+    fn ready(
+        &mut self,
+        new_cycles: cycles::CycleCount,
+        required: cycles::CycleCount,
+    ) -> Option<u64> {
+        if required == 0 * cycles::GB {
             return None;
         }
         self.acc += new_cycles;
         if self.acc >= required {
             let res = self.acc / required;
             self.acc -= res * required;
-            Some(res.into())
+            Some(res.value_unsafe)
         } else {
             None
         }
     }
     fn reset(&mut self) {
-        self.acc = T::zero();
+        self.acc = 0 * cycles::GB;
     }
 }
 
 pub struct Mixer {
-    wait: WaitTimer<u64>,
+    wait: WaitTimer,
     frame_seq: FrameSequencer,
     channel1: Channel1,
     channel2: Channel2,
@@ -387,7 +387,11 @@ impl Addressable for Mixer {
 }
 
 impl Peripheral for Mixer {
-    fn step(&mut self, real: &mut PeripheralData, time: u64) -> Option<InterruptFlag> {
+    fn step(
+        &mut self,
+        real: &mut PeripheralData,
+        cycles: cycles::CycleCount,
+    ) -> Option<InterruptFlag> {
         let orig_status = *self.nr52;
         let mut status = *self.nr52;
         let channels: &mut [&mut AudioChannel] = &mut [
@@ -398,11 +402,11 @@ impl Peripheral for Mixer {
         ];
         if let Some(ref mut audio) = real.audio_spec {
             {
-                self.frame_seq.step(time);
+                self.frame_seq.step(cycles);
                 //if self.frame_seq.clks().ticked() {
                 for (_i, channel) in channels.iter_mut().enumerate() {
                     if *self.nr52 & (1 << 7) != 0 {
-                        if let None = channel.sample(&self.wave, time, &self.frame_seq.clks()) {
+                        if let None = channel.sample(&self.wave, cycles, &self.frame_seq.clks()) {
                             if channel.enabled() {
                                 //println!("Disable Channel {}", i);
                                 channel.disable();
@@ -413,14 +417,15 @@ impl Peripheral for Mixer {
                 //}
             }
             self.frame_seq.settle();
-            let wait_time: u64 = (cpu::CYCLES_PER_S / audio.freq) as u64;
-            if let Some(count) = self.wait.ready(time, wait_time) {
+            let wait_time = cycles::SECOND / u64::from(audio.freq);
+            if let Some(count) = self.wait.ready(cycles, wait_time) {
                 for _ in 0..count {
                     let mut left: i16 = 0;
                     let mut right: i16 = 0;
                     for (i, channel) in channels.iter_mut().enumerate() {
                         if *self.nr52 & (1 << 7) != 0 {
-                            if let Some(val) = channel.sample(&self.wave, 0, &self.frame_seq.clks())
+                            if let Some(val) =
+                                channel.sample(&self.wave, 0 * cycles::GB, &self.frame_seq.clks())
                             {
                                 if *self.nr51 & (1 << i) != 0 {
                                     left = left.saturating_add(val);

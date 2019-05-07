@@ -1,4 +1,5 @@
 use crate::cpu::InterruptFlag;
+use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use itertools::Itertools;
 use std::collections::VecDeque;
@@ -88,7 +89,7 @@ pub struct Display {
     wy: u8,
     wx: u8,
     ppu: PPU,
-    unused_cycles: u64,
+    unused_cycles: cycles::CycleCount,
     state: DisplayState,
     changed_state: bool,
 }
@@ -179,7 +180,7 @@ impl Display {
             wx: 0,
             ppu: PPU::new(),
             state: DisplayState::OAMSearch,
-            unused_cycles: 0,
+            unused_cycles: 0 * cycles::GB,
         }
     }
     pub fn oam_lookup(&self, idx: OAMIdx) -> Option<&SpriteAttribute> {
@@ -644,21 +645,25 @@ impl Addressable for Display {
     }
 }
 impl Peripheral for Display {
-    fn step(&mut self, real: &mut PeripheralData, time: u64) -> Option<InterruptFlag> {
+    fn step(
+        &mut self,
+        real: &mut PeripheralData,
+        time: cycles::CycleCount,
+    ) -> Option<InterruptFlag> {
         let mut new_ly = self.ly;
         self.unused_cycles += time;
         let next_state = match self.state {
             DisplayState::OAMSearch => {
-                if self.unused_cycles >= 20 {
+                if self.unused_cycles >= 20 * cycles::GB {
                     self.oam_search();
-                    self.unused_cycles -= 20;
+                    self.unused_cycles -= 20 * cycles::GB;
                     DisplayState::PixelTransfer
                 } else {
                     self.state
                 }
             }
             DisplayState::PixelTransfer => {
-                if self.unused_cycles >= 43 {
+                if self.unused_cycles >= 43 * cycles::GB {
                     /* do work */
                     self.ppu.clear();
                     let orig_oams =
@@ -692,7 +697,7 @@ impl Peripheral for Display {
                         });
 
                         self.ppu.clear();
-                        self.unused_cycles -= 43;
+                        self.unused_cycles -= 43 * cycles::GB;
                     }
                     std::mem::replace(&mut self.oam_searched, orig_oams);
                     DisplayState::HBlank
@@ -701,9 +706,9 @@ impl Peripheral for Display {
                 }
             }
             DisplayState::HBlank => {
-                if self.unused_cycles >= 51 {
+                if self.unused_cycles >= 51 * cycles::GB {
                     /* do work */
-                    self.unused_cycles -= 51;
+                    self.unused_cycles -= 51 * cycles::GB;
                     new_ly += 1;
                     if new_ly == 144 {
                         DisplayState::VBlank
@@ -715,9 +720,9 @@ impl Peripheral for Display {
                 }
             }
             DisplayState::VBlank => {
-                if self.unused_cycles >= (43 + 51 + 20) {
+                if self.unused_cycles >= (43 + 51 + 20) * cycles::GB {
                     /* do work */
-                    self.unused_cycles -= 43 + 51 + 20;
+                    self.unused_cycles -= (43 + 51 + 20) * cycles::GB;
                     new_ly += 1;
                     if new_ly == 153 {
                         new_ly = 0;

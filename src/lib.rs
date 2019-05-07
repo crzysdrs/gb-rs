@@ -6,6 +6,81 @@ extern crate itertools;
 extern crate num;
 extern crate vcd;
 
+#[macro_use]
+extern crate dimensioned;
+use dimensioned as dim;
+pub mod cycles {
+    make_units! {
+        Cycles;
+        ONE: Unitless;
+        base {
+            CGB: CGB, "gbc cycles", Time;
+        }
+        derived {
+        }
+        constants {
+        }
+        fmt = true;
+    }
+    pub const SECOND: CGB<u64> = Cycles {
+        value_unsafe: 4194304 / 2,
+        _marker: std::marker::PhantomData,
+    };
+    pub const GB: CGB<u64> = Cycles {
+        value_unsafe: 2,
+        _marker: std::marker::PhantomData,
+    };
+    pub type CycleCount = CGB<u64>;
+}
+use dim::si;
+use dim::typenum::{Integer, Prod, Z0};
+use std::convert::From;
+use std::ops::Mul;
+
+impl<Time> From<si::SI<f64, tarr![Z0, Z0, Time, Z0, Z0, Z0, Z0]>>
+    for cycles::Cycles<Prod<u64, u64>, tarr![Time]>
+where
+    Time: Integer,
+{
+    fn from(other: si::SI<f64, tarr![Z0, Z0, Time, Z0, Z0, Z0, Z0]>) -> Self {
+        let length_fac = cycles::SECOND.value_unsafe.pow(Time::to_i32() as u32);
+        //println!("TIME: {} LENGTH: {}", Time::to_i32(), length_fac);
+        cycles::Cycles::new((other.value_unsafe as f64 * length_fac as f64) as u64)
+    }
+}
+
+impl<Time> Into<si::SI<Prod<Mul<f64, Output = f64>, f64>, tarr![Z0, Z0, Time, Z0, Z0, Z0, Z0]>>
+    for cycles::Cycles<u64, tarr![Time]>
+where
+    Time: Integer,
+{
+    fn into(
+        self,
+    ) -> si::SI<Prod<Mul<f64, Output = f64>, f64>, tarr![Z0, Z0, Time, Z0, Z0, Z0, Z0]> {
+        //println!("TIME: {} {}", Time::to_i32(), si::S.value_unsafe);
+
+        let time_fac = (si::S / cycles::SECOND.value_unsafe as f64)
+            .value_unsafe
+            .powi(Time::to_i32());
+        let fac = time_fac;
+
+        si::SI::new(self.value_unsafe as f64 * fac)
+    }
+}
+
+// impl<V, Time> Into<
+//         si::SI<Prod<V, f64>, tarr![Z0, Z0, Time, Z0, Z0, Z0, Z0]>>
+//     for cycles::Cycles<V, tarr![Time]>
+//     where V: Mul<f64>,Time: Integer,
+// {
+//     fn into(self) -> si::SI<Prod<V, f64>, tarr![Z0, Z0, Time, Z0, Z0, Z0, Z0]> {
+//         let time_fac = si::S.value_unsafe.powi(Time::to_i32()) as f64;
+//         let fac = time_fac;
+
+//         si::SI::new( self.value_unsafe * fac )
+//     }
+// }
+
 #[cfg(feature = "vcd_dump")]
 mod VCDDump {
     #[macro_use]
@@ -275,7 +350,7 @@ mod tests {
                         false,
                         true,
                     );
-                    gb.step_timeout(30 * 1000000, &mut p);
+                    gb.step_timeout(Some((30.0 * dimensioned::si::S).into()), &mut p);
                     read_screen(&mut gb)
                 };
                 assert_eq!(screen, $test);
@@ -303,7 +378,7 @@ mod tests {
 
                     (
                         gb.step_timeout(
-                            30 * 1000000,
+                            Some((dimensioned::si::S * 30.0).into()),
                             &mut crate::peripherals::PeripheralData::empty(),
                         ),
                         gb.get_reg(),

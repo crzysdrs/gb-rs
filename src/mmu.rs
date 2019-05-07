@@ -1,15 +1,15 @@
-use std::io;
-use std::io::{Read, Seek, SeekFrom, Write};
-
 use super::controller::Controller;
 use super::display::Display;
 use super::fakemem::FakeMem;
 use super::mem::Mem;
 use super::serial::Serial;
 use super::timer::Timer;
+use crate::cycles;
 use crate::dma::DMA;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use crate::sound::Mixer;
+use std::io;
+use std::io::{Read, Seek, SeekFrom, Write};
 enum_from_primitive! {
     #[derive(Debug, PartialEq, Clone, Copy)]
     pub enum MemRegister {
@@ -107,9 +107,9 @@ pub struct MMUInternal<'a> {
     ram2: Mem,
     sound: Mixer,
     interrupt_flag: Mem,
-    time: u64,
+    time: cycles::CycleCount,
     effectful_change: bool,
-    last_sync: u64,
+    last_sync: cycles::CycleCount,
 }
 
 fn side_effect_free<T, F: FnMut(&mut MMUInternal) -> T>(mmu: &mut MMUInternal, mut func: F) -> T {
@@ -129,8 +129,8 @@ impl MMUInternal<'_> {
         let ram2 = Mem::new(false, 0xfea0, vec![0; 0xff00 - 0xfea0 + 1]);
         let interrupt_flag = Mem::new(false, 0xff0f, vec![0; 1]);
         let mem = MMUInternal {
-            time: 0,
-            last_sync: 0,
+            time: 0 * cycles::GB,
+            last_sync: 0 * cycles::GB,
             seek_pos: 0,
             bios_exists: true,
             bios,
@@ -211,7 +211,7 @@ impl MMUInternal<'_> {
             self.last_sync = self.time;
         }
     }
-    pub fn time(&self) -> u64 {
+    pub fn time(&self) -> cycles::CycleCount {
         self.time
     }
     pub fn swap_dma(&mut self, new_dma: DMA) -> DMA {
@@ -242,7 +242,7 @@ impl MMUInternal<'_> {
     pub fn get_display(&self) -> &Display {
         &self.display
     }
-    pub fn set_time(&mut self, v: u64) {
+    pub fn set_time(&mut self, v: cycles::CycleCount) {
         self.time = v;
     }
     pub fn dma_active(&mut self) -> bool {
@@ -251,7 +251,7 @@ impl MMUInternal<'_> {
     pub fn disable_bios(&mut self) {
         self.bios_exists = false;
     }
-    pub fn cycles_passed(&mut self, time: u64) {
+    pub fn cycles_passed(&mut self, time: cycles::CycleCount) {
         if self.effectful_change {
             self.time += time;
         }
@@ -319,13 +319,13 @@ impl Addressable for MMU<'_, '_, '_> {
 
 impl MMUInternal<'_> {
     fn read_byte(&mut self, mut addr: u16) -> u8 {
-        self.cycles_passed(1);
+        self.cycles_passed(cycles::GB);
         let v = self.lookup_peripheral(&mut addr).read_byte(addr);
         self.main_bus(false, addr, v);
         v
     }
     fn write_byte(&mut self, mut addr: u16, v: u8) {
-        self.cycles_passed(1);
+        self.cycles_passed(cycles::GB);
         self.main_bus(true, addr, v);
         self.lookup_peripheral(&mut addr).write_byte(addr, v);
     }

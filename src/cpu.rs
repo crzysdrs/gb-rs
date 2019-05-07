@@ -2,11 +2,10 @@ use super::alu::{ALUOps, ALU};
 use super::instr::{Instr, PrefixInstr};
 use super::mmu::MMU;
 use super::{make_u16, split_u16};
+use crate::cycles;
 use crate::mmu::MemRegister;
 use crate::peripherals::Addressable;
 use std::io::{Read, Seek, SeekFrom, Write};
-
-pub const CYCLES_PER_S: u32 = 4194304 / 4;
 
 macro_rules! alu_mem {
     ($s:expr, $mem:expr, $addr:expr, $v:expr) => {
@@ -310,7 +309,7 @@ impl CPU {
         self.reg.write(t, res);
         self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) + 2);
         if Reg16::PC == t {
-            mem.bus.cycles_passed(1);
+            mem.bus.cycles_passed(cycles::GB);
         }
     }
     fn push16(&mut self, mem: &mut MMU, v: Reg16) {
@@ -351,7 +350,7 @@ impl CPU {
     }
     fn move_pc(&mut self, mem: &mut MMU, v: u16) {
         self.reg.write(Reg16::PC, v);
-        mem.bus.cycles_passed(1);
+        mem.bus.cycles_passed(cycles::GB);
     }
     pub fn execute_instr(&mut self, mut mem: &mut MMU, _op: u8, instr: Instr) {
         match instr {
@@ -385,13 +384,13 @@ impl CPU {
                     ALU::add(self.reg.read(x0), self.reg.read(x1)),
                     mask_u8!(Flag::N | Flag::H | Flag::C)
                 ); /*TODO: Half Carry Not Being Set Correctly */
-                mem.bus.cycles_passed(1);
+                mem.bus.cycles_passed(cycles::GB);
             }
             Instr::ADD_r16_r8(x0, x1) => {
                 let (res, _) = ALU::add(self.reg.read(x0), x1 as i16 as u16);
                 let (_, flags) = ALU::add(self.reg.read(x0) as u8, x1 as i16 as u8);
                 alu_result!(self, x0, (res, flags & !mask_u8!(Flag::Z | Flag::N)));
-                mem.bus.cycles_passed(2);
+                mem.bus.cycles_passed(2 * cycles::GB);
             }
             Instr::ADD_r8_r8(x0, x1) => {
                 alu_result!(self, x0, ALU::add(self.reg.read(x0), self.reg.read(x1)))
@@ -501,7 +500,7 @@ impl CPU {
             ),
             Instr::DEC_r16(x0) => {
                 alu_result_mask!(self, x0, ALU::dec(self.reg.read(x0)), 0);
-                mem.bus.cycles_passed(1);
+                mem.bus.cycles_passed(cycles::GB);
             }
             Instr::DEC_r8(x0) => alu_result_mask!(
                 self,
@@ -530,7 +529,7 @@ impl CPU {
             ),
             Instr::INC_r16(x0) => {
                 alu_result_mask!(self, x0, ALU::inc(self.reg.read(x0)), 0);
-                mem.bus.cycles_passed(1);
+                mem.bus.cycles_passed(cycles::GB);
             }
             Instr::INC_r8(x0) => alu_result_mask!(
                 self,
@@ -598,13 +597,13 @@ impl CPU {
             }
             Instr::LD_r16_r16(x0, x1) => {
                 self.reg.write(x0, self.reg.read(x1));
-                mem.bus.cycles_passed(1);
+                mem.bus.cycles_passed(cycles::GB);
             }
             Instr::LD_r16_r16_r8(x0, x1, x2) => {
                 let (res, _) = ALU::add(self.reg.read(x1), x2 as i16 as u16);
                 let (_, flags) = ALU::add(self.reg.read(x1) as u8, x2 as i16 as u8);
                 alu_result!(self, x0, (res, flags & !mask_u8!(Flag::Z | Flag::N)));
-                mem.bus.cycles_passed(1);
+                mem.bus.cycles_passed(cycles::GB);
             }
             Instr::LD_r8_d8(x0, x1) => {
                 self.reg.write(x0, x1);
@@ -647,7 +646,7 @@ impl CPU {
             Instr::POP_r16(x0) => self.pop16(&mut mem, x0),
             Instr::PUSH_r16(x0) => {
                 self.push16(&mut mem, x0);
-                mem.bus.cycles_passed(1);
+                mem.bus.cycles_passed(cycles::GB);
             }
             Instr::CBPrefix(PrefixInstr::RES_l8_ir16(x0, x1)) => {
                 let rhs = mem.read_byte(self.reg.read(x1)) & !(1 << x0);
@@ -664,7 +663,7 @@ impl CPU {
                 self.reg.ime = 1;
             }
             Instr::RET_COND(x0) => {
-                mem.bus.cycles_passed(1);
+                mem.bus.cycles_passed(cycles::GB);
                 if self.check_flag(x0) {
                     self.pop16(&mut mem, Reg16::PC);
                 }
@@ -899,7 +898,7 @@ impl CPU {
         self.manage_interrupt(mem);
         let start = mem.bus.time();
         if self.halted {
-            mem.bus.cycles_passed(1);
+            mem.bus.cycles_passed(cycles::GB);
             return; /* claim one cycle has passed */
         }
         let pc = self.reg.read(Reg16::PC);
