@@ -2,7 +2,6 @@ use super::alu::{ALUOps, ALU};
 use super::instr::{Instr, PrefixInstr};
 use super::mmu::MMU;
 use super::{make_u16, split_u16};
-use crate::cycles;
 use crate::mmu::MemRegister;
 use crate::peripherals::Addressable;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -307,15 +306,17 @@ impl CPU {
         mem.read(&mut buf).expect("Memory wraps");
         let res = make_u16(buf[1], buf[0]);
         self.reg.write(t, res);
-        self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) + 2);
+        self.reg
+            .write(Reg16::SP, self.reg.read(Reg16::SP).wrapping_add(2));
         if Reg16::PC == t {
-            mem.bus.cycles_passed(cycles::GB);
+            mem.bus.cycles_passed(1);
         }
     }
     fn push16(&mut self, mem: &mut MMU, v: Reg16) {
         let item = self.reg.read(v);
         let (hi, lo) = split_u16(item);
-        self.reg.write(Reg16::SP, self.reg.read(Reg16::SP) - 2);
+        self.reg
+            .write(Reg16::SP, self.reg.read(Reg16::SP).wrapping_sub(2));
         mem.bus
             .seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
             .expect("Can't request outside of memory");
@@ -350,9 +351,9 @@ impl CPU {
     }
     fn move_pc(&mut self, mem: &mut MMU, v: u16) {
         self.reg.write(Reg16::PC, v);
-        mem.bus.cycles_passed(cycles::GB);
+        mem.bus.cycles_passed(1);
     }
-    pub fn execute_instr(&mut self, mut mem: &mut MMU, _op: u8, instr: Instr) {
+    pub fn execute_instr(&mut self, mut mem: &mut MMU, prev_pc: u16, instr: Instr) {
         match instr {
             Instr::ADC_r8_d8(x0, x1) => alu_result!(
                 self,
@@ -384,13 +385,13 @@ impl CPU {
                     ALU::add(self.reg.read(x0), self.reg.read(x1)),
                     mask_u8!(Flag::N | Flag::H | Flag::C)
                 ); /*TODO: Half Carry Not Being Set Correctly */
-                mem.bus.cycles_passed(cycles::GB);
+                mem.bus.cycles_passed(1);
             }
             Instr::ADD_r16_r8(x0, x1) => {
                 let (res, _) = ALU::add(self.reg.read(x0), x1 as i16 as u16);
                 let (_, flags) = ALU::add(self.reg.read(x0) as u8, x1 as i16 as u8);
                 alu_result!(self, x0, (res, flags & !mask_u8!(Flag::Z | Flag::N)));
-                mem.bus.cycles_passed(2 * cycles::GB);
+                mem.bus.cycles_passed(2);
             }
             Instr::ADD_r8_r8(x0, x1) => {
                 alu_result!(self, x0, ALU::add(self.reg.read(x0), self.reg.read(x1)))
@@ -500,7 +501,7 @@ impl CPU {
             ),
             Instr::DEC_r16(x0) => {
                 alu_result_mask!(self, x0, ALU::dec(self.reg.read(x0)), 0);
-                mem.bus.cycles_passed(cycles::GB);
+                mem.bus.cycles_passed(1);
             }
             Instr::DEC_r8(x0) => alu_result_mask!(
                 self,
@@ -529,7 +530,7 @@ impl CPU {
             ),
             Instr::INC_r16(x0) => {
                 alu_result_mask!(self, x0, ALU::inc(self.reg.read(x0)), 0);
-                mem.bus.cycles_passed(cycles::GB);
+                mem.bus.cycles_passed(1);
             }
             Instr::INC_r8(x0) => alu_result_mask!(
                 self,
@@ -543,6 +544,10 @@ impl CPU {
                 }
             }
             Instr::JP_a16(x0) => {
+                if x0 == prev_pc && (self.reg.ime == 0 || mem.read_byte_silent(0xffff) == 0) {
+                    /* infinite loop with no interrupts enabled */
+                    self.dead = true;
+                }
                 self.move_pc(mem, x0);
             }
             Instr::JP_r16(x0) => {
@@ -597,13 +602,13 @@ impl CPU {
             }
             Instr::LD_r16_r16(x0, x1) => {
                 self.reg.write(x0, self.reg.read(x1));
-                mem.bus.cycles_passed(cycles::GB);
+                mem.bus.cycles_passed(1);
             }
             Instr::LD_r16_r16_r8(x0, x1, x2) => {
                 let (res, _) = ALU::add(self.reg.read(x1), x2 as i16 as u16);
                 let (_, flags) = ALU::add(self.reg.read(x1) as u8, x2 as i16 as u8);
                 alu_result!(self, x0, (res, flags & !mask_u8!(Flag::Z | Flag::N)));
-                mem.bus.cycles_passed(cycles::GB);
+                mem.bus.cycles_passed(1);
             }
             Instr::LD_r8_d8(x0, x1) => {
                 self.reg.write(x0, x1);
@@ -646,7 +651,7 @@ impl CPU {
             Instr::POP_r16(x0) => self.pop16(&mut mem, x0),
             Instr::PUSH_r16(x0) => {
                 self.push16(&mut mem, x0);
-                mem.bus.cycles_passed(cycles::GB);
+                mem.bus.cycles_passed(1);
             }
             Instr::CBPrefix(PrefixInstr::RES_l8_ir16(x0, x1)) => {
                 let rhs = mem.read_byte(self.reg.read(x1)) & !(1 << x0);
@@ -663,7 +668,7 @@ impl CPU {
                 self.reg.ime = 1;
             }
             Instr::RET_COND(x0) => {
-                mem.bus.cycles_passed(cycles::GB);
+                mem.bus.cycles_passed(1);
                 if self.check_flag(x0) {
                     self.pop16(&mut mem, Reg16::PC);
                 }
@@ -853,7 +858,13 @@ impl CPU {
                 alu_result!(self, x0, ALU::sr(self.reg.read(x0), false))
             }
             /* halt cpu and lcd display until button press */
-            Instr::STOP_0(_x0) => unimplemented!("Missing STOP"),
+            Instr::STOP_0(_x0) => {
+                if mem.bus.speed_change() {
+                    mem.bus.toggle_speed();
+                } else {
+                    self.halted = true;
+                };
+            }
             Instr::SUB_d8(x0) => alu_result!(self, Reg8::A, ALU::sub(self.reg.read(Reg8::A), x0)),
             Instr::SUB_ir16(x0) => {
                 alu_result!(
@@ -898,51 +909,51 @@ impl CPU {
         self.manage_interrupt(mem);
         let start = mem.bus.time();
         if self.halted {
-            mem.bus.cycles_passed(cycles::GB);
+            mem.bus.cycles_passed(1);
             return; /* claim one cycle has passed */
         }
         let pc = self.reg.read(Reg16::PC);
-        if pc == 0x100 {
-            mem.bus.disable_bios();
-        }
-        let (next_pc, op, i) = match Instr::disasm(mem, pc) {
+        let (next_pc, _, i) = match Instr::disasm(mem, pc) {
             (_, _, Instr::INVALID(op)) => {
                 panic!("PC Invalid instruction {:x} @ {:x}", op, self.reg.pc)
             }
             item => item,
         };
         if self.trace {
-            let reset_time = mem.bus.time();
-            let ienable = mem.read_byte_silent(0xffff);
-            let iflag = mem.read_byte_silent(0xff0f);
-            let addr = self.reg.read(Reg16::PC);
+            crate::mmu::side_effect_free_mem(mem, |mem| {
+                let reset_time = mem.bus.time();
+                let ienable = mem.read_byte_silent(0xffff);
+                let iflag = mem.read_byte_silent(0xff0f);
+                let addr = self.reg.read(Reg16::PC);
 
-            print!("A:{:02X} ", self.reg.read(Reg8::A));
-            print!(
-                "F:{z}{n}{h}{c} ",
-                z = if self.reg.get_flag(Flag::Z) { "Z" } else { "-" },
-                n = if self.reg.get_flag(Flag::N) { "N" } else { "-" },
-                h = if self.reg.get_flag(Flag::H) { "H" } else { "-" },
-                c = if self.reg.get_flag(Flag::C) { "C" } else { "-" },
-            );
-            print!("BC:{:04X} ", self.reg.read(Reg16::BC));
-            print!("DE:{:04x} ", self.reg.read(Reg16::DE));
-            print!("HL:{:04x} ", self.reg.read(Reg16::HL));
-            print!("SP:{:04x} ", self.reg.read(Reg16::SP));
-            print!("PC:{:04x} ", self.reg.read(Reg16::PC));
-            if self.trace && true {
-                print!("IF:{:02x} ", iflag);
-                print!("IE:{:02x} ", ienable);
-                print!("IME:{:01x} ", self.reg.ime);
-            }
-            print!("(cy: {}) ", start);
-            print!("ppu:+{} ", 0);
-            print!("|[??]");
-            crate::instr::disasm(addr, next_pc, mem, &mut std::io::stdout(), &|_| true).unwrap();
-            mem.bus.set_time(reset_time);
+                print!("A:{:02X} ", self.reg.read(Reg8::A));
+                print!(
+                    "F:{z}{n}{h}{c} ",
+                    z = if self.reg.get_flag(Flag::Z) { "Z" } else { "-" },
+                    n = if self.reg.get_flag(Flag::N) { "N" } else { "-" },
+                    h = if self.reg.get_flag(Flag::H) { "H" } else { "-" },
+                    c = if self.reg.get_flag(Flag::C) { "C" } else { "-" },
+                );
+                print!("BC:{:04X} ", self.reg.read(Reg16::BC));
+                print!("DE:{:04x} ", self.reg.read(Reg16::DE));
+                print!("HL:{:04x} ", self.reg.read(Reg16::HL));
+                print!("SP:{:04x} ", self.reg.read(Reg16::SP));
+                print!("PC:{:04x} ", self.reg.read(Reg16::PC));
+                if true {
+                    print!("IF:{:02x} ", iflag);
+                    print!("IE:{:02x} ", ienable);
+                    print!("IME:{:01x} ", self.reg.ime);
+                }
+                print!("(cy: {}) ", start);
+                print!("ppu:+{} ", 0);
+                print!("|[??]");
+                crate::instr::disasm(addr, next_pc, mem, &mut std::io::stdout(), &|_| true)
+                    .unwrap();
+                mem.bus.set_time(reset_time);
+            });
         }
         self.reg.write(Reg16::PC, next_pc);
-        self.execute_instr(mem, op, i)
+        self.execute_instr(mem, pc, i)
     }
 }
 
@@ -956,7 +967,7 @@ mod tests {
     macro_rules! test_state {
         ($instr:expr, $reg:expr, $val:expr) => {
             let cart = Cart::fake();
-            let mut internal = MMUInternal::new(cart, None);
+            let mut internal = MMUInternal::new(cart, None, None);
             let mut data = PeripheralData::empty();
             let mut mem = MMU::new(&mut internal, &mut data);
             let mut cpu = CPU::new(false);

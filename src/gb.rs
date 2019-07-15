@@ -1,15 +1,16 @@
 use super::cpu::*;
 use super::mmu::*;
+use crate::cart::Cart;
 #[cfg(test)]
 use crate::cpu::Registers;
 use crate::dma::DMA;
-use crate::peripherals::{Peripheral, PeripheralData};
+use crate::peripherals::PeripheralData;
 use std::io::Write;
 
 use crate::cycles;
 
 #[cfg(feature = "vcd_dump")]
-use VCDDump::VCD;
+use crate::VCDDump::VCD;
 
 pub struct GB<'a> {
     cpu: CPU,
@@ -25,16 +26,17 @@ pub enum GBReason {
 
 impl<'a> GB<'a> {
     pub fn new<'b>(
-        cart: Box<Peripheral>,
+        cart: Cart,
         serial: Option<&'b mut Write>,
         trace: bool,
-        fast_boot: bool,
+        boot_rom: Option<Vec<u8>>,
     ) -> GB {
+        let has_bootrom = boot_rom.is_some();
         let mut gb = GB {
             cpu: CPU::new(trace),
-            mem: MMUInternal::new(cart, serial),
+            mem: MMUInternal::new(cart, serial, boot_rom),
         };
-        if fast_boot {
+        if !has_bootrom {
             let mut data = PeripheralData::empty();
             gb.cpu.initialize(&mut MMU::new(&mut gb.mem, &mut data));
         }
@@ -90,13 +92,6 @@ impl<'a> GB<'a> {
                 .map(|x| mmu.bus.time() < x)
                 .unwrap_or_else(|| false)
         {
-            #[cfg(feature = "vcd_dump")]
-            VCD.as_ref().map(|m| {
-                m.lock().unwrap().as_mut().map(|v| {
-                    let c = self.cpu_cycles;
-                    v.now = c;
-                })
-            });
             self.cpu.execute(&mut mmu);
             if mmu.bus.dma_active() {
                 let fake_dma = DMA::new();

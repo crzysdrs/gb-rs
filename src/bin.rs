@@ -284,9 +284,10 @@ fn main() -> Result<(), std::io::Error> {
                 .help("Don't show a display (useful for testing, benchmarks)"),
         )
         .arg(
-            Arg::with_name("fast-boot")
-                .short("f")
-                .help("Don't run the boot rom."),
+            Arg::with_name("boot-rom")
+                .short("b")
+                .takes_value(true)
+                .help("Specify a boot rom"),
         )
         .arg(
             Arg::with_name("v")
@@ -297,6 +298,24 @@ fn main() -> Result<(), std::io::Error> {
         .get_matches();
 
     let rom = std::path::Path::new(matches.value_of("ROM").unwrap());
+    let boot_rom = match matches.value_of("boot-rom") {
+        Some(name) => {
+            let mut file = std::fs::File::open(name)?;
+            match file.metadata()?.len() {
+                256 | 2304 => {}
+                _ => {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Invalid Boot Rom Size (Not 256 or 2304 bytes)",
+                    ))?;
+                }
+            }
+            let mut v = Vec::with_capacity(256);
+            file.read_to_end(&mut v)?;
+            Some(v)
+        }
+        None => None,
+    };
     let maybe_rom: std::io::Result<Vec<u8>> = match rom.extension() {
         None => Err(std::io::Error::new(
             std::io::ErrorKind::Other,
@@ -353,7 +372,7 @@ fn main() -> Result<(), std::io::Error> {
         cart,
         Some(&mut *serial),
         matches.occurrences_of("trace") > 0,
-        matches.occurrences_of("fast-boot") > 0,
+        boot_rom,
     );
 
     if matches.occurrences_of("no-display") > 0 {

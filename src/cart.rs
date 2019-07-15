@@ -2,7 +2,8 @@ use crate::cpu::InterruptFlag;
 use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 
-enum CGBStatus {
+#[derive(Copy, Clone)]
+pub enum CGBStatus {
     GB,
     SupportsCGB,
     CGBOnly,
@@ -22,16 +23,44 @@ enum MBCType {
 #[allow(dead_code)]
 pub struct Cart {
     mbc: Option<MBCType>,
-    ram: Vec<u8>,
     battery: bool,
     title: String,
     cgb: CGBStatus,
+    cart: Box<Peripheral>,
+}
+
+struct CartPhysical {
+    ram: Vec<u8>,
     rom: Vec<u8>,
     rom_reg: usize,
     ram_reg: usize,
     bank_mode: BankMode,
     ram_enable: bool,
 }
+
+impl CartPhysical {
+    fn new(ram: Vec<u8>, rom: Vec<u8>) -> CartPhysical {
+        CartPhysical {
+            ram,
+            rom,
+            ram_reg: 0,
+            rom_reg: 1,
+            bank_mode: BankMode::ROM,
+            ram_enable: false,
+        }
+    }
+}
+
+impl Peripheral for Cart {}
+impl Addressable for Cart {
+    fn read_byte(&mut self, addr: u16) -> u8 {
+        self.cart.read_byte(addr)
+    }
+    fn write_byte(&mut self, addr: u16, v: u8) {
+        self.cart.write_byte(addr, v);
+    }
+}
+
 #[derive(Debug)]
 enum BankMode {
     ROM,
@@ -39,28 +68,34 @@ enum BankMode {
 }
 
 impl Cart {
-    pub fn fake() -> Box<Peripheral> {
-        let cart = Cart {
+    pub fn cgb(&self) -> CGBStatus {
+        self.cgb
+    }
+    pub fn fake() -> Cart {
+        Cart {
             title: "Fake ROM".to_string(),
             cgb: CGBStatus::GB,
             mbc: None,
             battery: false,
-            ram: Vec::with_capacity(0),
-            rom: Vec::with_capacity(0),
-            rom_reg: 1,
-            ram_reg: 0,
-            bank_mode: BankMode::ROM,
-            ram_enable: false,
-        };
-        Box::new(CartMBC1 { cart })
+            cart: Box::new(CartMBC1 {
+                cart: CartPhysical::new(Vec::with_capacity(0), Vec::with_capacity(0)),
+            }),
+        }
     }
-    pub fn new(rom: Vec<u8>) -> Box<Peripheral> {
+    pub fn new(rom: Vec<u8>) -> Cart {
         let cgb = match rom[0x143] {
             0x80 => CGBStatus::SupportsCGB,
             0xC0 => CGBStatus::CGBOnly,
             _ => CGBStatus::GB,
         };
 
+        /* temporarily disable broken cgb support */
+        let cgb = match cgb {
+            CGBStatus::CGBOnly => {
+                panic!("Gameboy Color games not yet supported.");
+            }
+            _ => CGBStatus::GB,
+        };
         let end = match cgb {
             CGBStatus::SupportsCGB | CGBStatus::CGBOnly => 0x143,
             _ => 0x144,
@@ -115,30 +150,29 @@ impl Cart {
         println!("ROM Size: {}", rom.len());
         println!("ROM Claimed Size: {}", (32 << 10) << rom[0x148]);
         println!("ROM: {:4x}", rom[0x148]);
-        let cart = Cart {
+
+        let physical = CartPhysical::new(vec![0u8; ram_size], rom);
+        let peripheral: Box<Peripheral> = match mbc {
+            None | Some(MBC1) => Box::new(CartMBC1 { cart: physical }),
+            Some(MBC3) => Box::new(CartMBC3 {
+                cart: physical,
+                rtc_latch: None,
+                rtc: RTC::new(),
+            }),
+            Some(MBC5) => Box::new(CartMBC5 { cart: physical }),
+            _ => unimplemented!("Unhandled MBC Cart type {:?}", mbc),
+        };
+        Cart {
             title,
             cgb,
             mbc,
             battery,
-            ram: vec![0u8; ram_size],
-            rom,
-            rom_reg: 1,
-            ram_reg: 0,
-            bank_mode: BankMode::ROM,
-            ram_enable: false,
-        };
-        match cart.mbc {
-            None | Some(MBC1) => Box::new(CartMBC1 { cart }),
-            Some(MBC3) => Box::new(CartMBC3 {
-                cart,
-                rtc_latch: None,
-                rtc: RTC::new(),
-            }),
-            Some(MBC5) => Box::new(CartMBC5 { cart }),
-            _ => unimplemented!("Unhandled MBC Cart type {:?}", cart.mbc),
+            cart: peripheral,
         }
     }
+}
 
+impl CartPhysical {
     fn ram_offset(&self, addr: u16) -> Option<usize> {
         let addr = match (self.ram_enable, &self.bank_mode) {
             (true, BankMode::ROM) => Some(addr as usize - 0xA000),
@@ -149,7 +183,6 @@ impl Cart {
         };
         addr
     }
-
     fn rom_offset(&self, base: u16, addr: u16) -> usize {
         let bank = match (base, &self.bank_mode) {
             (0x0000, BankMode::RAM) => self.ram_reg << 5, /* can't find this in mooneye docs */
@@ -169,7 +202,7 @@ impl Cart {
 }
 
 struct CartMBC1 {
-    cart: Cart,
+    cart: CartPhysical,
 }
 
 impl Peripheral for CartMBC1 {}
@@ -301,7 +334,7 @@ impl RTC {
 }
 
 struct CartMBC3 {
-    cart: Cart,
+    cart: CartPhysical,
     rtc: RTC,
     rtc_latch: Option<RTC>,
 }
@@ -405,7 +438,7 @@ impl Addressable for CartMBC3 {
 }
 
 struct CartMBC5 {
-    cart: Cart,
+    cart: CartPhysical,
 }
 
 impl Peripheral for CartMBC5 {}

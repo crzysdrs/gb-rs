@@ -199,26 +199,29 @@ impl FrameSequencer {
                 }
                 self.time = (self.time + 1) % 8;
                 #[cfg(feature = "vcd_dump")]
-                VCD.as_ref().map(|m| {
-                    m.lock().unwrap().as_mut().map(|v| {
-                        for (name, val) in &[
-                            ("vol", &mut self.clks.vol),
-                            ("length", &mut self.clks.length),
-                            ("sweep", &mut self.clks.sweep),
-                        ] {
-                            let (mut writer, mem) = v.writer();
-                            let (wire, id) = mem.get(*name).unwrap();
-                            wire.write(
-                                &mut writer,
-                                *id,
-                                match *val {
-                                    Clk::Rising | Clk::High => 1,
-                                    Clk::Falling | Clk::Low => 0,
-                                },
-                            );
-                        }
-                    })
-                });
+                {
+                    use crate::VCDDump::VCD;
+                    VCD.as_ref().map(|m| {
+                        m.lock().unwrap().as_mut().map(|v| {
+                            for (name, val) in &[
+                                ("vol", &mut self.clks.vol),
+                                ("length", &mut self.clks.length),
+                                ("sweep", &mut self.clks.sweep),
+                            ] {
+                                let (mut writer, mem) = v.writer();
+                                let (wire, id) = mem.get(*name).unwrap();
+                                wire.write(
+                                    &mut writer,
+                                    *id,
+                                    match *val {
+                                        Clk::Rising | Clk::High => 1,
+                                        Clk::Falling | Clk::Low => 0,
+                                    },
+                                );
+                            }
+                        })
+                    });
+                }
             }
         }
     }

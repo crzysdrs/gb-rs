@@ -30,6 +30,10 @@ pub mod cycles {
         value_unsafe: 2,
         _marker: std::marker::PhantomData,
     };
+    pub const CGB: CGB<u64> = Cycles {
+        value_unsafe: 1,
+        _marker: std::marker::PhantomData,
+    };
     pub type CycleCount = CGB<u64>;
 }
 use dim::si;
@@ -82,9 +86,11 @@ where
 // }
 
 #[cfg(feature = "vcd_dump")]
+#[macro_use]
+extern crate lazy_static;
+
+#[cfg(feature = "vcd_dump")]
 mod VCDDump {
-    #[macro_use]
-    extern crate lazy_static;
 
     use std::collections::HashMap;
     use std::sync::Mutex;
@@ -92,7 +98,7 @@ mod VCDDump {
     pub struct VCDItems {
         vcd: std::fs::File,
         last_emit: u64,
-        now: u64,
+        pub now: u64,
         mem: VCDMap,
     }
 
@@ -150,7 +156,7 @@ mod VCDDump {
     use std::borrow::Cow;
 
     lazy_static! {
-        static ref VCD : Option<Mutex<Option<VCDItems>>> = {
+        pub static ref VCD : Option<Mutex<Option<VCDItems>>> = {
             fn make_vcd() -> std::io::Result<VCDItems> {
                 let mut file = std::fs::File::create("test.vcd")?;
                 let mut h = HashMap::new();
@@ -316,8 +322,10 @@ mod tests {
         let bg_tiles = gb.get_mem().get_display().all_bgs();
         bg_tiles
             .chunks(32)
-            .map(|line| std::str::from_utf8(line).unwrap().trim())
+            .map(|line| std::str::from_utf8(&line).unwrap().trim())
             .intersperse(&"\n".to_owned())
+            .map(|s| s.replace('\0', &" "))
+            .filter(|s| s.len() > 00)
             .collect::<String>()
             .trim_end()
             .to_owned()
@@ -348,7 +356,7 @@ mod tests {
                         Cart::new(include_bytes!($path).to_vec()),
                         Some(&mut buf),
                         false,
-                        true,
+                        None,
                     );
                     gb.step_timeout(Some((30.0 * dimensioned::si::S).into()), &mut p);
                     read_screen(&mut gb)
@@ -372,7 +380,7 @@ mod tests {
                         Cart::new(include_bytes!($path).to_vec()),
                         Some(&mut buf),
                         false,
-                        true,
+                        None,
                     );
                     gb.magic_breakpoint();
 

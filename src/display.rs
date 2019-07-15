@@ -1,3 +1,4 @@
+use crate::cart::CGBStatus;
 use crate::cpu::InterruptFlag;
 use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
@@ -59,10 +60,20 @@ enum LCDCFlag {
 }
 
 enum OAMFlag {
+    ColorPaletteMask = 0b111,
     PaletteNumber = 1 << 4,
     FlipX = 1 << 5,
     FlipY = 1 << 6,
     Priority = 1 << 7,
+}
+
+enum BGMapFlag {
+    ColorPaletteMask = 0b111,
+    VramBank = 1 << 3,
+    //Unused = 1 << 4,
+    FlipX = 1 << 5,
+    FlipY = 1 << 6,
+    BGPriority = 1 << 7,
 }
 
 #[derive(Copy, Clone)]
@@ -73,8 +84,14 @@ pub struct SpriteAttribute {
     flags: u8,
 }
 
+#[derive(Copy, Clone)]
+struct Color {
+    high: u8,
+    low: u8,
+}
+
 pub struct Display {
-    vram: [u8; 8 << 10],
+    vram: [u8; 2 * 8 << 10],
     oam: [SpriteAttribute; 40],
     oam_searched: Vec<SpriteAttribute>,
     scx: u8,
@@ -88,78 +105,41 @@ pub struct Display {
     obp1: u8,
     wy: u8,
     wx: u8,
+    //TODO CGB
+    vbk: u8,
+    bgps: u8,
+    bgpd: u8,
+    obps: u8,
+    obpd: u8,
+    //END TODO CGB
     ppu: PPU,
     unused_cycles: cycles::CycleCount,
     state: DisplayState,
     changed_state: bool,
+    frame: u64,
+    cgb_mode: CGBStatus,
+    bgpalette: [[Color; 4]; 8],
+    objpalette: [[Color; 4]; 8],
 }
 
-// pub trait LCD<C, P> {
-//     fn draw_point(&mut self, c: C, point: P);
-//     fn screen_power(&mut self, on: bool);
-//     fn draw_line(&mut self, start: P, c: &Vec<u8>);
-// }
-
-// impl<'a> LCD<sdl2::pixels::Color, sdl2::rect::Point> for &'a mut [u8] {
-//     fn draw_line(&mut self, start: sdl2::rect::Point, c: &Vec<u8>) {
-//         let start = (start.x as usize + start.y as usize * SCREEN_X) * BYTES_PER_PIXEL as usize;
-//         let end = start + SCREEN_X * BYTES_PER_PIXEL;
-//         if c.len() > 0 {
-//             assert_eq!(c.len(), SCREEN_X * BYTES_PER_PIXEL);
-//             self[start..end].copy_from_slice(c[..].as_ref());
-//         }
-//     }
-//     fn draw_point(&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
-//         let start = (point.x as usize + point.y as usize * SCREEN_X) as usize;
-//         self[start..start + BYTES_PER_PIXEL].copy_from_slice(&[c.r, c.g, c.b, c.a]);
-//     }
-//     fn screen_power(&mut self, on: bool) {
-//         if !on {
-//             self[..].copy_from_slice(&[0xff; SCREEN_X * SCREEN_Y * BYTES_PER_PIXEL]);
-//         }
-//     }
-// }
-
-// impl<'a> LCD<sdl2::pixels::Color, sdl2::rect::Point> for sdl2::render::Texture<'a> {
-//     fn draw_line(&mut self, start: sdl2::rect::Point, c: &Vec<u8>) {
-//         if c.len() > 0 {
-//             self.update(
-//                 Some(sdl2::rect::Rect::new(
-//                     start.x,
-//                     start.y,
-//                     (c.len() / 4) as u32,
-//                     1,
-//                 )),
-//                 c.as_ref(),
-//                 c.len(),
-//             ).unwrap();
-//         }
-//     }
-//     fn draw_point(&mut self, c: sdl2::pixels::Color, point: sdl2::rect::Point) {
-//         self.update(
-//             Some(sdl2::rect::Rect::new(point.x, point.y, 1, 1)),
-//             &[c.r, c.g, c.b, c.a],
-//             4,
-//         ).unwrap();
-//     }
-//     fn screen_power(&mut self, on: bool) {
-//         if !on {
-//             let c: u8 = 0xff;
-
-//             self.update(
-//                 Some(sdl2::rect::Rect::new(0, 0, 160, 144)),
-//                 &[c; 160 * 144 * 4],
-//                 4,
-//             ).unwrap();
-//         }
-//     }
-// }
-
 impl Display {
-    pub fn new() -> Display {
+    fn bank_vram(vram: &mut [u8], bank: u8) -> &mut [u8] {
+        let start = usize::from(bank) * (8 << 10);
+        let len = 8 << 10;
+        &mut vram[start..start + len]
+    }
+    fn bank_vram_ro(vram: &[u8], bank: u8) -> &[u8] {
+        let start = usize::from(bank) * (8 << 10);
+        let len = 8 << 10;
+        &vram[start..start + len]
+    }
+
+    pub fn new(cgb: CGBStatus) -> Display {
         Display {
+            cgb_mode: cgb,
+            frame: 0,
             changed_state: false,
-            vram: [0; 8 << 10],
+            vram: [0; 2 * 8 << 10],
             oam: [SpriteAttribute {
                 x: 0,
                 y: 0,
@@ -178,9 +158,18 @@ impl Display {
             obp1: 0,
             wy: 0,
             wx: 0,
+            //TODO: CGB
+            vbk: 0,
+            bgpd: 0,
+            bgps: 0,
+            obpd: 0,
+            obps: 0,
+            //END CGB
             ppu: PPU::new(),
             state: DisplayState::OAMSearch,
             unused_cycles: 0 * cycles::GB,
+            bgpalette: [[Color { high: 0, low: 0 }; 4]; 8],
+            objpalette: [[Color { high: 0, low: 0 }; 4]; 8],
         }
     }
     pub fn oam_lookup(&self, idx: OAMIdx) -> Option<&SpriteAttribute> {
@@ -257,7 +246,15 @@ impl Display {
             0x1C00
         };
         let idx = bg_map + true_y as u16 * 32 + true_x as u16;
-        BGIdx(self.vram[idx as usize])
+        BGIdx(
+            Display::bank_vram_ro(&self.vram, 0)[idx as usize],
+            match self.cgb_mode {
+                CGBStatus::GB => 0,
+                CGBStatus::SupportsCGB | CGBStatus::CGBOnly => {
+                    Display::bank_vram_ro(&self.vram, 1)[idx as usize]
+                }
+            },
+        )
     }
     fn get_win_tile(&self, x: u8) -> Tile {
         let x = x.wrapping_sub(self.wx.wrapping_sub(7));
@@ -268,7 +265,18 @@ impl Display {
             0x1c00u16
         };
         let idx = win_map + (y / 8) as u16 * 32 + (x / 8) as u16;
-        Tile::Window(BGIdx(self.vram[idx as usize]), Coord(0, y % 8))
+        Tile::Window(
+            BGIdx(
+                Display::bank_vram_ro(&self.vram, 0)[idx as usize],
+                match self.cgb_mode {
+                    CGBStatus::GB => 0,
+                    CGBStatus::SupportsCGB | CGBStatus::CGBOnly => {
+                        Display::bank_vram_ro(&self.vram, 1)[idx as usize]
+                    }
+                },
+            ),
+            Coord(0, y % 8),
+        )
     }
 
     #[cfg(test)]
@@ -287,24 +295,24 @@ impl Display {
         for y in 0..32 {
             for x in 0..32 {
                 let bgidx = self.get_bg_tile(x, y);
-                print!("{:02x} ", bgidx.0);
+                print!("{:02x}:{:02x} ", bgidx.0, bgidx.1);
             }
             println!("");
         }
 
         for t in 0..=0x20 {
-            println!("Tile {}", t);
-            let idx = BGIdx(t);
+            let idx = BGIdx(t, 0);
+            println!("BG Tile {}", t);
             let mut ppu = PPU::new();
             for y in 0..8 {
                 let t = Tile::BG(idx, Coord(0, y));
                 ppu.load(&t, t.fetch(self));
                 for _x in 0..8 {
                     let c = match ppu.shift() {
-                        Pixel(_, PaletteShade::Empty) => 0,
-                        Pixel(_, PaletteShade::Low) => 1,
-                        Pixel(_, PaletteShade::Mid) => 2,
-                        Pixel(_, PaletteShade::High) => 3,
+                        Pixel(_, _, PaletteShade::Empty) => 0,
+                        Pixel(_, _, PaletteShade::Low) => 1,
+                        Pixel(_, _, PaletteShade::Mid) => 2,
+                        Pixel(_, _, PaletteShade::High) => 3,
                     };
                     print!("{} ", c)
                 }
@@ -314,7 +322,9 @@ impl Display {
     }
     fn lookup(&mut self, addr: u16) -> &mut u8 {
         match addr {
-            0x8000...0x9fff => &mut self.vram[(addr - 0x8000) as usize],
+            0x8000...0x9fff => {
+                &mut Display::bank_vram(&mut self.vram, self.vbk)[(addr - 0x8000) as usize]
+            }
             0xFE00...0xFE9F => {
                 let idx = ((addr & 0xff) >> 2) as usize;
                 let oam = &mut self.oam[idx];
@@ -337,43 +347,89 @@ impl Display {
             0xff49 => &mut self.obp1,
             0xff4a => &mut self.wy,
             0xff4b => &mut self.wx,
+            //TODO: CGB
+            0xff4f => &mut self.vbk,
+            0xff68 => &mut self.bgps,
+            0xff69 => &mut self.bgpd,
+            0xff6a => &mut self.obps,
+            0xff6b => &mut self.obpd,
             _ => panic!("unhandled address in display {:x}", addr),
         }
     }
 
     fn bgp_shade(&self, p: Pixel) -> (u8, u8, u8, u8) {
+        use std::convert::TryFrom;
+        fn rgb_from_palette_color(color: &Color) -> (u8, u8, u8, u8) {
+            let rgb = u16::from_be_bytes([color.high, color.low]);
+            let bits = 0b11111;
+            (
+                u8::try_from((rgb & (bits << 10)) >> 7).unwrap(), //b
+                u8::try_from((rgb & (bits << 5)) >> 2).unwrap(),  //g
+                u8::try_from((rgb & bits) << 3).unwrap(),         //r
+                0xff,
+            )
+        }
         let white = (0xff, 0xff, 0xff, 0xff);
         let dark_grey = (0xaa, 0xaa, 0xaa, 0xff);
         let light_grey = (0x55, 0x55, 0x55, 0xff);
         let black = (0x00, 0x00, 0x00, 0xff);
-        let pal = if self.display_enabled() {
-            match p {
-                Pixel(Palette::BG, _) => {
-                    if self.lcdc & mask_u8!(LCDCFlag::BGDisplayPriority) == 0 {
-                        0
+        if let (true, Pixel(_, palette, shade)) = (self.display_enabled(), p) {
+            let shade_id: u32 = match shade {
+                PaletteShade::High => 3,
+                PaletteShade::Mid => 2,
+                PaletteShade::Low => 1,
+                PaletteShade::Empty => 0,
+            };
+            match palette {
+                Palette::BG | Palette::OBP0 | Palette::OBP1 => {
+                    let pal = match palette {
+                        Palette::BG => {
+                            /* turns off all background/windowing */
+                            if self.lcdc & mask_u8!(LCDCFlag::BGDisplayPriority) == 0 {
+                                0
+                            } else {
+                                self.bgp
+                            }
+                        }
+                        Palette::OBP0 => self.obp0,
+                        Palette::OBP1 => self.obp1,
+                        _ => unreachable!(),
+                    };
+                    let shade_id = (pal >> (shade_id * 2)) & 0b11;
+                    let gbc = match self.cgb_mode {
+                        CGBStatus::CGBOnly | CGBStatus::SupportsCGB => true,
+                        CGBStatus::GB => false,
+                    };
+                    if gbc {
+                        let palette = match palette {
+                            Palette::BG => &self.bgpalette[0],
+                            Palette::OBP0 => &self.objpalette[0],
+                            Palette::OBP1 => &self.objpalette[1],
+                            _ => unreachable!(),
+                        };
+                        rgb_from_palette_color(&palette[usize::from(shade_id)])
                     } else {
-                        self.bgp
+                        match shade_id {
+                            0b00 => white,
+                            0b01 => dark_grey,
+                            0b10 => light_grey,
+                            0b11 => black,
+                            _ => panic!("shade out of bounds"),
+                        }
                     }
                 }
-                Pixel(Palette::OBP0, _) => self.obp0,
-                Pixel(Palette::OBP1, _) => self.obp1,
+                Palette::BGColor(index) | Palette::OBPColor(index) => {
+                    let palette = match palette {
+                        Palette::BGColor(_) => &self.bgpalette,
+                        Palette::OBPColor(_) => &self.objpalette,
+                        _ => unreachable!(),
+                    };
+                    let color = palette[usize::from(index)][usize::try_from(shade_id).unwrap()];
+                    rgb_from_palette_color(&color)
+                }
             }
         } else {
-            0
-        };
-
-        let shade_id = match p {
-            Pixel(_, PaletteShade::High) => 3,
-            Pixel(_, PaletteShade::Mid) => 2,
-            Pixel(_, PaletteShade::Low) => 1,
-            Pixel(_, PaletteShade::Empty) => 0,
-        };
-        match (pal >> (shade_id * 2)) & 0b11 {
-            0b00 => white,
-            0b01 => dark_grey,
-            0b10 => light_grey,
-            0b11 => black,
-            _ => panic!("shade out of bounds"),
+            white
         }
     }
 
@@ -413,7 +469,7 @@ impl Display {
         // if std::ops::Range::is_empty(range) {
         //     return;
         // }
-        let fake = Tile::BG(BGIdx(0), Coord(0, 0));
+        let fake = Tile::BG(BGIdx(0, 0), Coord(0, 0));
         let l = fake.fetch(self);
         const IGNORED_OFFSET: usize = 8;
         self.ppu.load(&fake, l);
@@ -453,7 +509,7 @@ impl Display {
 #[derive(Copy, Clone)]
 struct SpriteIdx(u8);
 #[derive(Copy, Clone)]
-struct BGIdx(u8);
+struct BGIdx(u8, u8);
 #[derive(Copy, Clone)]
 struct TileIdx(u8);
 #[derive(Copy, Clone)]
@@ -514,19 +570,34 @@ impl Tile {
             _ => unreachable!(),
         }
     }
-
-    pub fn fetch(&self, display: &mut Display) -> (bool, Palette, u16) {
-        let (start, line_offset) = match *self {
+    pub fn fetch(&self, display: &mut Display) -> (Priority, Palette, u16) {
+        let (start, line_offset, flip_x, vbank) = match *self {
             Tile::Window(idx, coord) | Tile::BG(idx, coord) => {
                 let bytes_per_tile = 16;
                 let start = if display.lcdc & mask_u8!(LCDCFlag::BGWinTileDataSelect) == 0 {
                     /* signed tile idx */
-                    (0x1000 + idx.0 as i8 as i16 * bytes_per_tile) as u16
+                    let signed_idx = idx.0 as i8 as i16;
+                    (0x1000 + signed_idx * bytes_per_tile) as u16
                 } else {
                     /*unsigned tile_idx */
                     0 + idx.0 as u16 * bytes_per_tile as u16
                 };
-                (start as usize, (coord.y() % 8) as usize)
+                let bgmap = idx.1;
+                let y = if bgmap & mask_u8!(BGMapFlag::FlipY) != 0 {
+                    bytes_per_tile - 1 - i16::from(coord.y())
+                } else {
+                    i16::from(coord.y())
+                };
+                (
+                    start as usize,
+                    (y % 8) as usize,
+                    bgmap & mask_u8!(BGMapFlag::FlipX) != 0,
+                    if bgmap & mask_u8!(BGMapFlag::VramBank) != 0 {
+                        1
+                    } else {
+                        0
+                    },
+                )
             }
             Tile::Sprite(oam, coord) => {
                 let bytes_per_line = 2;
@@ -541,35 +612,60 @@ impl Tile {
                 } else {
                     coord.y()
                 };
-                (start as usize, y as usize)
+                (
+                    start as usize,
+                    y as usize,
+                    oam.flags & mask_u8!(OAMFlag::FlipX) != 0,
+                    0,
+                )
             }
         };
 
-        let b1 = display.vram[start + (line_offset * 2)];
-        let b2 = display.vram[start + (line_offset * 2) + 1];
+        let b1 = Display::bank_vram(&mut display.vram, vbank)[start + (line_offset * 2)];
+        let b2 = Display::bank_vram(&mut display.vram, vbank)[start + (line_offset * 2) + 1];
 
-        let line = match *self {
-            Tile::Sprite(oam, _) => {
-                if oam.flags & mask_u8!(OAMFlag::FlipX) != 0 {
-                    u16::from_le_bytes([BYTE_REVERSE[b1 as usize], BYTE_REVERSE[b2 as usize]])
-                } else {
-                    u16::from_le_bytes([b1, b2])
-                }
-            }
-            _ => u16::from_le_bytes([b1, b2]),
+        let line = if flip_x {
+            u16::from_le_bytes([BYTE_REVERSE[b1 as usize], BYTE_REVERSE[b2 as usize]])
+        } else {
+            u16::from_le_bytes([b1, b2])
         };
 
+        let gbc = match display.cgb_mode {
+            CGBStatus::CGBOnly | CGBStatus::SupportsCGB => true,
+            CGBStatus::GB => false,
+        };
         let (priority, palette) = match *self {
             Tile::Sprite(oam, _) => {
-                let priority = oam.flags & mask_u8!(OAMFlag::Priority) == 0;
-                let palette = if oam.flags & mask_u8!(OAMFlag::PaletteNumber) == 0 {
+                let priority = if oam.flags & mask_u8!(OAMFlag::Priority) != 0 {
+                    Priority::BG
+                } else {
+                    Priority::Obj
+                };
+                let palette = if gbc {
+                    Palette::OBPColor(oam.flags & mask_u8!(OAMFlag::ColorPaletteMask))
+                } else if oam.flags & mask_u8!(OAMFlag::PaletteNumber) == 0 {
                     Palette::OBP0
                 } else {
                     Palette::OBP1
                 };
                 (priority, palette)
             }
-            Tile::BG(_, _) | Tile::Window(_, _) => (false, Palette::BG),
+            Tile::BG(idx, _) | Tile::Window(idx, _) => {
+                if gbc {
+                    let bgmap = idx.1;
+                    let palette_number = bgmap & mask_u8!(BGMapFlag::ColorPaletteMask);
+                    (
+                        if bgmap & mask_u8!(BGMapFlag::BGPriority) != 0 {
+                            Priority::BG
+                        } else {
+                            Priority::Obj
+                        },
+                        Palette::BGColor(palette_number),
+                    )
+                } else {
+                    (Priority::Obj, Palette::BG)
+                }
+            }
         };
         (priority, palette, line)
     }
@@ -587,12 +683,20 @@ enum Palette {
     BG,
     OBP0,
     OBP1,
+    BGColor(u8),
+    OBPColor(u8),
 }
 
-struct Pixel(Palette, PaletteShade);
+struct Pixel(Priority, Palette, PaletteShade);
 
 struct PPU {
     shift: VecDeque<Pixel>,
+}
+
+#[derive(Copy, Clone)]
+enum Priority {
+    Obj,
+    BG,
 }
 
 impl PPU {
@@ -601,26 +705,36 @@ impl PPU {
             shift: VecDeque::with_capacity(16),
         }
     }
-    fn load(&mut self, _t: &Tile, (priority, palette, line): (bool, Palette, u16)) {
+    fn load(&mut self, _t: &Tile, (priority, palette, line): (Priority, Palette, u16)) {
         for x in 0..8 {
             let p = Tile::line_palette(line, x);
 
             match palette {
-                Palette::OBP1 | Palette::OBP0 => {
+                Palette::OBPColor(_) | Palette::OBP1 | Palette::OBP0 => {
                     if p != PaletteShade::Empty {
-                        match self.shift[x] {
-                            Pixel(Palette::BG, _) if priority => {
-                                self.shift[x] = Pixel(palette, p);
+                        match (&mut self.shift[x], priority, p) {
+                            (Pixel(_, Palette::OBP0, _), _, _)
+                            | (Pixel(_, Palette::OBP1, _), _, _)
+                            | (Pixel(_, Palette::OBPColor(_), _), _, _) => {
+                                /* preserve old object */
                             }
-                            Pixel(Palette::BG, PaletteShade::Empty) => {
-                                self.shift[x] = Pixel(palette, p);
-                            }
-                            _ => { /* existing non-background data */ }
-                        }
+                            (
+                                old @ Pixel(Priority::BG, _, PaletteShade::Empty),
+                                priority,
+                                shade,
+                            )
+                            | (old @ Pixel(Priority::Obj, _, _), priority @ Priority::Obj, shade)
+                            | (
+                                old @ Pixel(Priority::Obj, _, PaletteShade::Empty),
+                                priority @ Priority::BG,
+                                shade,
+                            ) => *old = Pixel(priority, palette, shade),
+                            _ => { /* preserve background */ }
+                        };
                     }
                 }
-                Palette::BG => {
-                    self.shift.push_back(Pixel(palette, p));
+                Palette::BGColor(_) | Palette::BG => {
+                    self.shift.push_back(Pixel(priority, palette, p));
                 }
             }
         }
@@ -636,12 +750,57 @@ impl PPU {
     }
 }
 
+enum ColorPaletteMask {
+    HighLow = 1 << 0,
+    PaletteDataMask = 0b00000110,
+    PaletteNumMask = 0b00111000,
+    NextWrite = 0b10000000,
+}
+
 impl Addressable for Display {
     fn read_byte(&mut self, addr: u16) -> u8 {
         *self.lookup(addr)
     }
     fn write_byte(&mut self, addr: u16, v: u8) {
-        *self.lookup(addr) = v;
+        fn update_color_palette(palette: &mut [[Color; 4]; 8], mut control: u8, data: u8) -> u8 {
+            let high = (control & mask_u8!(ColorPaletteMask::HighLow)) != 0;
+            let palette_data =
+                usize::from((control & mask_u8!(ColorPaletteMask::PaletteDataMask)) >> 1);
+            let palette_num =
+                usize::from((control & mask_u8!(ColorPaletteMask::PaletteNumMask)) >> 3);
+            let next_palette = (control & mask_u8!(ColorPaletteMask::NextWrite)) != 0;
+
+            let color = &mut palette[palette_num][palette_data];
+            if high {
+                color.high = data;
+            } else {
+                color.low = data;
+            }
+            if next_palette {
+                let mask = mask_u8!(
+                    ColorPaletteMask::PaletteDataMask
+                        | ColorPaletteMask::PaletteNumMask
+                        | ColorPaletteMask::HighLow
+                );
+                let prev = control & mask;
+                control &= !mask;
+                control |= (prev + 1) & mask;
+            }
+            control
+        }
+        match addr {
+            0xff68 => self.bgps = v,
+            0xff69 => {
+                self.bgpd = v;
+                self.bgps = update_color_palette(&mut self.bgpalette, self.bgps, self.bgpd);
+            }
+            0xff6a => self.obps = v,
+            0xff6b => {
+                self.obpd = v;
+                self.obps = update_color_palette(&mut self.objpalette, self.obps, self.obpd);
+            }
+            _ => *self.lookup(addr) = v,
+        }
     }
 }
 impl Peripheral for Display {
@@ -721,6 +880,7 @@ impl Peripheral for Display {
             }
             DisplayState::VBlank => {
                 if self.unused_cycles >= (43 + 51 + 20) * cycles::GB {
+                    self.frame += 1;
                     /* do work */
                     self.unused_cycles -= (43 + 51 + 20) * cycles::GB;
                     new_ly += 1;

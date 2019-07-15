@@ -4,10 +4,12 @@ use super::fakemem::FakeMem;
 use super::mem::Mem;
 use super::serial::Serial;
 use super::timer::Timer;
+use crate::cart::Cart;
 use crate::cycles;
 use crate::dma::DMA;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use crate::sound::Mixer;
+
 use std::io;
 use std::io::{Read, Seek, SeekFrom, Write};
 enum_from_primitive! {
@@ -86,6 +88,35 @@ enum_from_primitive! {
     }
 }
 
+pub struct MemReg {
+    reg: u8,
+    read_mask: u8,
+    write_mask: u8,
+}
+
+impl MemReg {
+    pub fn new(v: u8, r: u8, w: u8) -> MemReg {
+        MemReg {
+            reg: v,
+            read_mask: r,
+            write_mask: w,
+        }
+    }
+    pub fn reg(&self) -> u8 {
+        self.reg
+    }
+}
+
+impl Peripheral for MemReg {}
+impl Addressable for MemReg {
+    fn write_byte(&mut self, _addr: u16, val: u8) {
+        self.reg = (val & !self.write_mask) | (val & self.write_mask);
+    }
+    fn read_byte(&mut self, _addr: u16) -> u8 {
+        self.reg & self.read_mask
+    }
+}
+
 pub struct MMU<'a, 'b, 'c> {
     pub bus: &'b mut MMUInternal<'a>,
     data: &'b mut PeripheralData<'c>,
@@ -98,9 +129,11 @@ pub struct MMUInternal<'a> {
     display: Display,
     controller: Controller,
     dma: DMA,
+    svbk: MemReg, //TODO: GBC
+    key1: MemReg, //TODO: GBC
     bios: Mem,
-    cart: Box<Peripheral>,
-    ram0: Mem,
+    cart: Cart,
+    ram0: Vec<Mem>,
     fake_mem: FakeMem,
     serial: Serial<'a>,
     ram1: Mem,
@@ -112,7 +145,10 @@ pub struct MMUInternal<'a> {
     last_sync: cycles::CycleCount,
 }
 
-fn side_effect_free<T, F: FnMut(&mut MMUInternal) -> T>(mmu: &mut MMUInternal, mut func: F) -> T {
+pub fn side_effect_free<T, F: FnMut(&mut MMUInternal) -> T>(
+    mmu: &mut MMUInternal,
+    mut func: F,
+) -> T {
     let temp = mmu.effectful_change;
     mmu.effectful_change = false;
     let t = func(mmu);
@@ -120,14 +156,41 @@ fn side_effect_free<T, F: FnMut(&mut MMUInternal) -> T>(mmu: &mut MMUInternal, m
     t
 }
 
+pub fn side_effect_free_mem<T, F: FnMut(&mut MMU) -> T>(mmu: &mut MMU, mut func: F) -> T {
+    let temp = mmu.bus.effectful_change;
+    mmu.bus.effectful_change = false;
+    let t = func(mmu);
+    mmu.bus.effectful_change = temp;
+    t
+}
+
 impl MMUInternal<'_> {
-    pub fn new(cart: Box<Peripheral>, serial: Option<&mut Write>) -> MMUInternal {
-        let bios = Mem::new(true, 0, include_bytes!("../boot_rom.gb").to_vec());
-        //let bios = Mem::new(true, 0, vec![0u8; 256]);
-        let ram0 = Mem::new(false, 0xc000, vec![0; 8 << 10]);
+    pub fn double_speed(&self) -> bool {
+        (self.key1.reg & (1 << 7)) != 0
+    }
+    pub fn toggle_speed(&mut self) {
+        self.key1.reg = self.key1.reg & !0x1; //remove speed request
+        self.key1.reg = self.key1.reg ^ (1 << 7);
+    }
+    pub fn speed_change(&self) -> bool {
+        (self.key1.reg & 0x1) != 0
+    }
+    pub fn new(cart: Cart, serial: Option<&mut Write>, boot_rom: Option<Vec<u8>>) -> MMUInternal {
+        let bios = Mem::new(
+            true,
+            0,
+            match boot_rom {
+                Some(rom) => rom,
+                None => vec![0; 0],
+            },
+        );
+        let ram0 = (0..8)
+            .map(|i| Mem::new(false, if i > 0 { 0xd000 } else { 0xc000 }, vec![0; 4 << 10]))
+            .collect();
         let ram1 = Mem::new(false, 0xff80, vec![0; 0xffff - 0xff80 + 1]);
         let ram2 = Mem::new(false, 0xfea0, vec![0; 0xff00 - 0xfea0 + 1]);
         let interrupt_flag = Mem::new(false, 0xff0f, vec![0; 1]);
+        let cart_mode = cart.cgb();
         let mem = MMUInternal {
             time: 0 * cycles::GB,
             last_sync: 0 * cycles::GB,
@@ -135,7 +198,9 @@ impl MMUInternal<'_> {
             bios_exists: true,
             bios,
             cart,
-            display: Display::new(),
+            svbk: MemReg::new(0, 0b111, 0b111),
+            key1: MemReg::new(0, !0, 0b1),
+            display: Display::new(cart_mode),
             timer: Timer::new(),
             serial: Serial::new(serial),
             controller: Controller::new(),
@@ -152,34 +217,55 @@ impl MMUInternal<'_> {
     }
     fn lookup_peripheral(&mut self, addr: &mut u16) -> &mut Peripheral {
         match addr {
-            0x0000...0x00ff => {
+            0x0000...0x00FF => {
                 if self.bios_exists {
                     &mut self.bios as &mut Peripheral
                 } else {
-                    &mut *self.cart as &mut Peripheral
+                    &mut self.cart as &mut Peripheral
                 }
             }
-            0x0100...0x7FFF => &mut *self.cart as &mut Peripheral,
+            0x0100...0x0200 => &mut self.cart as &mut Peripheral,
+            0x0200...0x08FF => {
+                //TODO:GBC
+                if self.bios_exists && self.bios.len() > 256 {
+                    //*addr -= 0x100;
+                    &mut self.bios as &mut Peripheral
+                } else {
+                    &mut self.cart as &mut Peripheral
+                }
+            }
+            0x0900...0x7FFF => &mut self.cart as &mut Peripheral,
             0x8000...0x9FFF => &mut self.display as &mut Peripheral,
-            0xA000...0xBFFF => &mut *self.cart as &mut Peripheral,
-            0xC000...0xDFFF => &mut self.ram0 as &mut Peripheral,
-            0xE000...0xFDFF => {
+            0xA000...0xBFFF => &mut self.cart as &mut Peripheral,
+            0xC000...0xCFFF => &mut self.ram0[0] as &mut Peripheral,
+            0xD000...0xDFFF => {
+                &mut self.ram0[usize::from(std::cmp::max(self.svbk.reg(), 1))] as &mut Peripheral
+            }
+            0xE000...0xEFFF => {
                 /* echo of ram0 */
                 *addr -= 0x2000;
-                &mut self.ram0 as &mut Peripheral
+                &mut self.ram0[0] as &mut Peripheral
+            }
+            0xF000...0xFDFF => {
+                /* echo of ram0 */
+                *addr -= 0x2000;
+                &mut self.ram0[1] as &mut Peripheral
             }
             0xFE00...0xFE9F => &mut self.display as &mut Peripheral,
             0xFEA0...0xFEFF => &mut self.ram2 as &mut Peripheral,
             //0xFEA0...0xFEFF =>  self.empty0[($addr - 0xFEA0) as usize],
             //0xFF00...0xFF4B =>  self.io[($addr - 0xFF00) as usize],
-            0xff40..=0xff45 => &mut self.display as &mut Peripheral,
-            0xff47..=0xff4b => &mut self.display as &mut Peripheral,
+            0xff40..=0xff45 | 0xff47..=0xff4b | 0xff4f | 0xff68..=0xff6b => {
+                &mut self.display as &mut Peripheral
+            }
             0xff00 => &mut self.controller as &mut Peripheral,
             0xff01..=0xff02 => &mut self.serial as &mut Peripheral,
             //0xFF4C...0xFF7F =>  self.empty1[($addr - 0xFF4C) as usize],
             0xFF04..=0xFF07 => &mut self.timer as &mut Peripheral,
             0xff0f => &mut self.interrupt_flag as &mut Peripheral,
             0xff10...0xFF3F => &mut self.sound as &mut Peripheral,
+            0xff70 => &mut self.svbk as &mut Peripheral, //TODO: GBC
+            0xff4d => &mut self.key1 as &mut Peripheral, //TODO: GBC
             0xff46 => &mut self.dma as &mut Peripheral,
             0xFF80...0xFFFF => &mut self.ram1 as &mut Peripheral,
             _ => &mut self.fake_mem as &mut Peripheral,
@@ -231,7 +317,7 @@ impl MMUInternal<'_> {
             &mut self.serial as &mut Peripheral,
             &mut self.controller as &mut Peripheral,
             &mut self.sound as &mut Peripheral,
-            &mut *self.cart as &mut Peripheral,
+            &mut self.cart as &mut Peripheral,
         ];
         for p in ps.iter_mut() {
             walk(*p)
@@ -251,9 +337,23 @@ impl MMUInternal<'_> {
     pub fn disable_bios(&mut self) {
         self.bios_exists = false;
     }
-    pub fn cycles_passed(&mut self, time: cycles::CycleCount) {
+    pub fn cycles_passed(&mut self, time: u64) {
         if self.effectful_change {
-            self.time += time;
+            self.time += if self.double_speed() {
+                cycles::CGB
+            } else {
+                cycles::GB
+            } * time;
+        }
+        #[cfg(feature = "vcd_dump")]
+        {
+            use crate::VCDDump::VCD;
+            VCD.as_ref().map(|m| {
+                m.lock().unwrap().as_mut().map(|v| {
+                    let c = self.time.value_unsafe;
+                    v.now = c;
+                })
+            });
         }
     }
     #[allow(unused_variables)]
@@ -265,7 +365,7 @@ impl MMUInternal<'_> {
             } else {
                 ("read_addr", "read_data")
             };
-
+            use crate::VCDDump::VCD;
             VCD.as_ref().map(|m| {
                 m.lock().unwrap().as_mut().map(|vcd| {
                     let (mut writer, mem) = vcd.writer();
@@ -319,15 +419,19 @@ impl Addressable for MMU<'_, '_, '_> {
 
 impl MMUInternal<'_> {
     fn read_byte(&mut self, mut addr: u16) -> u8 {
-        self.cycles_passed(cycles::GB);
+        self.cycles_passed(1);
         let v = self.lookup_peripheral(&mut addr).read_byte(addr);
         self.main_bus(false, addr, v);
         v
     }
     fn write_byte(&mut self, mut addr: u16, v: u8) {
-        self.cycles_passed(cycles::GB);
+        self.cycles_passed(1);
         self.main_bus(true, addr, v);
-        self.lookup_peripheral(&mut addr).write_byte(addr, v);
+        if addr == 0xff50 {
+            self.disable_bios();
+        } else {
+            self.lookup_peripheral(&mut addr).write_byte(addr, v);
+        }
     }
 }
 

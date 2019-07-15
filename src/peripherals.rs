@@ -1,7 +1,7 @@
 use crate::cpu::InterruptFlag;
 use crate::cycles;
 #[cfg(feature = "vcd_dump")]
-use VCDDump::VCD;
+use crate::VCDDump::VCD;
 
 pub struct AudioSpec<'a, T: 'a> {
     pub queue: Box<&'a mut FnMut(&[T]) -> bool>,
