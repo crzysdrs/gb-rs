@@ -10,6 +10,9 @@ Video Demo: [Mario and the Six Golden Coins - First Level](https://youtu.be/slTP
 
 Make sure to have access to the ROMs that you have legally acquired and an optional boot ROM. Build instructions are for Ubuntu.
 
+NOTE: It does not currently save/load game save files. This feature is easy to add but will distract from future development.
+
+
 ```
 $ apt-get install libsdl2-gfx-dev
 $ cargo run $YOUR_ROM
@@ -50,7 +53,7 @@ $ cargo run $YOUR_ROM
 
 * Rewind
 * Full Game Boy Color Support
-* Saving Games (this is straightforward but if I enabled saving then I would stop writing the emulator and start playing more).
+* Saving Games 
 
 ## Known Issues
 
