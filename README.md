@@ -2,18 +2,18 @@
 
 ## Description
 
-This project is a Game Boy Emulator intended to act as a learning excercise for both emulators and Rust. It has no documentation (as it isn't intended to be a perfect emulator (see [MoonEye]{https://github.com/Gekkio/mooneye-gb} for that level of quality)). It takes a fairly object-oriented approach to managing the various subsystems in the emulated hardware.
+This project is a Game Boy Emulator intended to act as a learning excercise for both emulators and Rust. It has no documentation (as it isn't intended to be a perfect emulator (see [MoonEye](https://github.com/Gekkio/mooneye-gb) for that level of quality)). It takes a fairly object-oriented approach to managing the various subsystems in the emulated hardware.
 
-Video Demo: [Mario and the Six Golden Coins - First Level]{https://youtu.be/slTPkHDkcG0}
+Video Demo: [Mario and the Six Golden Coins - First Level](https://youtu.be/slTPkHDkcG0)
 
 ### To Play
 
 Make sure to have access to the ROMs that you have legally acquired and an optional boot ROM. Build instructions are for Ubuntu.
 
-`
+```
 $ apt-get install libsdl2-gfx-dev
 $ cargo run $YOUR_ROM
-`
+```
 
 #### Controls
 
