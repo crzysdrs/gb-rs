@@ -57,7 +57,7 @@ $ cargo run --release $YOUR_ROM
 
 ## Known Issues
 
-* Sound Channel 4 (WAV Channel) does not always play at correct speed. (See: Pokemon Yello)
+* Sound Channel 4 (WAV Channel) does not always play at correct speed. (See: Pokemon Yellow)
 * Other sound channels sound *wrong* after passing the Blarg sound tests (probably related to frequency envelope calcuations).
 * Game Boy Color is not yet supported (in progress).
 * Screen is updated all at once at Vsync, which does not account for window shifting on a per LCD line basis.
