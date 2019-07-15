@@ -15,7 +15,7 @@ NOTE: It does not currently save/load game save files. This feature is easy to a
 
 ```
 $ apt-get install libsdl2-gfx-dev
-$ cargo run $YOUR_ROM
+$ cargo run --release $YOUR_ROM
 ```
 
 #### Controls
