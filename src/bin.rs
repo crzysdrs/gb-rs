@@ -15,7 +15,6 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
     use sdl2::event::Event;
     use sdl2::gfx::framerate::FPSManager;
     use sdl2::keyboard::Keycode;
-    use sdl2::mouse::MouseButton;
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -80,7 +79,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         Left = 1 << 5,
         Up = 1 << 6,
         Down = 1 << 7,
-        A = 1 << 0,
+        A = 1,
         B = 1 << 1,
         Select = 1 << 2,
         Start = 1 << 3,
@@ -93,7 +92,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         channels: Some(2),
         samples: None,
     };
-    assert_eq!((4194304 / 4) % desired_spec.freq.unwrap(), 0);
+    assert_eq!((4_194_304 / 4) % desired_spec.freq.unwrap(), 0);
     let audio_subsystem = sdl_context.audio().unwrap();
     let device = audio_subsystem
         .open_queue::<i16, _>(None, &desired_spec)
@@ -167,12 +166,6 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                 control_seq!(Event::KeyUp, Keycode::Return) => {
                     controls |= GBControl::Start as u8;
                 }
-                Event::MouseButtonDown {
-                    x: _,
-                    y: _,
-                    mouse_btn: MouseButton::Left,
-                    ..
-                } => {}
                 _ => {}
             }
         }
@@ -244,7 +237,6 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
 fn main() -> Result<(), std::io::Error> {
     use clap::{App, Arg};
     use dimensioned::si;
-    use std::convert::{From, Into};
     //let s = si::Second::from(gb::cycles::SECOND);
     //let s : si::Second<u64> = gb::cycles::SECOND.into();
     let s = gb::cycles::CGB::from(1.0 * si::S);
@@ -326,17 +318,13 @@ fn main() -> Result<(), std::io::Error> {
                 let f = std::fs::File::open(rom)?;
                 let mut z = zip::ZipArchive::new(f)?;
                 let mut res = None;
-                'found: for c_id in 0..z.len() {
+                for c_id in 0..z.len() {
                     if let Ok(mut c_file) = z.by_index(c_id) {
-                        if c_file.name().ends_with(".gb") {
+                        if c_file.name().ends_with(".gb") || c_file.name().ends_with(".gbc") {
                             let mut buf = Vec::new();
                             c_file.read_to_end(&mut buf)?;
                             res = Some(buf);
-                        } else if c_file.name().ends_with(".gbc") {
-                            let mut buf = Vec::new();
-                            c_file.read_to_end(&mut buf)?;
-                            res = Some(buf);
-                        }
+                        } 
                     }
                 }
                 if let Some(buf) = res {
@@ -377,9 +365,8 @@ fn main() -> Result<(), std::io::Error> {
 
     if matches.occurrences_of("no-display") > 0 {
         loop {
-            match gb.step(None, &mut PeripheralData::empty()) {
-                GBReason::Dead => break,
-                _ => {}
+            if let GBReason::Dead = gb.step(None, &mut PeripheralData::empty()) {
+                break;
             }
         }
         Ok(())

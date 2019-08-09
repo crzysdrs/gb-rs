@@ -66,8 +66,8 @@ impl Timer {
             TMA: 0,
             TAC: 0,
             DIV: 0,
-            div_unused_cycles: 0 * cycles::GB,
-            unused_cycles: 0 * cycles::GB,
+            div_unused_cycles: cycles::Cycles::new(0),
+            unused_cycles: cycles::Cycles::new(0),
         }
     }
     fn freq(&self) -> TimerFlags {
@@ -91,10 +91,10 @@ impl Timer {
         let div = cycles::CycleCount::from(
             si::S
                 / f64::from(match freq {
-                    TimerFlags::ICS_4096hz => 4096,
-                    TimerFlags::ICS_262144hz => 262144,
-                    TimerFlags::ICS_65536hz => 65536,
-                    TimerFlags::ICS_16384hz => 16384,
+                    TimerFlags::ICS_4096hz => 4_096,
+                    TimerFlags::ICS_262144hz => 262_144,
+                    TimerFlags::ICS_65536hz => 65_536,
+                    TimerFlags::ICS_16384hz => 16_384,
                     _ => panic!("Invalid Clock divider frequency"),
                 }),
         );

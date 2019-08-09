@@ -174,14 +174,13 @@ impl Cart {
 
 impl CartPhysical {
     fn ram_offset(&self, addr: u16) -> Option<usize> {
-        let addr = match (self.ram_enable, &self.bank_mode) {
+        match (self.ram_enable, &self.bank_mode) {
             (true, BankMode::ROM) => Some(addr as usize - 0xA000),
             (true, BankMode::RAM) => {
                 Some((addr as usize - 0xA000 + self.ram_reg * (8 << 10)) & (self.ram.len() - 1))
             }
             (false, _) => None,
-        };
-        addr
+        }
     }
     fn rom_offset(&self, base: u16, addr: u16) -> usize {
         let bank = match (base, &self.bank_mode) {
@@ -301,7 +300,7 @@ impl RTC {
                 self.hours += hours;
                 self.minutes %= 60;
                 let days = self.hours / 24;
-                self.days += days as u16;
+                self.days += u16::from(days);
                 self.days %= 2 << 10; // 9 bit counter + 1 bit overflow
             }
         }
@@ -311,9 +310,9 @@ impl RTC {
             RTCMode::Seconds => self.seconds,
             RTCMode::Minutes => self.minutes,
             RTCMode::Hours => self.hours,
-            RTCMode::DayLow => u8::from((self.days & 0xff) as u8),
+            RTCMode::DayLow => self.days.to_be_bytes()[1],
             RTCMode::DayHigh => {
-                (self.days & 0x100 >> 8) as u8
+                self.days.to_be_bytes()[0] & 0b1
                     | if self.halt { 1 } else { 0 } << 6
                     | (self.days & 0x200 >> (9 - 7)) as u8
             }
@@ -324,10 +323,10 @@ impl RTC {
             RTCMode::Seconds => self.seconds = v % 60,
             RTCMode::Minutes => self.minutes = v % 60,
             RTCMode::Hours => self.hours = v % 24,
-            RTCMode::DayLow => self.days = (self.days & !0xff) | v as u16,
+            RTCMode::DayLow => self.days = (self.days & !0xff) | u16::from(v),
             RTCMode::DayHigh => {
                 self.days = self.days & 0xff | (u16::from(v) & (1 << 7) >> 6) | (u16::from(v) & 1);
-                self.halt = if v & (1 << 6) != 0 { true } else { false };
+                self.halt = v & (1 << 6) != 0;
             }
         }
     }
@@ -389,12 +388,10 @@ impl Addressable for CartMBC3 {
                         None => &self.rtc,
                     };
                     rtc.rtc_read(rtc_mode)
+                } else if let Some(addr) = self.cart.ram_offset(addr) {
+                    self.cart.ram[addr]
                 } else {
-                    if let Some(addr) = self.cart.ram_offset(addr) {
-                        self.cart.ram[addr]
-                    } else {
-                        0xff
-                    }
+                    0xff
                 }
             }
             _ => panic!("Unhandled Cart Read Access {:04x}", addr),

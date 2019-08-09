@@ -12,7 +12,7 @@ pub struct Serial<'a> {
 }
 
 impl<'a> Serial<'a> {
-    pub fn new<'b>(out: Option<&'b mut Write>) -> Serial<'b> {
+    pub fn new(out: Option<&mut Write>) -> Serial<'_> {
         Serial { sb: 0, sc: 0, out }
     }
     fn lookup(&mut self, addr: u16) -> &mut u8 {

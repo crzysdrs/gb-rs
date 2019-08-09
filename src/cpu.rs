@@ -1,7 +1,6 @@
 use super::alu::{ALUOps, ALU};
 use super::instr::{Instr, PrefixInstr};
 use super::mmu::MMU;
-use super::{make_u16, split_u16};
 use crate::mmu::MemRegister;
 use crate::peripherals::Addressable;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -87,7 +86,7 @@ pub enum InterruptFlag {
     Serial = 1 << 3,
     Timer = 1 << 2,
     LCDC = 1 << 1,
-    VBlank = 1 << 0,
+    VBlank = 1,
 }
 
 pub trait RegType<Register>
@@ -157,7 +156,7 @@ impl RegType<Reg8> for Registers {
 impl RegType<Reg16> for Registers {
     type Output = u16;
     fn write(&mut self, r: Reg16, v: u16) {
-        let (hi, lo) = split_u16(v);
+        let [lo, hi] = v.to_le_bytes();
         match r {
             Reg16::AF => {
                 self.write(Reg8::A, hi);
@@ -181,10 +180,10 @@ impl RegType<Reg16> for Registers {
     }
     fn read(&self, r: Reg16) -> u16 {
         match r {
-            Reg16::AF => make_u16(self.a, self.f),
-            Reg16::BC => make_u16(self.b, self.c),
-            Reg16::DE => make_u16(self.d, self.e),
-            Reg16::HL => make_u16(self.h, self.l),
+            Reg16::AF => u16::from_be_bytes([self.a, self.f]),
+            Reg16::BC => u16::from_be_bytes([self.b, self.c]),
+            Reg16::DE => u16::from_be_bytes([self.d, self.e]),
+            Reg16::HL => u16::from_be_bytes([self.h, self.l]),
             Reg16::SP => self.sp,
             Reg16::PC => self.pc,
         }
@@ -247,7 +246,7 @@ impl CPU {
     pub fn get_reg(&self) -> Registers {
         self.reg.clone()
     }
-    pub fn is_dead(&mut self, _mem: &mut MMU) -> bool {
+    pub fn is_dead(&self, _mem: &MMU) -> bool {
         self.dead
     }
     fn check_flag(&mut self, cond: Cond) -> bool {
@@ -300,11 +299,11 @@ impl CPU {
     }
     fn pop16(&mut self, mem: &mut MMU, t: Reg16) {
         mem.bus
-            .seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
+            .seek(SeekFrom::Start(u64::from(self.reg.read(Reg16::SP))))
             .expect("Can't request outside of memory");
         let mut buf = [0u8; 2];
-        mem.read(&mut buf).expect("Memory wraps");
-        let res = make_u16(buf[1], buf[0]);
+        mem.read_exact(&mut buf).expect("Memory wraps");
+        let res = u16::from_le_bytes(buf);
         self.reg.write(t, res);
         self.reg
             .write(Reg16::SP, self.reg.read(Reg16::SP).wrapping_add(2));
@@ -314,13 +313,12 @@ impl CPU {
     }
     fn push16(&mut self, mem: &mut MMU, v: Reg16) {
         let item = self.reg.read(v);
-        let (hi, lo) = split_u16(item);
         self.reg
             .write(Reg16::SP, self.reg.read(Reg16::SP).wrapping_sub(2));
         mem.bus
-            .seek(SeekFrom::Start(self.reg.read(Reg16::SP) as u64))
+            .seek(SeekFrom::Start(u64::from(self.reg.read(Reg16::SP))))
             .expect("Can't request outside of memory");
-        mem.write(&[lo, hi]).expect("Memory wraps");
+        mem.write_all(&item.to_le_bytes()).expect("Memory wraps");
     }
 
     pub fn initialize(&mut self, mem: &mut MMU) {
@@ -384,12 +382,12 @@ impl CPU {
                     x0,
                     ALU::add(self.reg.read(x0), self.reg.read(x1)),
                     mask_u8!(Flag::N | Flag::H | Flag::C)
-                ); /*TODO: Half Carry Not Being Set Correctly */
+                );
                 mem.bus.cycles_passed(1);
             }
             Instr::ADD_r16_r8(x0, x1) => {
-                let (res, _) = ALU::add(self.reg.read(x0), x1 as i16 as u16);
-                let (_, flags) = ALU::add(self.reg.read(x0) as u8, x1 as i16 as u8);
+                let (res, _) = ALU::add(self.reg.read(x0), i16::from(x1) as u16);
+                let (_, flags) = ALU::add(self.reg.read(x0) as u8, i16::from(x1) as u8);
                 alu_result!(self, x0, (res, flags & !mask_u8!(Flag::Z | Flag::N)));
                 mem.bus.cycles_passed(2);
             }
@@ -463,7 +461,7 @@ impl CPU {
                     .write_mask(Reg8::F, flags, Registers::default_mask());
             }
             Instr::DAA => {
-                let mut value = self.reg.read(Reg8::A) as u32 as i32;
+                let mut value = u32::from(self.reg.read(Reg8::A)) as i32;
                 let mut adjust = 0;
                 if self.reg.get_flag(Flag::H)
                     || (!self.reg.get_flag(Flag::N) && (value & 0xf) > 0x9)
@@ -556,7 +554,7 @@ impl CPU {
             }
             Instr::JR_COND_r8(x0, x1) => {
                 if self.check_flag(x0) {
-                    self.move_pc(mem, ALU::add(self.reg.read(Reg16::PC), x1 as i16 as u16).0);
+                    self.move_pc(mem, ALU::add(self.reg.read(Reg16::PC), i16::from(x1) as u16).0);
                 }
             }
             Instr::JR_r8(x0) => {
@@ -564,20 +562,19 @@ impl CPU {
                     /* infinite loop with no interrupts enabled */
                     self.dead = true;
                 }
-                self.move_pc(mem, ALU::add(self.reg.read(Reg16::PC), x0 as i16 as u16).0);
+                self.move_pc(mem, ALU::add(self.reg.read(Reg16::PC), i16::from(x0) as u16).0);
             }
             Instr::LDH_ia8_r8(x0, x1) => {
-                mem.write_byte(0xff00 + x0 as u16, self.reg.read(x1));
+                mem.write_byte(0xff00 + u16::from(x0), self.reg.read(x1));
             }
             Instr::LDH_r8_ia8(x0, x1) => {
-                self.reg.write(x0, mem.read_byte(0xff00 + x1 as u16));
+                self.reg.write(x0, mem.read_byte(0xff00 + u16::from(x1)));
             }
             Instr::LD_ia16_r16(x0, x1) => {
                 mem.bus
-                    .seek(SeekFrom::Start(x0 as u64))
+                    .seek(SeekFrom::Start(u64::from(x0)))
                     .expect("All addresses valid");
-                let (hi, lo) = split_u16(self.reg.read(x1));
-                mem.write(&[lo, hi]).expect("Memory wraps");
+                mem.write_all(&u16::to_le_bytes(self.reg.read(x1))).expect("Memory wraps");
             }
             Instr::LD_ia16_r8(x0, x1) => {
                 mem.write_byte(x0, self.reg.read(x1));
@@ -595,7 +592,7 @@ impl CPU {
                 self.reg.write(x0, ALU::dec(self.reg.read(x0)).0)
             }
             Instr::LD_ir8_r8(x0, x1) => {
-                mem.write_byte(0xff00 + self.reg.read(x0) as u16, self.reg.read(x1));
+                mem.write_byte(0xff00 + u16::from(self.reg.read(x0)), self.reg.read(x1));
             }
             Instr::LD_r16_d16(x0, x1) => {
                 self.reg.write(x0, x1);
@@ -605,8 +602,8 @@ impl CPU {
                 mem.bus.cycles_passed(1);
             }
             Instr::LD_r16_r16_r8(x0, x1, x2) => {
-                let (res, _) = ALU::add(self.reg.read(x1), x2 as i16 as u16);
-                let (_, flags) = ALU::add(self.reg.read(x1) as u8, x2 as i16 as u8);
+                let (res, _) = ALU::add(self.reg.read(x1), i16::from(x2) as u16);
+                let (_, flags) = ALU::add(self.reg.read(x1) as u8, x2 as u8);
                 alu_result!(self, x0, (res, flags & !mask_u8!(Flag::Z | Flag::N)));
                 mem.bus.cycles_passed(1);
             }
@@ -629,7 +626,7 @@ impl CPU {
             }
             Instr::LD_r8_ir8(x0, x1) => self
                 .reg
-                .write(x0, mem.read_byte(0xff00 + self.reg.read(x1) as u16)),
+                .write(x0, mem.read_byte(0xff00 + u16::from(self.reg.read(x1)))),
             Instr::LD_r8_r8(x0, x1) => {
                 if self.magic_bp && x0 == x1 && x0 == Reg8::B {
                     self.dead = true;
@@ -787,7 +784,7 @@ impl CPU {
             ),
             Instr::RST_LIT(x0) => {
                 self.push16(&mut mem, Reg16::PC);
-                self.move_pc(mem, x0 as u16);
+                self.move_pc(mem, u16::from(x0));
             }
             Instr::SBC_r8_d8(x0, x1) => alu_result!(
                 self,
@@ -945,7 +942,7 @@ impl CPU {
                     print!("IME:{:01x} ", self.reg.ime);
                 }
                 print!("(cy: {}) ", start);
-                print!("ppu:+{} ", 0);
+                //print!("ppu:+{} ", 0);
                 print!("|[??]");
                 crate::instr::disasm(addr, next_pc, mem, &mut std::io::stdout(), &|_| true)
                     .unwrap();

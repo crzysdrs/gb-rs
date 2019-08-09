@@ -101,7 +101,7 @@ impl<'a> GB<'a> {
             }
             mmu.sync_peripherals();
 
-            if self.cpu.is_dead(&mut mmu) {
+            if self.cpu.is_dead(&mmu) {
                 /* cpu permanently halted */
                 return GBReason::Dead;
             } else if mmu.seen_vblank() {

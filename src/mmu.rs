@@ -16,75 +16,75 @@ enum_from_primitive! {
     #[derive(Debug, PartialEq, Clone, Copy)]
     pub enum MemRegister {
         //Port/Mode Registers
-        P1 = 0xff00,
-        SB = 0xff01,
-        SC = 0xff02,
-        DIV = 0xff04,
-        TIMA = 0xff05,
-        TMA = 0xff06,
-        TAC = 0xff07,
+        P1 = 0xFF00,
+        SB = 0xFF01,
+        SC = 0xFF02,
+        DIV = 0xFF04,
+        TIMA = 0xFF05,
+        TMA = 0xFF06,
+        TAC = 0xFF07,
 
         /* sound channel 1 */
-        NR10 = 0xff10,
-        NR11 = 0xff11,
-        NR12 = 0xff12,
-        NR13 = 0xff13,
-        NR14 = 0xff14,
+        NR10 = 0xFF10,
+        NR11 = 0xFF11,
+        NR12 = 0xFF12,
+        NR13 = 0xFF13,
+        NR14 = 0xFF14,
 
-        NR20 = 0xff15,
-        NR21 = 0xff16,
-        NR22 = 0xff17,
-        NR23 = 0xff18,
-        NR24 = 0xff19,
+        NR20 = 0xFF15,
+        NR21 = 0xFF16,
+        NR22 = 0xFF17,
+        NR23 = 0xFF18,
+        NR24 = 0xFF19,
 
-        NR30 = 0xff1A,
-        NR31 = 0xff1B,
-        NR32 = 0xff1C,
-        NR33 = 0xff1D,
-        NR34 = 0xff1E,
+        NR30 = 0xFF1A,
+        NR31 = 0xFF1B,
+        NR32 = 0xFF1C,
+        NR33 = 0xFF1D,
+        NR34 = 0xFF1E,
 
-        NR40 = 0xff1F,
-        NR41 = 0xff20,
-        NR42 = 0xff21,
-        NR43 = 0xff22,
-        NR44 = 0xff23,
+        NR40 = 0xFF1F,
+        NR41 = 0xFF20,
+        NR42 = 0xFF21,
+        NR43 = 0xFF22,
+        NR44 = 0xFF23,
 
-        NR50 = 0xff24,
-        NR51 = 0xff25,
-        NR52 = 0xff26,
+        NR50 = 0xFF24,
+        NR51 = 0xFF25,
+        NR52 = 0xFF26,
 
-        //CGB KEY1 = 0xff4d,
-        //CGB RP = 0xff56,
+        //CGB KEY1 = 0xFF4d,
+        //CGB RP = 0xFF56,
         //Bank Control Registers
-        //CGB VBK = 0xff4f,
-        //CGB SVBK = 0xff70,
+        //CGB VBK = 0xFF4f,
+        //CGB SVBK = 0xFF70,
         //Interrupt Flags
-        IF = 0xff0f,
-        IE = 0xffff,
+        IF = 0xFF0F,
+        IE = 0xFFFF,
         //IME = ?
         //LCD Display Registers
-        LCDC = 0xff40,
-        STAT = 0xff41,
-        SCY = 0xff42,
-        SCX = 0xff43,
-        LY = 0xff44,
-        LYC = 0xff45,
-        DMA = 0xff46,
-        BGP = 0xff47,
-        OBP0 = 0xff48,
-        OBP1 = 0xff49,
-        WY = 0xff4a,
-        WX = 0xff4b,
+        LCDC = 0xFF40,
+        STAT = 0xFF41,
+        SCY = 0xFF42,
+        SCX = 0xFF43,
+        LY = 0xFF44,
+        LYC = 0xFF45,
+        DMA = 0xFF46,
+        BGP = 0xFF47,
+        OBP0 = 0xFF48,
+        OBP1 = 0xFF49,
+        WY = 0xFF4A,
+        WX = 0xFF4B,
         //CGB
-        // HDMA1 = 0xff51,
-        // HDMA2 = 0xff52,
-        // HDMA3 = 0xff53,
-        // HDMA4 = 0xff54,
-        // HDMA5 = 0xff55,
-        // BCPS = 0xff68,
-        // BCPD = 0xff69,
-        // OCPS = 0xff6a,
-        // OCPD = 0xff6b
+        // HDMA1 = 0xFF51,
+        // HDMA2 = 0xFF52,
+        // HDMA3 = 0xFF53,
+        // HDMA4 = 0xFF54,
+        // HDMA5 = 0xFF55,
+        // BCPS = 0xFF68,
+        // BCPD = 0xFF69,
+        // OCPS = 0xFF6a,
+        // OCPD = 0xFF6b
     }
 }
 
@@ -169,8 +169,8 @@ impl MMUInternal<'_> {
         (self.key1.reg & (1 << 7)) != 0
     }
     pub fn toggle_speed(&mut self) {
-        self.key1.reg = self.key1.reg & !0x1; //remove speed request
-        self.key1.reg = self.key1.reg ^ (1 << 7);
+        self.key1.reg &= !0x1; //remove speed request
+        self.key1.reg ^= 1 << 7;
     }
     pub fn speed_change(&self) -> bool {
         (self.key1.reg & 0x1) != 0
@@ -191,9 +191,9 @@ impl MMUInternal<'_> {
         let ram2 = Mem::new(false, 0xfea0, vec![0; 0xff00 - 0xfea0 + 1]);
         let interrupt_flag = Mem::new(false, 0xff0f, vec![0; 1]);
         let cart_mode = cart.cgb();
-        let mem = MMUInternal {
-            time: 0 * cycles::GB,
-            last_sync: 0 * cycles::GB,
+        MMUInternal {
+            time: cycles::Cycles::new(0),
+            last_sync: cycles::Cycles::new(0),
             seek_pos: 0,
             bios_exists: true,
             bios,
@@ -212,8 +212,7 @@ impl MMUInternal<'_> {
             dma: DMA::new(),
             interrupt_flag,
             effectful_change: true,
-        };
-        mem
+        }
     }
     fn lookup_peripheral(&mut self, addr: &mut u16) -> &mut Peripheral {
         match addr {
@@ -275,12 +274,12 @@ impl MMUInternal<'_> {
         if self.last_sync < self.time {
             let mut interrupt_flag = 0;
             let cycles = self.time - self.last_sync;
-            self.walk_peripherals(|p| match p.step(data, cycles) {
-                Some(i) => {
+            self.walk_peripherals(
+                |p|
+                if let Some(i) = p.step(data, cycles) {
                     interrupt_flag |= mask_u8!(i);
                 }
-                None => {}
-            });
+            );
             let flags = side_effect_free(self, |mmu| mmu.read_byte(0xff0f));
             let mut rhs = flags | interrupt_flag;
             if !self.get_display().display_enabled() {
@@ -481,9 +480,9 @@ impl Write for MMU<'_, '_, '_> {
 }
 
 fn apply_offset(mut pos: u16, seek: i64) -> io::Result<u64> {
-    let seek = if seek > std::i16::MAX as i64 {
+    let seek = if seek > i64::from(std::i16::MAX) {
         std::i16::MAX
-    } else if seek < std::i16::MIN as i64 {
+    } else if seek < i64::from(std::i16::MIN) {
         std::i16::MIN
     } else {
         seek as i16
@@ -498,14 +497,14 @@ fn apply_offset(mut pos: u16, seek: i64) -> io::Result<u64> {
             "seeked before beginning",
         ));
     }
-    Ok(pos as u64)
+    Ok(u64::from(pos))
 }
 
 impl Seek for MMUInternal<'_> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match pos {
             SeekFrom::Start(x) => {
-                let x = if x > std::u16::MAX as u64 {
+                let x = if x > u64::from(std::u16::MAX) {
                     std::u16::MAX
                 } else {
                     x as u16
@@ -519,6 +518,6 @@ impl Seek for MMUInternal<'_> {
                 self.seek_pos = apply_offset(self.seek_pos, x)? as u16;
             }
         }
-        Ok(self.seek_pos as u64)
+        Ok(u64::from(self.seek_pos))
     }
 }

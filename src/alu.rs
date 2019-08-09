@@ -19,7 +19,7 @@ impl ALU {
         let res = (1 << a) & b;
         (
             res,
-            flag_u8!(Flag::Z, res == 0) | flag_u8!(Flag::N, false) | flag_u8!(Flag::H, true),
+            flag_u8!(Flag::Z, res == 0) | flag_u8!(Flag::H),
         )
     }
     pub fn adc(a: u8, b: u8, carry: bool) -> (u8, u8) {
@@ -34,7 +34,6 @@ impl ALU {
         (
             res,
             flag_u8!(Flag::Z, res == 0)
-                | flag_u8!(Flag::N, false)
                 | flag_u8!(Flag::H, h)
                 | flag_u8!(Flag::C, c),
         )
@@ -66,8 +65,6 @@ impl ALU {
         (
             res,
             flag_u8!(Flag::Z, with_zero && res == 0)
-                | flag_u8!(Flag::N, false)
-                | flag_u8!(Flag::H, false)
                 | flag_u8!(Flag::C, a & 0b1000_0000 > 0),
         )
     }
@@ -80,8 +77,6 @@ impl ALU {
         (
             res,
             flag_u8!(Flag::Z, with_zero && res == 0)
-                | flag_u8!(Flag::N, false)
-                | flag_u8!(Flag::H, false)
                 | flag_u8!(Flag::C, a & 0b0000_0001 > 0),
         )
     }
@@ -91,8 +86,6 @@ impl ALU {
         (
             res,
             flag_u8!(Flag::Z, res == 0)
-                | flag_u8!(Flag::N, false)
-                | flag_u8!(Flag::H, false)
                 | flag_u8!(Flag::C, a & 0b1000_0000 > 0),
         )
     }
@@ -101,8 +94,6 @@ impl ALU {
         (
             res,
             flag_u8!(Flag::Z, res == 0)
-                | flag_u8!(Flag::N, false)
-                | flag_u8!(Flag::H, false)
                 | flag_u8!(Flag::C, a & 0b0000_0001 > 0),
         )
     }
@@ -111,10 +102,7 @@ impl ALU {
         let res = ((a & 0x0f) << 4) | ((a & 0xf0) >> 4);
         (
             res,
-            flag_u8!(Flag::Z, res == 0)
-                | flag_u8!(Flag::N, false)
-                | flag_u8!(Flag::H, false)
-                | flag_u8!(Flag::C, false),
+            flag_u8!(Flag::Z, res == 0),
         )
     }
 }
@@ -141,7 +129,6 @@ impl ALUOps<u8> for ALU {
         (
             res,
             flag_u8!(Flag::Z, res == 0)
-                | flag_u8!(Flag::N, false)
                 | flag_u8!(Flag::H, h)
                 | flag_u8!(Flag::C, c),
         )
@@ -180,7 +167,6 @@ impl ALUOps<u16> for ALU {
         (
             res,
             flag_u8!(Flag::Z, res == 0)
-                | flag_u8!(Flag::N, false)
                 | flag_u8!(Flag::H, h)
                 | flag_u8!(Flag::C, c),
         )

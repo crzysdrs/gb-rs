@@ -9,12 +9,12 @@ pub struct DMA {
 }
 
 impl DMA {
-    pub fn is_active(&mut self) -> bool {
+    pub fn is_active(&self) -> bool {
         self.active
     }
     pub fn run(&mut self, mem: &mut MMU) {
         if self.active {
-            let source = (self.dma as u16) << 8;
+            let source = (u16::from(self.dma)) << 8;
             let target = 0xfe00;
             let len = 0xA0;
             for (s, t) in (source..source + len).zip(target..target + len) {

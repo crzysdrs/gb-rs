@@ -21,7 +21,7 @@ impl Channel3 {
         Channel3 {
             regs: Channel3Regs(ChannelRegs::new(
                 MemRegister::NR30 as u16,
-                &[0x7f, 0xff, 0x9f, 0xff, 0xbf],
+                [0x7f, 0xff, 0x9f, 0xff, 0xbf],
             )),
             timer: Timer::new(),
             length: Length::new(256),
@@ -62,7 +62,7 @@ impl AudioChannel for Channel3 {
         *pos %= 32;
         let byte = wave[*pos / 2];
         let (lo, hi) = (byte & 0xf, (byte & 0xf0) >> 4);
-        let sample = (if *pos % 2 == 0 { lo } else { hi }) as i16;
+        let sample = i16::from(if *pos % 2 == 0 { lo } else { hi });
         match self.regs.vol_code() {
             0 => Some(0),
             1 => Some(sample),

@@ -661,7 +661,7 @@ impl Instr {
             //0xfd => Instr::INVALID,
             0xfe => Instr::CP_d8(read_u8(bytes, &mut next_addr, addr + 1)),
             0xff => Instr::RST_LIT(0x38),
-            i => Instr::INVALID(i as u16),
+            i => Instr::INVALID(u16::from(i)),
         };
 
         if let Instr::CBPrefix(_) = i {

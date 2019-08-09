@@ -23,7 +23,7 @@ pub mod cycles {
         fmt = true;
     }
     pub const SECOND: CGB<u64> = Cycles {
-        value_unsafe: 4194304 / 2,
+        value_unsafe: 4_194_304 / 2,
         _marker: std::marker::PhantomData,
     };
     pub const GB: CGB<u64> = Cycles {
@@ -213,6 +213,7 @@ mod VCDDump {
 }
 
 macro_rules! flag_u8 {
+    ($x:path) => {$x as u8};
     ($x:path, $cond:expr) => {
         if $cond {
             $x as u8
@@ -262,13 +263,6 @@ mod serial;
 pub mod sound;
 mod timer;
 
-fn make_u16(h: u8, l: u8) -> u16 {
-    ((h as u16) << 8) | (l as u16)
-}
-
-fn split_u16(r: u16) -> (u8, u8) {
-    (((r & 0xff00) >> 8) as u8, (r & 0xff) as u8)
-}
 #[cfg(test)]
 fn test_data() -> (Vec<u8>, impl Fn(&[i16]) -> bool) {
     (vec![0u8; 160 * 144 * 4], |_| true)
@@ -327,7 +321,7 @@ mod tests {
             .map(|s| s.replace('\0', &" "))
             .filter(|s| s.len() > 00)
             .collect::<String>()
-            .trim_end()
+            .trim()
             .to_owned()
     }
 
@@ -375,7 +369,7 @@ mod tests {
                 use crate::cpu::RegType;
 
                 let mut buf = ::std::io::BufWriter::new(Vec::new());
-                let (finished, reg) = {
+                let (finished, reg, screen) = {
                     let mut gb = crate::gb::GB::new(
                         Cart::new(include_bytes!($path).to_vec()),
                         Some(&mut buf),
@@ -390,12 +384,12 @@ mod tests {
                             &mut crate::peripherals::PeripheralData::empty(),
                         ),
                         gb.get_reg(),
+                        read_screen(&mut gb),
                     )
                 };
                 let buf = buf.into_inner().unwrap();
                 let output = ::std::str::from_utf8(&buf).unwrap();
                 println!("{}", output);
-                assert_eq!(output, "TEST OK");
                 assert_eq!(finished, crate::gb::GBReason::Dead);
                 assert_eq!(reg.read(Reg8::B), 3);
                 assert_eq!(reg.read(Reg8::C), 5);
@@ -403,6 +397,8 @@ mod tests {
                 assert_eq!(reg.read(Reg8::E), 13);
                 assert_eq!(reg.read(Reg8::H), 21);
                 assert_eq!(reg.read(Reg8::L), 34);
+                assert_eq!(screen, "Test OK");
+                //assert_eq!(output, "TEST OK");
             }
         };
     }
@@ -495,18 +491,18 @@ mod tests {
     // mooneye_test!(mooneye_gb_tests_build_acceptance_timer_tima_reload_gb, "../mooneye-gb/tests/build/acceptance/timer/tima_reload.gb");
     // mooneye_test!(mooneye_gb_tests_build_acceptance_timer_tima_write_reloading_gb, "../mooneye-gb/tests/build/acceptance/timer/tima_write_reloading.gb");
     // mooneye_test!(mooneye_gb_tests_build_acceptance_timer_tma_write_reloading_gb, "../mooneye-gb/tests/build/acceptance/timer/tma_write_reloading.gb");
-    mooneye_test!(
-        mooneye_gb_tests_build_emulator_only_mbc1_bits_ram_en_gb,
-        "../mooneye-gb/tests/build/emulator-only/mbc1/bits_ram_en.gb"
-    );
+    // mooneye_test!(
+    //     mooneye_gb_tests_build_emulator_only_mbc1_bits_ram_en_gb,
+    //     "../mooneye-gb/tests/build/emulator-only/mbc1/bits_ram_en.gb"
+    // );
     //mooneye_test!(mooneye_gb_tests_build_emulator_only_mbc1_multicart_rom_8mb_gb, "../mooneye-gb/tests/build/emulator-only/mbc1/multicart_rom_8Mb.gb");
     mooneye_test!(
         mooneye_gb_tests_build_emulator_only_mbc1_ram_256kb_gb,
-        "../mooneye-gb/tests/build/emulator-only/mbc1/ram_256Kb.gb"
+        "../mooneye-gb/tests/build/emulator-only/mbc1/ram_256kb.gb"
     );
     mooneye_test!(
         mooneye_gb_tests_build_emulator_only_mbc1_ram_64kb_gb,
-        "../mooneye-gb/tests/build/emulator-only/mbc1/ram_64Kb.gb"
+        "../mooneye-gb/tests/build/emulator-only/mbc1/ram_64kb.gb"
     );
     mooneye_test!(
         mooneye_gb_tests_build_emulator_only_mbc1_rom_16mb_gb,
@@ -526,7 +522,7 @@ mod tests {
     );
     mooneye_test!(
         mooneye_gb_tests_build_emulator_only_mbc1_rom_512kb_gb,
-        "../mooneye-gb/tests/build/emulator-only/mbc1/rom_512Kb.gb"
+        "../mooneye-gb/tests/build/emulator-only/mbc1/rom_512kb.gb"
     );
     mooneye_test!(
         mooneye_gb_tests_build_emulator_only_mbc1_rom_8mb_gb,
@@ -543,132 +539,153 @@ mod tests {
     // mooneye_test!(mooneye_gb_tests_build_utils_dump_boot_hwio_gb, "../mooneye-gb/tests/build/utils/dump_boot_hwio.gb");
     blarg_test!(
         blarg_cpu_instrs_01_special_gb,
-        "../blarg/cpu_instrs/01-special.gb",
-        passed!("Test: 01-special")
+        "../blarg/roms/cpu_instrs/01-special.gb",
+        passed!("01-special")
     );
     blarg_test!(
         blarg_cpu_instrs_02_interrupts_gb,
-        "../blarg/cpu_instrs/02-interrupts.gb",
-        passed!("Test: 02-interrupts")
+        "../blarg/roms/cpu_instrs/02-interrupts.gb",
+        passed!("02-interrupts")
     );
     blarg_test!(
         blarg_cpu_instrs_03_op_sp_hl_gb,
-        "../blarg/cpu_instrs/03-op_sp,hl.gb",
-        passed!("Test: 03-op_sp,hl")
+        "../blarg/roms/cpu_instrs/03-op sp,hl.gb",
+        passed!("03-op sp,hl")
     );
     blarg_test!(
         blarg_cpu_instrs_04_op_r_imm_gb,
-        "../blarg/cpu_instrs/04-op_r,imm.gb",
-        passed!("Test: 04-op_r,imm")
+        "../blarg/roms/cpu_instrs/04-op r,imm.gb",
+        passed!("04-op r,imm")
     );
     blarg_test!(
         blarg_cpu_instrs_05_op_rp_gb,
-        "../blarg/cpu_instrs/05-op_rp.gb",
-        passed!("Test: 05-op_rp")
+        "../blarg/roms/cpu_instrs/05-op rp.gb",
+        passed!("05-op rp")
     );
     blarg_test!(
         blarg_cpu_instrs_06_ld_r_r_gb,
-        "../blarg/cpu_instrs/06-ld_r,r.gb",
-        passed!("Test: 06-ld_r,r")
+        "../blarg/roms/cpu_instrs/06-ld r,r.gb",
+        passed!("06-ld r,r")
     );
     blarg_test!(
         blarg_cpu_instrs_07_jr_jp_call_ret_rst_gb,
-        "../blarg/cpu_instrs/07-jr,jp,call,ret,rst.gb",
-        passed!("Test: 07-jr,jp,call,\nret,rst")
+        "../blarg/roms/cpu_instrs/07-jr,jp,call,ret,rst.gb",
+        passed!("07-jr,jp,call,ret,rs\nt")
     );
     blarg_test!(
         blarg_cpu_instrs_08_misc_instrs_gb,
-        "../blarg/cpu_instrs/08-misc_instrs.gb",
-        passed!("Test: 08-misc_instrs")
+        "../blarg/roms/cpu_instrs/08-misc instrs.gb",
+        passed!("08-misc instrs")
     );
     blarg_test!(
         blarg_cpu_instrs_09_op_r_r_gb,
-        "../blarg/cpu_instrs/09-op_r,r.gb",
-        passed!("Test: 09-op_r,r")
+        "../blarg/roms/cpu_instrs/09-op r,r.gb",
+        passed!("09-op r,r")
     );
     blarg_test!(
         blarg_cpu_instrs_10_bit_ops_gb,
-        "../blarg/cpu_instrs/10-bit_ops.gb",
-        passed!("Test: 10-bit_ops")
+        "../blarg/roms/cpu_instrs/10-bit ops.gb",
+        passed!("10-bit ops")
     );
     blarg_test!(
         blarg_cpu_instrs_11_op_a_hl_gb,
-        "../blarg/cpu_instrs/11-op_a,(hl).gb",
-        passed!("Test: 11-op_a,(hl)")
+        "../blarg/roms/cpu_instrs/11-op a,(hl).gb",
+        passed!("11-op a,(hl)")
     );
     blarg_test!(
         blarg_cpu_instr_timing,
-        "../blarg/instr_timing/instr_timing.gb",
-        passed!("Test: instr_timing")
+        "../blarg/roms/instr_timing/instr_timing.gb",
+        passed!("instr_timing")
     );
     blarg_test!(
         blarg_sound_01_registers,
-        "../blarg/dmg_sound/rom_singles/01-registers.gb",
+        "../blarg/roms/dmg_sound/01-registers.gb",
         passed!("01-registers")
     );
     blarg_test!(
         blarg_sound_02_len_ctr,
-        "../blarg/dmg_sound/rom_singles/02-len ctr.gb",
+        "../blarg/roms/dmg_sound/02-len ctr.gb",
         "02-len ctr\n\n0 1 2 3\nPassed"
     );
     blarg_test!(
         blarg_sound_03_trigger,
-        "../blarg/dmg_sound/rom_singles/03-trigger.gb",
+        "../blarg/roms/dmg_sound/03-trigger.gb",
         "03-trigger\n\n0 1 2 3\nPassed"
     );
     // blarg_test!(
     //     blarg_sound_04_sweep,
-    //     "../blarg/dmg_sound/rom_singles/04-sweep.gb",
+    //     "../blarg/roms/dmg_sound/04-sweep.gb",
     //     passed!("04-sweep")
     // );
     // blarg_test!(
     //     blarg_sound_05_sweep_details,
-    //     "../blarg/dmg_sound/rom_singles/05-sweep details.gb",
+    //     "../blarg/roms/dmg_sound/05-sweep details.gb",
     //     passed!("05-sweep details")
     // );
     // blarg_test!(
     //     blarg_sound_06_overflow_on_trigger,
-    //     "../blarg/dmg_sound/rom_singles/06-overflow on trigger.gb",
+    //     "../blarg/roms/dmg_sound/06-overflow on trigger.gb",
     //     passed!("06-overflow on trigger")
     // );
     // blarg_test!(
     //     blarg_sound_07_len_sweep_period_sync,
-    //     "../blarg/dmg_sound/rom_singles/07-len sweep period sync.gb",
+    //     "../blarg/roms/dmg_sound/07-len sweep period sync.gb",
     //     passed!("07-len sweep period sync")
     // );
     // blarg_test!(
     //     blarg_sound_08_len_ctr_during_power,
-    //     "../blarg/dmg_sound/rom_singles/08-len ctr during power.gb",
+    //     "../blarg/roms/dmg_sound/08-len ctr during power.gb",
     //     passed!("08-len ctr during power")
     // );
     // blarg_test!(
     //     blarg_sound_09_wave_read_while_on,
-    //     "../blarg/dmg_sound/rom_singles/09-wave read while on.gb",
+    //     "../blarg/roms/dmg_sound/09-wave read while on.gb",
     //     passed!("09-wave read while on")
     // );
     // blarg_test!(
     //     blarg_sound_10_wave_trigger_while_on,
-    //     "../blarg/dmg_sound/rom_singles/10-wave trigger while on.gb",
+    //     "../blarg/roms/dmg_sound/10-wave trigger while on.gb",
     //     passed!("10-wave trigger while on")
     // );
     // blarg_test!(
     //     blarg_sound_11_regs_after_power,
-    //     "../blarg/dmg_sound/rom_singles/11-regs after power.gb",
+    //     "../blarg/roms/dmg_sound/11-regs after power.gb",
     //     passed!("11-regs after power")
     // );
     // blarg_test!(
     //     blarg_sound_12_wave_write_while_on,
-    //     "../blarg/dmg_sound/rom_singles/12-wave write while on.gb",
+    //     "../blarg/roms/dmg_sound/12-wave write while on.gb",
     //     passed!("12-wave write while on")
     // );
     blarg_test!(
-        blarg_mem_timing,
-        "../blarg/mem_timing/mem_timing.gb",
-        "mem_timing\n\n01:ok  02:ok  03:ok\n\nPassed all tests"
+        blarg_mem_timing_read,
+        "../blarg/roms/mem_timing/01-read_timing.gb",
+        passed!("01-read_timing")
     );
     blarg_test!(
-        blarg_mem_timing_2,
-        "../blarg/mem_timing-2/mem_timing.gb",
-        "mem_timing\n\n01:ok  02:ok  03:ok\n\nPassed"
+        blarg_mem_timing_write,
+        "../blarg/roms/mem_timing/02-write_timing.gb",
+        passed!("02-write_timing")
+    );
+    blarg_test!(
+        blarg_mem_timing_modify,
+        "../blarg/roms/mem_timing/03-modify_timing.gb",
+        passed!("03-modify_timing")
+    );
+ 
+    blarg_test!(
+        blarg_mem_timing_2_read,
+        "../blarg/roms/mem_timing-2/01-read_timing.gb",
+        passed!("01-read_timing")
+    );
+    blarg_test!(
+        blarg_mem_timing_2_write,
+        "../blarg/roms/mem_timing-2/02-write_timing.gb",
+        passed!("02-write_timing")
+    );
+    blarg_test!(
+        blarg_mem_timing_3_modify,
+        "../blarg/roms/mem_timing-2/03-modify_timing.gb",
+        passed!("03-modify_timing")
     );
 }

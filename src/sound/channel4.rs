@@ -23,7 +23,7 @@ impl Channel4 {
         Channel4 {
             regs: Channel4Regs(ChannelRegs::new(
                 MemRegister::NR40 as u16,
-                &[0xff, 0xff, 0x00, 0x00, 0xbf],
+                [0xff, 0xff, 0x00, 0x00, 0xbf],
             )),
             vol: Vol::new(),
             timer: Timer::new(),
@@ -59,14 +59,14 @@ impl AudioChannel for Channel4 {
         }
         let ticks = self
             .timer
-            .step(LFSRPass::period(&self.regs) as u16, cycles, clocks);
+            .step(u16::from(LFSRPass::period(&self.regs)), cycles, clocks);
         self.length.step(clocks)?;
         let high = self.lfsr.step(ticks, &mut self.regs, clocks);
         let vol = self.vol.step(&mut self.regs, clocks);
         if high {
-            Some(vol as i16)
+            Some(i16::from(vol))
         } else {
-            Some(-(vol as i16))
+            Some(-i16::from(vol))
         }
     }
     fn enabled(&self) -> bool {

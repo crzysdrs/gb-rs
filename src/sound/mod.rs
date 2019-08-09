@@ -234,7 +234,7 @@ struct WaitTimer {
 impl WaitTimer {
     fn new() -> WaitTimer {
         WaitTimer {
-            acc: 0 * cycles::GB,
+            acc: cycles::Cycles::new(0),
         }
     }
     fn ready(
@@ -242,7 +242,7 @@ impl WaitTimer {
         new_cycles: cycles::CycleCount,
         required: cycles::CycleCount,
     ) -> Option<u64> {
-        if required == 0 * cycles::GB {
+        if required == cycles::Cycles::new(0) {
             return None;
         }
         self.acc += new_cycles;
@@ -255,7 +255,7 @@ impl WaitTimer {
         }
     }
     fn reset(&mut self) {
-        self.acc = 0 * cycles::GB;
+        self.acc = cycles::Cycles::new(0);
     }
 }
 
@@ -284,8 +284,8 @@ where
         self.write_byte(addr, val)
     }
 }
-impl Mixer {
-    pub fn new() -> Mixer {
+impl std::default::Default for Mixer {
+    fn default() -> Self {
         Mixer {
             wait: WaitTimer::new(),
             frame_seq: FrameSequencer::new(),
@@ -308,6 +308,11 @@ impl Mixer {
             unused: EmptyMem::new(0xff, 0xff1f, 17),
             wave: Mem::new(false, 0xff30, vec![0u8; 32]),
         }
+    }
+}
+impl Mixer {
+    pub fn new() -> Mixer {
+        Mixer::default()
     }
     fn lookup(&mut self, addr: u16) -> (&Clocks, Option<&mut AddressableChannel>) {
         const CH1_START: u16 = MemRegister::NR10 as u16;
@@ -344,9 +349,7 @@ impl Mixer {
 impl Addressable for Mixer {
     fn read_byte(&mut self, addr: u16) -> u8 {
         if let (clks, Some(b)) = self.lookup(addr) {
-            let r = b.read_channel_byte(&clks, addr);
-            //println!("Read {:04x} {:x}", addr, r);
-            r
+            b.read_channel_byte(&clks, addr)
         } else {
             panic!("Unhandled Read in Mixer {:x}", addr);
         }
@@ -359,29 +362,26 @@ impl Addressable for Mixer {
             if !ignored || addr == NR52 {
                 b.write_channel_byte(&clks, addr, v);
             }
-            match addr {
-                NR52 => {
+            if addr == NR52 {
+                if v & (1 << 7) == 0 {
+                    self.nr51.write_byte(MemRegister::NR51 as u16, 0);
+                    self.nr50.write_byte(MemRegister::NR50 as u16, 0);
+                }
+                let channels: &mut [&mut AudioChannel] = &mut [
+                    &mut self.channel1,
+                    &mut self.channel2,
+                    &mut self.channel3,
+                    &mut self.channel4,
+                ];
+                for channel in channels.iter_mut() {
                     if v & (1 << 7) == 0 {
-                        self.nr51.write_byte(MemRegister::NR51 as u16, 0);
-                        self.nr50.write_byte(MemRegister::NR50 as u16, 0);
-                    }
-                    let channels: &mut [&mut AudioChannel] = &mut [
-                        &mut self.channel1,
-                        &mut self.channel2,
-                        &mut self.channel3,
-                        &mut self.channel4,
-                    ];
-                    for channel in channels.iter_mut() {
-                        if v & (1 << 7) == 0 {
-                            //println!("Power Disable Channels");
-                            channel.disable();
-                            channel.power(false);
-                        } else {
-                            channel.power(true);
-                        }
+                        //println!("Power Disable Channels");
+                        channel.disable();
+                        channel.power(false);
+                    } else {
+                        channel.power(true);
                     }
                 }
-                _ => {}
             }
         } else {
             panic!("Unhandled Write In Mixer {:x}", addr);
@@ -408,13 +408,11 @@ impl Peripheral for Mixer {
                 self.frame_seq.step(cycles);
                 //if self.frame_seq.clks().ticked() {
                 for (_i, channel) in channels.iter_mut().enumerate() {
-                    if *self.nr52 & (1 << 7) != 0 {
-                        if let None = channel.sample(&self.wave, cycles, &self.frame_seq.clks()) {
-                            if channel.enabled() {
-                                //println!("Disable Channel {}", i);
-                                channel.disable();
-                            }
-                        }
+                    if *self.nr52 & (1 << 7) != 0
+                        && channel.sample(&self.wave, cycles, &self.frame_seq.clks()).is_none()
+                        && channel.enabled() {
+                            //println!("Disable Channel {}", i);
+                            channel.disable();
                     }
                 }
                 //}
@@ -428,7 +426,7 @@ impl Peripheral for Mixer {
                     for (i, channel) in channels.iter_mut().enumerate() {
                         if *self.nr52 & (1 << 7) != 0 {
                             if let Some(val) =
-                                channel.sample(&self.wave, 0 * cycles::GB, &self.frame_seq.clks())
+                                channel.sample(&self.wave, cycles::Cycles::new(0), &self.frame_seq.clks())
                             {
                                 if *self.nr51 & (1 << i) != 0 {
                                     left = left.saturating_add(val);
@@ -444,8 +442,8 @@ impl Peripheral for Mixer {
                     let right_vol = (*self.nr50 & 0b0111_0000) >> 4;
 
                     (audio.queue)(&[
-                        audio.silence + left.saturating_mul((1 << 7) * left_vol as i16),
-                        audio.silence + right.saturating_mul((1 << 7) * right_vol as i16),
+                        audio.silence + left.saturating_mul((1 << 7) * i16::from(left_vol)),
+                        audio.silence + right.saturating_mul((1 << 7) * i16::from(right_vol)),
                     ]);
                 }
             }

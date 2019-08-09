@@ -24,7 +24,7 @@ impl Channel1 {
         Channel1 {
             regs: Channel1Regs(ChannelRegs::new(
                 MemRegister::NR10 as u16,
-                &[0x80, 0x3f, 0x00, 0xff, 0xbf],
+                [0x80, 0x3f, 0x00, 0xff, 0xbf],
             )),
             vol: Vol::new(),
             timer: Timer::new(),
@@ -66,9 +66,9 @@ impl AudioChannel for Channel1 {
         let high = self.duty.step(&mut self.regs, ticks);
         let vol = self.vol.step(&mut self.regs, clocks);
         if high {
-            Some(vol as i16)
+            Some(i16::from(vol))
         } else {
-            Some(-(vol as i16))
+            Some(-i16::from(vol))
         }
     }
     fn enabled(&self) -> bool {

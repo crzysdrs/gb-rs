@@ -49,7 +49,7 @@ enum StatFlag {
 }
 
 enum LCDCFlag {
-    BGDisplayPriority = 1 << 0,
+    BGDisplayPriority = 1 ,
     SpriteDisplayEnable = 1 << 1,
     SpriteSize = 1 << 2,
     BGTileMapSelect = 1 << 3,
@@ -91,7 +91,7 @@ struct Color {
 }
 
 pub struct Display {
-    vram: [u8; 2 * 8 << 10],
+    vram: [u8; (2 * 8) << 10],
     oam: [SpriteAttribute; 40],
     oam_searched: Vec<SpriteAttribute>,
     scx: u8,
@@ -139,7 +139,7 @@ impl Display {
             cgb_mode: cgb,
             frame: 0,
             changed_state: false,
-            vram: [0; 2 * 8 << 10],
+            vram: [0; (2 * 8) << 10],
             oam: [SpriteAttribute {
                 x: 0,
                 y: 0,
@@ -167,7 +167,7 @@ impl Display {
             //END CGB
             ppu: PPU::new(),
             state: DisplayState::OAMSearch,
-            unused_cycles: 0 * cycles::GB,
+            unused_cycles: cycles::Cycles::new(0),
             bgpalette: [[Color { high: 0, low: 0 }; 4]; 8],
             objpalette: [[Color { high: 0, low: 0 }; 4]; 8],
         }
@@ -220,9 +220,8 @@ impl Display {
                         self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size()
                     })
                     .sorted_by_key(|oam| oam.x)
-                    .into_iter()
                     .take(10)
-                    .map(|x| *x),
+                    .copied(),
             );
         }
     }
@@ -245,7 +244,7 @@ impl Display {
         } else {
             0x1C00
         };
-        let idx = bg_map + true_y as u16 * 32 + true_x as u16;
+        let idx = bg_map + u16::from(true_y) * 32 + u16::from(true_x);
         BGIdx(
             Display::bank_vram_ro(&self.vram, 0)[idx as usize],
             match self.cgb_mode {
@@ -264,7 +263,7 @@ impl Display {
         } else {
             0x1c00u16
         };
-        let idx = win_map + (y / 8) as u16 * 32 + (x / 8) as u16;
+        let idx = win_map + (u16::from(y) / 8) * 32 + (u16::from(x) / 8) ;
         Tile::Window(
             BGIdx(
                 Display::bank_vram_ro(&self.vram, 0)[idx as usize],
@@ -297,7 +296,7 @@ impl Display {
                 let bgidx = self.get_bg_tile(x, y);
                 print!("{:02x}:{:02x} ", bgidx.0, bgidx.1);
             }
-            println!("");
+            println!();
         }
 
         for t in 0..=0x20 {
@@ -316,7 +315,7 @@ impl Display {
                     };
                     print!("{} ", c)
                 }
-                println!("");
+                println!();
             }
         }
     }
@@ -359,7 +358,7 @@ impl Display {
 
     fn bgp_shade(&self, p: Pixel) -> (u8, u8, u8, u8) {
         use std::convert::TryFrom;
-        fn rgb_from_palette_color(color: &Color) -> (u8, u8, u8, u8) {
+        fn rgb_from_palette_color(color: Color) -> (u8, u8, u8, u8) {
             let rgb = u16::from_be_bytes([color.high, color.low]);
             let bits = 0b11111;
             (
@@ -407,7 +406,7 @@ impl Display {
                             Palette::OBP1 => &self.objpalette[1],
                             _ => unreachable!(),
                         };
-                        rgb_from_palette_color(&palette[usize::from(shade_id)])
+                        rgb_from_palette_color(palette[usize::from(shade_id)])
                     } else {
                         match shade_id {
                             0b00 => white,
@@ -425,7 +424,7 @@ impl Display {
                         _ => unreachable!(),
                     };
                     let color = palette[usize::from(index)][usize::try_from(shade_id).unwrap()];
-                    rgb_from_palette_color(&color)
+                    rgb_from_palette_color(color)
                 }
             }
         } else {
@@ -521,7 +520,7 @@ impl Coord {
     // fn x(&self) -> u8 {
     //     self.0
     // }
-    fn y(&self) -> u8 {
+    fn y(self) -> u8 {
         self.1
     }
 }
@@ -573,18 +572,18 @@ impl Tile {
     pub fn fetch(&self, display: &mut Display) -> (Priority, Palette, u16) {
         let (start, line_offset, flip_x, vbank) = match *self {
             Tile::Window(idx, coord) | Tile::BG(idx, coord) => {
-                let bytes_per_tile = 16;
+                let bytes_per_tile : u16 = 16;
                 let start = if display.lcdc & mask_u8!(LCDCFlag::BGWinTileDataSelect) == 0 {
                     /* signed tile idx */
-                    let signed_idx = idx.0 as i8 as i16;
-                    (0x1000 + signed_idx * bytes_per_tile) as u16
+                    let signed_idx = i16::from(idx.0 as i8);
+                    (0x1000 + signed_idx * bytes_per_tile as i16) as u16
                 } else {
                     /*unsigned tile_idx */
-                    0 + idx.0 as u16 * bytes_per_tile as u16
+                    u16::from(idx.0) * bytes_per_tile
                 };
                 let bgmap = idx.1;
                 let y = if bgmap & mask_u8!(BGMapFlag::FlipY) != 0 {
-                    bytes_per_tile - 1 - i16::from(coord.y())
+                    bytes_per_tile as i16 - 1 - i16::from(coord.y())
                 } else {
                     i16::from(coord.y())
                 };
@@ -606,7 +605,7 @@ impl Tile {
                 } else {
                     oam.pattern.0
                 };
-                let start = idx as u16 * bytes_per_line * display.sprite_size() as u16;
+                let start = u16::from(idx) * bytes_per_line * u16::from(display.sprite_size());
                 let y = if oam.flags & mask_u8!(OAMFlag::FlipY) != 0 {
                     display.sprite_size() - 1 - coord.y()
                 } else {
@@ -751,10 +750,10 @@ impl PPU {
 }
 
 enum ColorPaletteMask {
-    HighLow = 1 << 0,
-    PaletteDataMask = 0b00000110,
-    PaletteNumMask = 0b00111000,
-    NextWrite = 0b10000000,
+    HighLow = 0b0000_0001,
+    PaletteDataMask = 0b0000_0110,
+    PaletteNumMask = 0b0011_1000,
+    NextWrite = 0b1000_0000,
 }
 
 impl Addressable for Display {
@@ -847,13 +846,13 @@ impl Peripheral for Display {
                                 (r, 0, bg_split..SCREEN_X as u8, true),
                             ]
                         });
-                        split_line.as_mut().map(|windows| {
+                        if let Some(windows) = split_line.as_mut() {
                             for w in windows {
                                 let (line, offset, range, is_win) = w;
                                 let mut oams = orig_oams.iter().peekable();
                                 self.draw_window(line, &mut oams, *is_win, *offset, range);
                             }
-                        });
+                        };
 
                         self.ppu.clear();
                         self.unused_cycles -= 43 * cycles::GB;

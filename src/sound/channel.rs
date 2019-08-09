@@ -18,7 +18,7 @@ pub struct ChannelRegs {
 }
 
 impl ChannelRegs {
-    pub fn new(addr: u16, mask: &[u8; 5]) -> ChannelRegs {
+    pub fn new(addr: u16, mask: [u8; 5]) -> ChannelRegs {
         ChannelRegs {
             on: false,
             base: addr,
@@ -45,7 +45,7 @@ impl ChannelRegs {
         }
     }
     pub fn reset(&mut self) {
-        self.nrx0.write_byte(self.base + 0, 0);
+        self.nrx0.write_byte(self.base, 0);
         self.nrx1.write_byte(self.base + 1, 0);
         self.nrx2.write_byte(self.base + 2, 0);
         self.nrx3.write_byte(self.base + 3, 0);
@@ -125,8 +125,8 @@ impl ChannelRegs {
 pub trait LengthPass: HasRegs {
     fn length(&self, max: u16) -> u16 {
         match max {
-            64 => 64 - (*self.nrx1 & 0b0011_1111) as u16,
-            256 => (256 - *self.nrx1 as u16),
+            64 => 64 - (u16::from(*self.nrx1) & 0b0011_1111),
+            256 => (256 - u16::from(*self.nrx1)),
             _ => unreachable!("Invalid Length in LengthPass"),
         }
     }
@@ -144,7 +144,7 @@ pub trait LengthPass: HasRegs {
 
 pub trait LFSRPass: HasRegs {
     fn shift(&self) -> u16 {
-        let mut shift = (((*self.nrx3 & 0b1111_0000) >> 4) + 1) as u16;
+        let mut shift = ((u16::from(*self.nrx3) & 0b1111_0000) >> 4) + 1;
         if shift > 0xf {
             shift = 0xf;
         }
@@ -187,8 +187,7 @@ pub trait VolumeCode: HasRegs {
 
 pub trait Freq: HasRegs {
     fn freq(&self) -> u16 {
-        let f = u16::from_le_bytes([*self.nrx3, *self.nrx4 & 0b111]);
-        f
+        u16::from_le_bytes([*self.nrx3, *self.nrx4 & 0b111])
     }
     fn period(&self) -> u16 {
         (1 << 11) - self.freq()
@@ -383,7 +382,7 @@ struct CountDown {
 }
 impl CountDown {
     fn new(count: u16) -> CountDown {
-        CountDown { count: count }
+        CountDown { count }
     }
     fn update(&mut self, clk: &Clk) -> u16 {
         let next = if self.count > 0 { self.count - 1 } else { 0 };
