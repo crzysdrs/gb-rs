@@ -213,7 +213,9 @@ mod VCDDump {
 }
 
 macro_rules! flag_u8 {
-    ($x:path) => {$x as u8};
+    ($x:path) => {
+        $x as u8
+    };
     ($x:path, $cond:expr) => {
         if $cond {
             $x as u8
@@ -672,7 +674,7 @@ mod tests {
         "../blarg/roms/mem_timing/03-modify_timing.gb",
         passed!("03-modify_timing")
     );
- 
+
     blarg_test!(
         blarg_mem_timing_2_read,
         "../blarg/roms/mem_timing-2/01-read_timing.gb",

@@ -1,5 +1,5 @@
 use super::alu::{ALUOps, ALU};
-use super::instr::{Instr, PrefixInstr};
+use super::instr::{Disasm, Instr};
 use super::mmu::MMU;
 use crate::mmu::MemRegister;
 use crate::peripherals::Addressable;
@@ -411,12 +411,12 @@ impl CPU {
                 Reg8::A,
                 ALU::and(self.reg.read(Reg8::A), self.reg.read(x0))
             ),
-            Instr::CBPrefix(PrefixInstr::BIT_l8_ir16(x0, x1)) => self.reg.write_mask(
+            Instr::BIT_l8_ir16(x0, x1) => self.reg.write_mask(
                 Reg8::F,
                 ALU::bit(x0, mem.read_byte(self.reg.read(x1))).1,
                 mask_u8!(Flag::Z | Flag::H | Flag::N),
             ),
-            Instr::CBPrefix(PrefixInstr::BIT_l8_r8(x0, x1)) => self.reg.write_mask(
+            Instr::BIT_l8_r8(x0, x1) => self.reg.write_mask(
                 Reg8::F,
                 ALU::bit(x0, self.reg.read(x1)).1,
                 mask_u8!(Flag::Z | Flag::H | Flag::N),
@@ -554,7 +554,10 @@ impl CPU {
             }
             Instr::JR_COND_r8(x0, x1) => {
                 if self.check_flag(x0) {
-                    self.move_pc(mem, ALU::add(self.reg.read(Reg16::PC), i16::from(x1) as u16).0);
+                    self.move_pc(
+                        mem,
+                        ALU::add(self.reg.read(Reg16::PC), i16::from(x1) as u16).0,
+                    );
                 }
             }
             Instr::JR_r8(x0) => {
@@ -562,7 +565,10 @@ impl CPU {
                     /* infinite loop with no interrupts enabled */
                     self.dead = true;
                 }
-                self.move_pc(mem, ALU::add(self.reg.read(Reg16::PC), i16::from(x0) as u16).0);
+                self.move_pc(
+                    mem,
+                    ALU::add(self.reg.read(Reg16::PC), i16::from(x0) as u16).0,
+                );
             }
             Instr::LDH_ia8_r8(x0, x1) => {
                 mem.write_byte(0xff00 + u16::from(x0), self.reg.read(x1));
@@ -574,7 +580,8 @@ impl CPU {
                 mem.bus
                     .seek(SeekFrom::Start(u64::from(x0)))
                     .expect("All addresses valid");
-                mem.write_all(&u16::to_le_bytes(self.reg.read(x1))).expect("Memory wraps");
+                mem.write_all(&u16::to_le_bytes(self.reg.read(x1)))
+                    .expect("Memory wraps");
             }
             Instr::LD_ia16_r8(x0, x1) => {
                 mem.write_byte(x0, self.reg.read(x1));
@@ -650,13 +657,11 @@ impl CPU {
                 self.push16(&mut mem, x0);
                 mem.bus.cycles_passed(1);
             }
-            Instr::CBPrefix(PrefixInstr::RES_l8_ir16(x0, x1)) => {
+            Instr::RES_l8_ir16(x0, x1) => {
                 let rhs = mem.read_byte(self.reg.read(x1)) & !(1 << x0);
                 mem.write_byte(self.reg.read(x1), rhs);
             }
-            Instr::CBPrefix(PrefixInstr::RES_l8_r8(x0, x1)) => {
-                self.reg.write(x1, self.reg.read(x1) & !(1 << x0))
-            }
+            Instr::RES_l8_r8(x0, x1) => self.reg.write(x1, self.reg.read(x1) & !(1 << x0)),
             Instr::RET => {
                 self.pop16(&mut mem, Reg16::PC);
             }
@@ -690,7 +695,7 @@ impl CPU {
                     false
                 )
             ),
-            Instr::CBPrefix(PrefixInstr::RLC_ir16(x0)) => {
+            Instr::RLC_ir16(x0) => {
                 alu_mem!(
                     self,
                     mem,
@@ -703,12 +708,12 @@ impl CPU {
                     )
                 );
             }
-            Instr::CBPrefix(PrefixInstr::RLC_r8(x0)) => alu_result!(
+            Instr::RLC_r8(x0) => alu_result!(
                 self,
                 x0,
                 ALU::rlca(self.reg.read(x0), self.reg.get_flag(Flag::C), false, true)
             ),
-            Instr::CBPrefix(PrefixInstr::RL_ir16(x0)) => {
+            Instr::RL_ir16(x0) => {
                 alu_mem!(
                     self,
                     mem,
@@ -721,7 +726,7 @@ impl CPU {
                     )
                 );
             }
-            Instr::CBPrefix(PrefixInstr::RL_r8(x0)) => alu_result!(
+            Instr::RL_r8(x0) => alu_result!(
                 self,
                 x0,
                 ALU::rlca(self.reg.read(x0), self.reg.get_flag(Flag::C), true, true)
@@ -746,7 +751,7 @@ impl CPU {
                     false
                 )
             ),
-            Instr::CBPrefix(PrefixInstr::RRC_ir16(x0)) => {
+            Instr::RRC_ir16(x0) => {
                 alu_mem!(
                     self,
                     mem,
@@ -759,12 +764,12 @@ impl CPU {
                     )
                 );
             }
-            Instr::CBPrefix(PrefixInstr::RRC_r8(x0)) => alu_result!(
+            Instr::RRC_r8(x0) => alu_result!(
                 self,
                 x0,
                 ALU::rrca(self.reg.read(x0), self.reg.get_flag(Flag::C), false, true)
             ),
-            Instr::CBPrefix(PrefixInstr::RR_ir16(x0)) => {
+            Instr::RR_ir16(x0) => {
                 alu_mem!(
                     self,
                     mem,
@@ -777,7 +782,7 @@ impl CPU {
                     )
                 );
             }
-            Instr::CBPrefix(PrefixInstr::RR_r8(x0)) => alu_result!(
+            Instr::RR_r8(x0) => alu_result!(
                 self,
                 x0,
                 ALU::rrca(self.reg.read(x0), self.reg.get_flag(Flag::C), true, true)
@@ -814,14 +819,12 @@ impl CPU {
                 mask_u8!(Flag::C),
                 mask_u8!(Flag::C | Flag::N | Flag::H),
             ),
-            Instr::CBPrefix(PrefixInstr::SET_l8_ir16(x0, x1)) => {
+            Instr::SET_l8_ir16(x0, x1) => {
                 let rhs = mem.read_byte(self.reg.read(x1)) | 1 << x0;
                 mem.write_byte(self.reg.read(x1), rhs);
             }
-            Instr::CBPrefix(PrefixInstr::SET_l8_r8(x0, x1)) => {
-                self.reg.write(x1, self.reg.read(x1) | 1 << x0)
-            }
-            Instr::CBPrefix(PrefixInstr::SLA_ir16(x0)) => {
+            Instr::SET_l8_r8(x0, x1) => self.reg.write(x1, self.reg.read(x1) | 1 << x0),
+            Instr::SLA_ir16(x0) => {
                 alu_mem!(
                     self,
                     mem,
@@ -829,10 +832,8 @@ impl CPU {
                     ALU::sla(mem.read_byte(self.reg.read(x0)))
                 );
             }
-            Instr::CBPrefix(PrefixInstr::SLA_r8(x0)) => {
-                alu_result!(self, x0, ALU::sla(self.reg.read(x0)))
-            }
-            Instr::CBPrefix(PrefixInstr::SRA_ir16(x0)) => {
+            Instr::SLA_r8(x0) => alu_result!(self, x0, ALU::sla(self.reg.read(x0))),
+            Instr::SRA_ir16(x0) => {
                 alu_mem!(
                     self,
                     mem,
@@ -840,10 +841,8 @@ impl CPU {
                     ALU::sr(mem.read_byte(self.reg.read(x0)), true)
                 );
             }
-            Instr::CBPrefix(PrefixInstr::SRA_r8(x0)) => {
-                alu_result!(self, x0, ALU::sr(self.reg.read(x0), true))
-            }
-            Instr::CBPrefix(PrefixInstr::SRL_ir16(x0)) => {
+            Instr::SRA_r8(x0) => alu_result!(self, x0, ALU::sr(self.reg.read(x0), true)),
+            Instr::SRL_ir16(x0) => {
                 alu_mem!(
                     self,
                     mem,
@@ -851,9 +850,7 @@ impl CPU {
                     ALU::sr(mem.read_byte(self.reg.read(x0)), false)
                 );
             }
-            Instr::CBPrefix(PrefixInstr::SRL_r8(x0)) => {
-                alu_result!(self, x0, ALU::sr(self.reg.read(x0), false))
-            }
+            Instr::SRL_r8(x0) => alu_result!(self, x0, ALU::sr(self.reg.read(x0), false)),
             /* halt cpu and lcd display until button press */
             Instr::STOP_0(_x0) => {
                 if mem.bus.speed_change() {
@@ -875,7 +872,7 @@ impl CPU {
                 Reg8::A,
                 ALU::sub(self.reg.read(Reg8::A), self.reg.read(x0))
             ),
-            Instr::CBPrefix(PrefixInstr::SWAP_ir16(x0)) => {
+            Instr::SWAP_ir16(x0) => {
                 alu_mem!(
                     self,
                     mem,
@@ -883,9 +880,7 @@ impl CPU {
                     ALU::swap(mem.read_byte(self.reg.read(x0)))
                 );
             }
-            Instr::CBPrefix(PrefixInstr::SWAP_r8(x0)) => {
-                alu_result!(self, x0, ALU::swap(self.reg.read(x0)))
-            }
+            Instr::SWAP_r8(x0) => alu_result!(self, x0, ALU::swap(self.reg.read(x0))),
             Instr::XOR_d8(x0) => alu_result!(self, Reg8::A, ALU::xor(self.reg.read(Reg8::A), x0)),
             Instr::XOR_ir16(x0) => {
                 alu_result!(
@@ -910,12 +905,20 @@ impl CPU {
             return; /* claim one cycle has passed */
         }
         let pc = self.reg.read(Reg16::PC);
-        let (next_pc, _, i) = match Instr::disasm(mem, pc) {
-            (_, _, Instr::INVALID(op)) => {
-                panic!("PC Invalid instruction {:x} @ {:x}", op, self.reg.pc)
+        let mut d = Disasm::new();
+        let mut next_pc = self.reg.pc;
+        let (next_pc, i) = loop {
+            let b = mem.read_byte(next_pc);
+            next_pc += 1;
+            match d.feed_byte(b) {
+                Some(Instr::INVALID(op)) => {
+                    panic!("PC Invalid instruction {:x} @ {:x}", op, self.reg.pc)
+                }
+                Some(i) => break (next_pc, i),
+                _ => {}
             }
-            item => item,
         };
+
         if self.trace {
             crate::mmu::side_effect_free_mem(mem, |mem| {
                 let reset_time = mem.bus.time();
@@ -957,7 +960,7 @@ impl CPU {
 #[cfg(test)]
 mod tests {
     use crate::cpu::{Reg8, RegType, CPU};
-    use crate::instr::{Instr, PrefixInstr};
+    use crate::instr::{Instr};
     use crate::mmu::{MMUInternal, MMU};
     use crate::peripherals::PeripheralData;
 
@@ -1071,18 +1074,12 @@ mod tests {
         );
 
         test_state!(
-            vec![
-                Instr::ADD_r8_d8(Reg8::A, 0x23),
-                Instr::CBPrefix(PrefixInstr::SWAP_r8(Reg8::A))
-            ],
+            vec![Instr::ADD_r8_d8(Reg8::A, 0x23), Instr::SWAP_r8(Reg8::A)],
             Reg8::A,
             0x32
         );
         test_state!(
-            vec![
-                Instr::ADD_r8_d8(Reg8::A, 0x71),
-                Instr::CBPrefix(PrefixInstr::SWAP_r8(Reg8::A))
-            ],
+            vec![Instr::ADD_r8_d8(Reg8::A, 0x71), Instr::SWAP_r8(Reg8::A)],
             Reg8::A,
             0x17
         );

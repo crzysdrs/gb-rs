@@ -274,12 +274,11 @@ impl MMUInternal<'_> {
         if self.last_sync < self.time {
             let mut interrupt_flag = 0;
             let cycles = self.time - self.last_sync;
-            self.walk_peripherals(
-                |p|
+            self.walk_peripherals(|p| {
                 if let Some(i) = p.step(data, cycles) {
                     interrupt_flag |= mask_u8!(i);
                 }
-            );
+            });
             let flags = side_effect_free(self, |mmu| mmu.read_byte(0xff0f));
             let mut rhs = flags | interrupt_flag;
             if !self.get_display().display_enabled() {

@@ -324,7 +324,7 @@ fn main() -> Result<(), std::io::Error> {
                             let mut buf = Vec::new();
                             c_file.read_to_end(&mut buf)?;
                             res = Some(buf);
-                        } 
+                        }
                     }
                 }
                 if let Some(buf) = res {

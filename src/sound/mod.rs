@@ -409,10 +409,13 @@ impl Peripheral for Mixer {
                 //if self.frame_seq.clks().ticked() {
                 for (_i, channel) in channels.iter_mut().enumerate() {
                     if *self.nr52 & (1 << 7) != 0
-                        && channel.sample(&self.wave, cycles, &self.frame_seq.clks()).is_none()
-                        && channel.enabled() {
-                            //println!("Disable Channel {}", i);
-                            channel.disable();
+                        && channel
+                            .sample(&self.wave, cycles, &self.frame_seq.clks())
+                            .is_none()
+                        && channel.enabled()
+                    {
+                        //println!("Disable Channel {}", i);
+                        channel.disable();
                     }
                 }
                 //}
@@ -425,9 +428,11 @@ impl Peripheral for Mixer {
                     let mut right: i16 = 0;
                     for (i, channel) in channels.iter_mut().enumerate() {
                         if *self.nr52 & (1 << 7) != 0 {
-                            if let Some(val) =
-                                channel.sample(&self.wave, cycles::Cycles::new(0), &self.frame_seq.clks())
-                            {
+                            if let Some(val) = channel.sample(
+                                &self.wave,
+                                cycles::Cycles::new(0),
+                                &self.frame_seq.clks(),
+                            ) {
                                 if *self.nr51 & (1 << i) != 0 {
                                     left = left.saturating_add(val);
                                 }

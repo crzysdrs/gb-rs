@@ -17,10 +17,7 @@ impl ALU {
     }
     pub fn bit(a: u8, b: u8) -> (u8, u8) {
         let res = (1 << a) & b;
-        (
-            res,
-            flag_u8!(Flag::Z, res == 0) | flag_u8!(Flag::H),
-        )
+        (res, flag_u8!(Flag::Z, res == 0) | flag_u8!(Flag::H))
     }
     pub fn adc(a: u8, b: u8, carry: bool) -> (u8, u8) {
         let (mut res, mut c) = a.overflowing_add(b);
@@ -33,9 +30,7 @@ impl ALU {
         }
         (
             res,
-            flag_u8!(Flag::Z, res == 0)
-                | flag_u8!(Flag::H, h)
-                | flag_u8!(Flag::C, c),
+            flag_u8!(Flag::Z, res == 0) | flag_u8!(Flag::H, h) | flag_u8!(Flag::C, c),
         )
     }
     pub fn sbc(a: u8, b: u8, carry: bool) -> (u8, u8) {
@@ -64,8 +59,7 @@ impl ALU {
         };
         (
             res,
-            flag_u8!(Flag::Z, with_zero && res == 0)
-                | flag_u8!(Flag::C, a & 0b1000_0000 > 0),
+            flag_u8!(Flag::Z, with_zero && res == 0) | flag_u8!(Flag::C, a & 0b1000_0000 > 0),
         )
     }
     pub fn rrca(a: u8, c: bool, thru_carry: bool, with_zero: bool) -> (u8, u8) {
@@ -76,8 +70,7 @@ impl ALU {
         };
         (
             res,
-            flag_u8!(Flag::Z, with_zero && res == 0)
-                | flag_u8!(Flag::C, a & 0b0000_0001 > 0),
+            flag_u8!(Flag::Z, with_zero && res == 0) | flag_u8!(Flag::C, a & 0b0000_0001 > 0),
         )
     }
 
@@ -85,25 +78,20 @@ impl ALU {
         let res = a << 1;
         (
             res,
-            flag_u8!(Flag::Z, res == 0)
-                | flag_u8!(Flag::C, a & 0b1000_0000 > 0),
+            flag_u8!(Flag::Z, res == 0) | flag_u8!(Flag::C, a & 0b1000_0000 > 0),
         )
     }
     pub fn sr(a: u8, arith: bool) -> (u8, u8) {
         let res = a >> 1 | if arith { a & 0x80 } else { 0 };
         (
             res,
-            flag_u8!(Flag::Z, res == 0)
-                | flag_u8!(Flag::C, a & 0b0000_0001 > 0),
+            flag_u8!(Flag::Z, res == 0) | flag_u8!(Flag::C, a & 0b0000_0001 > 0),
         )
     }
 
     pub fn swap(a: u8) -> (u8, u8) {
         let res = ((a & 0x0f) << 4) | ((a & 0xf0) >> 4);
-        (
-            res,
-            flag_u8!(Flag::Z, res == 0),
-        )
+        (res, flag_u8!(Flag::Z, res == 0))
     }
 }
 
@@ -128,9 +116,7 @@ impl ALUOps<u8> for ALU {
         let h = Self::half_carry(a, b);
         (
             res,
-            flag_u8!(Flag::Z, res == 0)
-                | flag_u8!(Flag::H, h)
-                | flag_u8!(Flag::C, c),
+            flag_u8!(Flag::Z, res == 0) | flag_u8!(Flag::H, h) | flag_u8!(Flag::C, c),
         )
     }
     fn sub(a: u8, b: u8) -> (u8, u8) {
@@ -166,9 +152,7 @@ impl ALUOps<u16> for ALU {
         let h = Self::half_carry(a, b);
         (
             res,
-            flag_u8!(Flag::Z, res == 0)
-                | flag_u8!(Flag::H, h)
-                | flag_u8!(Flag::C, c),
+            flag_u8!(Flag::Z, res == 0) | flag_u8!(Flag::H, h) | flag_u8!(Flag::C, c),
         )
     }
     fn sub(a: u16, b: u16) -> (u16, u8) {

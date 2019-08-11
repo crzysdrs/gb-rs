@@ -49,7 +49,7 @@ enum StatFlag {
 }
 
 enum LCDCFlag {
-    BGDisplayPriority = 1 ,
+    BGDisplayPriority = 1,
     SpriteDisplayEnable = 1 << 1,
     SpriteSize = 1 << 2,
     BGTileMapSelect = 1 << 3,
@@ -263,7 +263,7 @@ impl Display {
         } else {
             0x1c00u16
         };
-        let idx = win_map + (u16::from(y) / 8) * 32 + (u16::from(x) / 8) ;
+        let idx = win_map + (u16::from(y) / 8) * 32 + (u16::from(x) / 8);
         Tile::Window(
             BGIdx(
                 Display::bank_vram_ro(&self.vram, 0)[idx as usize],
@@ -572,7 +572,7 @@ impl Tile {
     pub fn fetch(&self, display: &mut Display) -> (Priority, Palette, u16) {
         let (start, line_offset, flip_x, vbank) = match *self {
             Tile::Window(idx, coord) | Tile::BG(idx, coord) => {
-                let bytes_per_tile : u16 = 16;
+                let bytes_per_tile: u16 = 16;
                 let start = if display.lcdc & mask_u8!(LCDCFlag::BGWinTileDataSelect) == 0 {
                     /* signed tile idx */
                     let signed_idx = i16::from(idx.0 as i8);
