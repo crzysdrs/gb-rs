@@ -53,14 +53,14 @@ where
     }
 }
 
-impl<Time> Into<si::SI<Prod<Mul<f64, Output = f64>, f64>, tarr![Z0, Z0, Time, Z0, Z0, Z0, Z0]>>
+impl<Time> Into<si::SI<Prod<dyn Mul<f64, Output = f64>, f64>, tarr![Z0, Z0, Time, Z0, Z0, Z0, Z0]>>
     for cycles::Cycles<u64, tarr![Time]>
 where
     Time: Integer,
 {
     fn into(
         self,
-    ) -> si::SI<Prod<Mul<f64, Output = f64>, f64>, tarr![Z0, Z0, Time, Z0, Z0, Z0, Z0]> {
+    ) -> si::SI<Prod<dyn Mul<f64, Output = f64>, f64>, tarr![Z0, Z0, Time, Z0, Z0, Z0, Z0]> {
         //println!("TIME: {} {}", Time::to_i32(), si::S.value_unsafe);
 
         let time_fac = (si::S / cycles::SECOND.value_unsafe as f64)

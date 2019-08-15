@@ -314,7 +314,7 @@ impl Mixer {
     pub fn new() -> Mixer {
         Mixer::default()
     }
-    fn lookup(&mut self, addr: u16) -> (&Clocks, Option<&mut AddressableChannel>) {
+    fn lookup(&mut self, addr: u16) -> (&Clocks, Option<&mut dyn AddressableChannel>) {
         const CH1_START: u16 = MemRegister::NR10 as u16;
         const CH1_END: u16 = MemRegister::NR14 as u16;
         const CH2_START: u16 = MemRegister::NR20 as u16;
@@ -331,12 +331,12 @@ impl Mixer {
         (
             &self.frame_seq.clks,
             match addr {
-                CH1_START...CH1_END => Some(&mut self.channel1),
-                CH2_START...CH2_END => Some(&mut self.channel2),
-                CH3_START...CH3_END => Some(&mut self.channel3),
-                CH4_START...CH4_END => Some(&mut self.channel4),
-                0xff27...0xff2f => Some(&mut self.unused),
-                0xff30...0xff3f => Some(&mut self.wave),
+                CH1_START..=CH1_END => Some(&mut self.channel1),
+                CH2_START..=CH2_END => Some(&mut self.channel2),
+                CH3_START..=CH3_END => Some(&mut self.channel3),
+                CH4_START..=CH4_END => Some(&mut self.channel4),
+                0xff27..=0xff2f => Some(&mut self.unused),
+                0xff30..=0xff3f => Some(&mut self.wave),
                 NR50 => Some(&mut self.nr50),
                 NR51 => Some(&mut self.nr51),
                 NR52 => Some(&mut self.nr52),
@@ -367,7 +367,7 @@ impl Addressable for Mixer {
                     self.nr51.write_byte(MemRegister::NR51 as u16, 0);
                     self.nr50.write_byte(MemRegister::NR50 as u16, 0);
                 }
-                let channels: &mut [&mut AudioChannel] = &mut [
+                let channels: &mut [&mut dyn AudioChannel] = &mut [
                     &mut self.channel1,
                     &mut self.channel2,
                     &mut self.channel3,
@@ -397,7 +397,7 @@ impl Peripheral for Mixer {
     ) -> Option<InterruptFlag> {
         let orig_status = *self.nr52;
         let mut status = *self.nr52;
-        let channels: &mut [&mut AudioChannel] = &mut [
+        let channels: &mut [&mut dyn AudioChannel] = &mut [
             &mut self.channel1,
             &mut self.channel2,
             &mut self.channel3,

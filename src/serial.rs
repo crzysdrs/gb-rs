@@ -8,11 +8,11 @@ use std::io::Write;
 pub struct Serial<'a> {
     sb: u8,
     sc: u8,
-    out: Option<&'a mut Write>,
+    out: Option<&'a mut dyn Write>,
 }
 
 impl<'a> Serial<'a> {
-    pub fn new(out: Option<&mut Write>) -> Serial<'_> {
+    pub fn new(out: Option<&mut dyn Write>) -> Serial<'_> {
         Serial { sb: 0, sc: 0, out }
     }
     fn lookup(&mut self, addr: u16) -> &mut u8 {

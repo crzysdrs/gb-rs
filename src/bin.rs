@@ -22,7 +22,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
 
     // the window is the representation of a window in your operating system,
     // however you can only manipulate properties of that window, like its size, whether it's
-    // fullscreen, ... but you cannot change its content without using a Canvas or using the
+    // fullscreen, ..= but you cannot change its content without using a Canvas or using the
     // `surface()` method.
     let window = video_subsystem
         .window("rust-sdl2 demo: Game of Life", 160, 144)
@@ -348,7 +348,7 @@ fn main() -> Result<(), std::io::Error> {
 
     let cart = Cart::new(rom_vec);
 
-    let mut serial: Box<Write> =
+    let mut serial: Box<dyn Write> =
         matches
             .value_of("serial")
             .map_or(Box::new(std::io::sink()), |p| {

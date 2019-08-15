@@ -4,7 +4,7 @@ use crate::cycles;
 use crate::VCDDump::VCD;
 
 pub struct AudioSpec<'a, T: 'a> {
-    pub queue: Box<&'a mut FnMut(&[T]) -> bool>,
+    pub queue: Box<&'a mut dyn FnMut(&[T]) -> bool>,
     pub freq: u32,
     pub silence: T,
 }

@@ -27,7 +27,7 @@ pub enum GBReason {
 impl<'a> GB<'a> {
     pub fn new<'b>(
         cart: Cart,
-        serial: Option<&'b mut Write>,
+        serial: Option<&'b mut dyn Write>,
         trace: bool,
         boot_rom: Option<Vec<u8>>,
     ) -> GB {

@@ -175,7 +175,7 @@ impl MMUInternal<'_> {
     pub fn speed_change(&self) -> bool {
         (self.key1.reg & 0x1) != 0
     }
-    pub fn new(cart: Cart, serial: Option<&mut Write>, boot_rom: Option<Vec<u8>>) -> MMUInternal {
+    pub fn new(cart: Cart, serial: Option<&mut dyn Write>, boot_rom: Option<Vec<u8>>) -> MMUInternal {
         let bios = Mem::new(
             true,
             0,
@@ -214,60 +214,60 @@ impl MMUInternal<'_> {
             effectful_change: true,
         }
     }
-    fn lookup_peripheral(&mut self, addr: &mut u16) -> &mut Peripheral {
+    fn lookup_peripheral(&mut self, addr: &mut u16) -> &mut dyn Peripheral {
         match addr {
-            0x0000...0x00FF => {
+            0x0000..=0x00FF => {
                 if self.bios_exists {
-                    &mut self.bios as &mut Peripheral
+                    &mut self.bios as &mut dyn Peripheral
                 } else {
-                    &mut self.cart as &mut Peripheral
+                    &mut self.cart as &mut dyn Peripheral
                 }
             }
-            0x0100...0x0200 => &mut self.cart as &mut Peripheral,
-            0x0200...0x08FF => {
+            0x0100..=0x0200 => &mut self.cart as &mut dyn Peripheral,
+            0x0200..=0x08FF => {
                 //TODO:GBC
                 if self.bios_exists && self.bios.len() > 256 {
                     //*addr -= 0x100;
-                    &mut self.bios as &mut Peripheral
+                    &mut self.bios as &mut dyn Peripheral
                 } else {
-                    &mut self.cart as &mut Peripheral
+                    &mut self.cart as &mut dyn Peripheral
                 }
             }
-            0x0900...0x7FFF => &mut self.cart as &mut Peripheral,
-            0x8000...0x9FFF => &mut self.display as &mut Peripheral,
-            0xA000...0xBFFF => &mut self.cart as &mut Peripheral,
-            0xC000...0xCFFF => &mut self.ram0[0] as &mut Peripheral,
-            0xD000...0xDFFF => {
-                &mut self.ram0[usize::from(std::cmp::max(self.svbk.reg(), 1))] as &mut Peripheral
+            0x0900..=0x7FFF => &mut self.cart as &mut dyn Peripheral,
+            0x8000..=0x9FFF => &mut self.display as &mut dyn Peripheral,
+            0xA000..=0xBFFF => &mut self.cart as &mut dyn Peripheral,
+            0xC000..=0xCFFF => &mut self.ram0[0] as &mut dyn Peripheral,
+            0xD000..=0xDFFF => {
+                &mut self.ram0[usize::from(std::cmp::max(self.svbk.reg(), 1))] as &mut dyn Peripheral
             }
-            0xE000...0xEFFF => {
+            0xE000..=0xEFFF => {
                 /* echo of ram0 */
                 *addr -= 0x2000;
-                &mut self.ram0[0] as &mut Peripheral
+                &mut self.ram0[0] as &mut dyn Peripheral
             }
-            0xF000...0xFDFF => {
+            0xF000..=0xFDFF => {
                 /* echo of ram0 */
                 *addr -= 0x2000;
-                &mut self.ram0[1] as &mut Peripheral
+                &mut self.ram0[1] as &mut dyn Peripheral
             }
-            0xFE00...0xFE9F => &mut self.display as &mut Peripheral,
-            0xFEA0...0xFEFF => &mut self.ram2 as &mut Peripheral,
-            //0xFEA0...0xFEFF =>  self.empty0[($addr - 0xFEA0) as usize],
-            //0xFF00...0xFF4B =>  self.io[($addr - 0xFF00) as usize],
+            0xFE00..=0xFE9F => &mut self.display as &mut dyn Peripheral,
+            0xFEA0..=0xFEFF => &mut self.ram2 as &mut dyn Peripheral,
+            //0xFEA0..=0xFEFF =>  self.empty0[($addr - 0xFEA0) as usize],
+            //0xFF00..=0xFF4B =>  self.io[($addr - 0xFF00) as usize],
             0xff40..=0xff45 | 0xff47..=0xff4b | 0xff4f | 0xff68..=0xff6b => {
-                &mut self.display as &mut Peripheral
+                &mut self.display as &mut dyn Peripheral
             }
-            0xff00 => &mut self.controller as &mut Peripheral,
-            0xff01..=0xff02 => &mut self.serial as &mut Peripheral,
-            //0xFF4C...0xFF7F =>  self.empty1[($addr - 0xFF4C) as usize],
-            0xFF04..=0xFF07 => &mut self.timer as &mut Peripheral,
-            0xff0f => &mut self.interrupt_flag as &mut Peripheral,
-            0xff10...0xFF3F => &mut self.sound as &mut Peripheral,
-            0xff70 => &mut self.svbk as &mut Peripheral, //TODO: GBC
-            0xff4d => &mut self.key1 as &mut Peripheral, //TODO: GBC
-            0xff46 => &mut self.dma as &mut Peripheral,
-            0xFF80...0xFFFF => &mut self.ram1 as &mut Peripheral,
-            _ => &mut self.fake_mem as &mut Peripheral,
+            0xff00 => &mut self.controller as &mut dyn Peripheral,
+            0xff01..=0xff02 => &mut self.serial as &mut dyn Peripheral,
+            //0xFF4C..=0xFF7F =>  self.empty1[($addr - 0xFF4C) as usize],
+            0xFF04..=0xFF07 => &mut self.timer as &mut dyn Peripheral,
+            0xff0f => &mut self.interrupt_flag as &mut dyn Peripheral,
+            0xff10..=0xFF3F => &mut self.sound as &mut dyn Peripheral,
+            0xff70 => &mut self.svbk as &mut dyn Peripheral, //TODO: GBC
+            0xff4d => &mut self.key1 as &mut dyn Peripheral, //TODO: GBC
+            0xff46 => &mut self.dma as &mut dyn Peripheral,
+            0xFF80..=0xFFFF => &mut self.ram1 as &mut dyn Peripheral,
+            _ => &mut self.fake_mem as &mut dyn Peripheral,
         }
     }
     pub fn sync_peripherals(&mut self, data: &mut PeripheralData) {
@@ -306,16 +306,16 @@ impl MMUInternal<'_> {
     }
     pub fn walk_peripherals<F>(&mut self, mut walk: F)
     where
-        F: FnMut(&mut Peripheral) -> (),
+        F: FnMut(&mut dyn Peripheral) -> (),
     {
-        let ps: &mut [&mut Peripheral] = &mut [
-            &mut self.bios as &mut Peripheral,
-            &mut self.timer as &mut Peripheral,
-            &mut self.display as &mut Peripheral,
-            &mut self.serial as &mut Peripheral,
-            &mut self.controller as &mut Peripheral,
-            &mut self.sound as &mut Peripheral,
-            &mut self.cart as &mut Peripheral,
+        let ps: &mut [&mut dyn Peripheral] = &mut [
+            &mut self.bios as &mut dyn Peripheral,
+            &mut self.timer as &mut dyn Peripheral,
+            &mut self.display as &mut dyn Peripheral,
+            &mut self.serial as &mut dyn Peripheral,
+            &mut self.controller as &mut dyn Peripheral,
+            &mut self.sound as &mut dyn Peripheral,
+            &mut self.cart as &mut dyn Peripheral,
         ];
         for p in ps.iter_mut() {
             walk(*p)

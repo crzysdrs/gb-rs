@@ -26,7 +26,7 @@ pub struct Cart {
     battery: bool,
     title: String,
     cgb: CGBStatus,
-    cart: Box<Peripheral>,
+    cart: Box<dyn Peripheral>,
 }
 
 struct CartPhysical {
@@ -108,12 +108,12 @@ impl Cart {
 
         let mbc = match rom[0x147] {
             0x00 => None,
-            0x01...0x03 => Some(MBC1),
-            0x05...0x06 => Some(MBC2),
-            0x08...0x09 => None,
-            0x0B...0x0D => Some(MMM01),
-            0x0F...0x13 => Some(MBC3),
-            0x19...0x1E => Some(MBC5),
+            0x01..=0x03 => Some(MBC1),
+            0x05..=0x06 => Some(MBC2),
+            0x08..=0x09 => None,
+            0x0B..=0x0D => Some(MMM01),
+            0x0F..=0x13 => Some(MBC3),
+            0x19..=0x1E => Some(MBC5),
             0x20 => Some(MBC6),
             0x22 => Some(MBC7),
             _ => panic!("Unhandled Cart Type"),
@@ -152,7 +152,7 @@ impl Cart {
         println!("ROM: {:4x}", rom[0x148]);
 
         let physical = CartPhysical::new(vec![0u8; ram_size], rom);
-        let peripheral: Box<Peripheral> = match mbc {
+        let peripheral: Box<dyn Peripheral> = match mbc {
             None | Some(MBC1) => Box::new(CartMBC1 { cart: physical }),
             Some(MBC3) => Box::new(CartMBC3 {
                 cart: physical,
@@ -209,15 +209,15 @@ impl Peripheral for CartMBC1 {}
 impl Addressable for CartMBC1 {
     fn read_byte(&mut self, addr: u16) -> u8 {
         match addr {
-            0x0000...0x3FFF => {
+            0x0000..=0x3FFF => {
                 let addr = self.cart.rom_offset(0x0000, addr);
                 self.cart.rom[addr]
             }
-            0x4000...0x7FFF => {
+            0x4000..=0x7FFF => {
                 let addr = self.cart.rom_offset(0x4000, addr);
                 self.cart.rom[addr]
             }
-            0xA000...0xBFFF => {
+            0xA000..=0xBFFF => {
                 if let Some(addr) = self.cart.ram_offset(addr) {
                     self.cart.ram[addr]
                 } else {
@@ -229,10 +229,10 @@ impl Addressable for CartMBC1 {
     }
     fn write_byte(&mut self, addr: u16, v: u8) {
         match addr {
-            0x0000...0x1fff => {
+            0x0000..=0x1fff => {
                 self.cart.ram_enable = (v & 0xF) == 0xA;
             }
-            0x2000...0x3fff => {
+            0x2000..=0x3fff => {
                 self.cart.rom_reg &= 0x60;
                 let new_v = (v & 0b11111) as usize;
                 self.cart.rom_reg |= new_v;
@@ -240,7 +240,7 @@ impl Addressable for CartMBC1 {
                     self.cart.rom_reg |= 1;
                 }
             }
-            0x4000...0x5fff => match self.cart.bank_mode {
+            0x4000..=0x5fff => match self.cart.bank_mode {
                 BankMode::RAM => {
                     self.cart.ram_reg = (v & 0b11) as usize;
                 }
@@ -249,14 +249,14 @@ impl Addressable for CartMBC1 {
                     self.cart.rom_reg |= ((v & 0b11) << 5) as usize;
                 }
             },
-            0x6000...0x7FFF => {
+            0x6000..=0x7FFF => {
                 self.cart.bank_mode = match v & 0x1 {
                     0 => BankMode::ROM,
                     1 => BankMode::RAM,
                     _ => panic!("unhandled bank mode"),
                 }
             }
-            0xA000...0xBFFF => {
+            0xA000..=0xBFFF => {
                 if let Some(addr) = self.cart.ram_offset(addr) {
                     self.cart.ram[addr] = v;
                 }
@@ -373,15 +373,15 @@ impl Peripheral for CartMBC3 {
 impl Addressable for CartMBC3 {
     fn read_byte(&mut self, addr: u16) -> u8 {
         match addr {
-            0x0000...0x3FFF => {
+            0x0000..=0x3FFF => {
                 let addr = self.cart.rom_offset(0x0000, addr);
                 self.cart.rom[addr]
             }
-            0x4000...0x7FFF => {
+            0x4000..=0x7FFF => {
                 let addr = self.cart.rom_offset(0x4000, addr);
                 self.cart.rom[addr]
             }
-            0xA000...0xBFFF => {
+            0xA000..=0xBFFF => {
                 if let Some(rtc_mode) = self.rtc_select() {
                     let rtc = match self.rtc_latch.as_ref() {
                         Some(latched) => latched,
@@ -399,27 +399,27 @@ impl Addressable for CartMBC3 {
     }
     fn write_byte(&mut self, addr: u16, v: u8) {
         match addr {
-            0x0000...0x1fff => {
+            0x0000..=0x1fff => {
                 self.cart.ram_enable = (v & 0xF) == 0xA;
             }
-            0x2000...0x3fff => {
+            0x2000..=0x3fff => {
                 let new_v = (v & 0x7f) as usize;
                 self.cart.rom_reg = new_v;
                 if new_v == 0 {
                     self.cart.rom_reg |= 1;
                 }
             }
-            0x4000...0x5fff => {
+            0x4000..=0x5fff => {
                 self.cart.ram_reg = usize::from(v);
             }
-            0x6000...0x7FFF => {
+            0x6000..=0x7FFF => {
                 if v > 0 {
                     self.rtc_latch = Some(self.rtc.clone());
                 } else {
                     self.rtc_latch = None;
                 }
             }
-            0xA000...0xBFFF => match self.rtc_select() {
+            0xA000..=0xBFFF => match self.rtc_select() {
                 Some(rtc) => {
                     self.rtc.rtc_write(rtc, v);
                 }
@@ -443,15 +443,15 @@ impl Peripheral for CartMBC5 {}
 impl Addressable for CartMBC5 {
     fn read_byte(&mut self, addr: u16) -> u8 {
         match addr {
-            0x0000...0x3FFF => {
+            0x0000..=0x3FFF => {
                 let addr = self.cart.rom_offset(0x0000, addr);
                 self.cart.rom[addr]
             }
-            0x4000...0x7FFF => {
+            0x4000..=0x7FFF => {
                 let addr = self.cart.rom_offset(0x4000, addr);
                 self.cart.rom[addr]
             }
-            0xA000...0xBFFF => {
+            0xA000..=0xBFFF => {
                 if let Some(addr) = self.cart.ram_offset(addr) {
                     self.cart.ram[addr]
                 } else {
@@ -463,24 +463,24 @@ impl Addressable for CartMBC5 {
     }
     fn write_byte(&mut self, addr: u16, v: u8) {
         match addr {
-            0x0000...0x1fff => {
+            0x0000..=0x1fff => {
                 self.cart.ram_enable = (v & 0xF) == 0xA;
             }
-            0x2000...0x2fff => {
+            0x2000..=0x2fff => {
                 self.cart.rom_reg &= 0xff00;
                 self.cart.rom_reg |= usize::from(v);
             }
-            0x3000...0x3fff => {
+            0x3000..=0x3fff => {
                 self.cart.rom_reg &= 0x00ff;
                 self.cart.rom_reg |= usize::from(v & 0b1) << 8;
             }
-            0x4000...0x5fff => {
+            0x4000..=0x5fff => {
                 self.cart.ram_reg = usize::from(v & 0xf);
             }
-            0x6000...0x7FFF => {
+            0x6000..=0x7FFF => {
                 /* do nothing? Pokemon yellow wants to set bank mode? MBC5 doesn't have reg switch */
             }
-            0xA000...0xBFFF => {
+            0xA000..=0xBFFF => {
                 if let Some(addr) = self.cart.ram_offset(addr) {
                     self.cart.ram[addr] = v;
                 }

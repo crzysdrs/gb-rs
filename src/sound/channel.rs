@@ -216,7 +216,7 @@ impl Vol {
         self.wait.reset();
         self.volume = None;
     }
-    pub fn step(&mut self, reg: &mut VolumePass<Target = ChannelRegs>, c: &Clocks) -> u8 {
+    pub fn step(&mut self, reg: &mut dyn VolumePass<Target = ChannelRegs>, c: &Clocks) -> u8 {
         let vol = self.volume.get_or_insert(reg.vol_start());
         if reg.vol_period() == 0 {
             /* do nothing */
@@ -281,7 +281,7 @@ impl Duty {
     pub fn reset(&mut self) {
         self.offset = 0;
     }
-    pub fn step(&mut self, regs: &mut DutyPass<Target = ChannelRegs>, ticks: u8) -> bool {
+    pub fn step(&mut self, regs: &mut dyn DutyPass<Target = ChannelRegs>, ticks: u8) -> bool {
         self.offset += ticks;
         self.offset %= 8;
         DUTY_CYCLES[regs.duty() as usize][self.offset as usize]
@@ -306,7 +306,7 @@ impl LFSR {
     pub fn step(
         &mut self,
         ticks: u8,
-        regs: &mut LFSRPass<Target = ChannelRegs>,
+        regs: &mut dyn LFSRPass<Target = ChannelRegs>,
         _clocks: &Clocks,
     ) -> bool {
         if let Some(count) = self.wait.ready(
