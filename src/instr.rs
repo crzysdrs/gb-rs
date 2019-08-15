@@ -110,17 +110,23 @@ pub enum Instr {
 }
 
 pub struct Disasm {
-    bytes: [u8; 2],
+    bytes: [u8; 3],
     len: usize,
 }
 
 impl Disasm {
     pub fn new() -> Disasm {
         Disasm {
-            bytes: [0; 2],
+            bytes: [0; 3],
             len: 0,
         }
     }
+    // pub fn to_bytes(&self) -> &[u8] {
+    //     &self.bytes[..self.len]
+    // }
+    // pub fn reset(&mut self) {
+    //     self.len = 0;
+    // }
     fn append_byte(&mut self, b: u8) {
         self.bytes[self.len] = b;
         self.len += 1;
@@ -385,10 +391,12 @@ impl Disasm {
             0xff => Instr::SET_l8_r8(7, Reg8::A),
         }
     }
+
     pub fn feed_byte(&mut self, b: u8) -> Option<Instr> {
+        self.append_byte(b);
         match self.len {
-            2 => {
-                let val = u16::from_le_bytes([self.bytes[1], b]);
+            3 => {
+                let val = u16::from_le_bytes([self.bytes[1], self.bytes[2]]);
                 let r = match self.bytes[0] {
                     0x01 => Instr::LD_r16_d16(Reg16::BC, val),
                     0x08 => Instr::LD_ia16_r16(val, Reg16::SP),
@@ -407,11 +415,11 @@ impl Disasm {
                     0xdc => Instr::CALL_COND_a16(Cond::C, val),
                     0xea => Instr::LD_ia16_r8(val, Reg8::A),
                     0xfa => Instr::LD_r8_ia16(Reg8::A, val),
-                    _ => panic!("Invalid 3 byte instruction"),
+                    _ => unreachable!("Invalid 3 byte instruction"),
                 };
                 Some(r)
             }
-            1 => match self.bytes[0] {
+            2 => match self.bytes[0] {
                 0x06 => Some(Instr::LD_r8_d8(Reg8::B, b)),
                 0x0e => Some(Instr::LD_r8_d8(Reg8::C, b)),
                 0x16 => Some(Instr::LD_r8_d8(Reg8::D, b)),
@@ -438,12 +446,9 @@ impl Disasm {
                 0xf6 => Some(Instr::OR_d8(b)),
                 0xf8 => Some(Instr::LD_r16_r16_r8(Reg16::HL, Reg16::SP, b as i8)),
                 0xfe => Some(Instr::CP_d8(b)),
-                _ => {
-                    self.append_byte(b);
-                    None
-                }
+                _ => None,
             },
-            0 => match b {
+            1 => match b {
                 0x00 => Some(Instr::NOP),
                 0x02 => Some(Instr::LD_ir16_r8(Reg16::BC, Reg8::A)),
                 0x03 => Some(Instr::INC_r16(Reg16::BC)),
@@ -649,10 +654,7 @@ impl Disasm {
                 0xd3 | 0xdb | 0xdd | 0xe3 | 0xe4 | 0xeb | 0xec | 0xed | 0xf4 | 0xfc | 0xfd => {
                     Some(Instr::INVALID(b))
                 }
-                _ => {
-                    self.append_byte(b);
-                    None
-                }
+                _ => None,
             },
             _ => panic!("Invalid Instruction Buffer"),
         }

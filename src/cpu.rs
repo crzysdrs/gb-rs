@@ -960,7 +960,7 @@ impl CPU {
 #[cfg(test)]
 mod tests {
     use crate::cpu::{Reg8, RegType, CPU};
-    use crate::instr::{Instr};
+    use crate::instr::Instr;
     use crate::mmu::{MMUInternal, MMU};
     use crate::peripherals::PeripheralData;
 
