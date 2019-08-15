@@ -79,7 +79,7 @@ impl AddressableChannel for Channel4 {
         self.regs().read_byte(addr)
     }
     fn write_channel_byte(&mut self, clks: &Clocks, addr: u16, v: u8) {
-        println!("Write to Channel4 {:x} {:x}", addr, v);
+        //println!("Write to Channel4 {:x} {:x}", addr, v);
         self.regs().write_byte(addr, v);
         match addr {
             0xff20 => self.length.reload(self.regs.length(self.length.max_len())),

@@ -90,12 +90,12 @@ impl Cart {
         };
 
         /* temporarily disable broken cgb support */
-        let cgb = match cgb {
-            CGBStatus::CGBOnly => {
-                panic!("Gameboy Color games not yet supported.");
-            }
-            _ => CGBStatus::GB,
-        };
+        // let cgb = match cgb {
+        //     CGBStatus::CGBOnly => {
+        //         panic!("Gameboy Color games not yet supported.");
+        //     }
+        //     _ => CGBStatus::GB,
+        // };
         let end = match cgb {
             CGBStatus::SupportsCGB | CGBStatus::CGBOnly => 0x143,
             _ => 0x144,

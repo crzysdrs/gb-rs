@@ -55,14 +55,17 @@ impl AudioChannel for Channel3 {
         }
         let ticks = self
             .timer
-            .step(Freq::period(&self.regs) / 2, cycles, clocks);
-        self.length.step(clocks)?;
+            .step(Freq::period(&self.regs) * 2, cycles, clocks);
+        let len = self.length.step(clocks);
+        if self.regs.length_stop() {
+            len?;
+        }
         let pos = self.pos.get_or_insert(0);
         *pos += ticks as usize;
         *pos %= 32;
         let byte = wave[*pos / 2];
         let (lo, hi) = (byte & 0xf, (byte & 0xf0) >> 4);
-        let sample = i16::from(if *pos % 2 == 0 { lo } else { hi });
+        let sample = i16::from(if *pos % 2 == 0 { hi } else { lo });
         match self.regs.vol_code() {
             0 => Some(0),
             1 => Some(sample),
@@ -81,7 +84,7 @@ impl AddressableChannel for Channel3 {
         self.regs().read_byte(addr)
     }
     fn write_channel_byte(&mut self, clks: &Clocks, addr: u16, v: u8) {
-        println!("Write to Channel3 {:x} {:x}", addr, v);
+        //println!("Write to Channel3 {:x} {:x}", addr, v);
         self.regs().write_byte(addr, v);
         match addr {
             0xff1a => {

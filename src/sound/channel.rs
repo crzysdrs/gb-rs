@@ -101,8 +101,8 @@ pub trait SweepPass: HasRegs {
 }
 
 impl ChannelRegs {
-    pub fn enabled(&self) -> bool {
-        *self.nrx4 & 0b0100_0000 != 0
+    pub fn length_stop(&self) -> bool {
+        (*self.nrx4 & 0b0100_0000) != 0
     }
     // pub fn trigger(&self) -> bool {
     //     *self.nrx4 & 0b1000_0000 != 0

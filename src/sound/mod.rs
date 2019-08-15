@@ -306,7 +306,7 @@ impl std::default::Default for Mixer {
                 mask: 0x70,
             },
             unused: EmptyMem::new(0xff, 0xff1f, 17),
-            wave: Mem::new(false, 0xff30, vec![0u8; 32]),
+            wave: Mem::new(false, 0xff30, vec![0u8; 16]),
         }
     }
 }
