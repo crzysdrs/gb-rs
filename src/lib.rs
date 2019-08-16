@@ -257,6 +257,7 @@ mod dma;
 mod emptymem;
 mod fakemem;
 pub mod gb;
+mod hdma;
 mod instr;
 mod mem;
 mod mmu;
@@ -321,7 +322,7 @@ mod tests {
             .map(|line| std::str::from_utf8(&line).unwrap().trim())
             .intersperse(&"\n".to_owned())
             .map(|s| s.replace('\0', &" "))
-            .filter(|s| s.len() > 00)
+            .filter(|s| s.len() > 0)
             .collect::<String>()
             .trim()
             .to_owned()

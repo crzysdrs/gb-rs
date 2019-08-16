@@ -266,7 +266,7 @@ impl CPU {
         let ienable = mem.read_byte_silent(0xffff);
         let interrupt = iflag & ienable;
         if interrupt == 0 {
-            return;
+            /* no change */
         } else if self.reg.ime != 0 {
             self.reg.ime = 0;
             let addr = if interrupt & mask_u8!(InterruptFlag::VBlank) != 0 {

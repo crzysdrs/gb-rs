@@ -7,6 +7,7 @@ use super::timer::Timer;
 use crate::cart::Cart;
 use crate::cycles;
 use crate::dma::DMA;
+use crate::hdma::HDMA;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use crate::sound::Mixer;
 
@@ -76,15 +77,15 @@ enum_from_primitive! {
         WY = 0xFF4A,
         WX = 0xFF4B,
         //CGB
-        // HDMA1 = 0xFF51,
-        // HDMA2 = 0xFF52,
-        // HDMA3 = 0xFF53,
-        // HDMA4 = 0xFF54,
-        // HDMA5 = 0xFF55,
-        // BCPS = 0xFF68,
-        // BCPD = 0xFF69,
-        // OCPS = 0xFF6a,
-        // OCPD = 0xFF6b
+        HDMA1 = 0xFF51,
+        HDMA2 = 0xFF52,
+        HDMA3 = 0xFF53,
+        HDMA4 = 0xFF54,
+        HDMA5 = 0xFF55,
+        BCPS = 0xFF68,
+        BCPD = 0xFF69,
+        OCPS = 0xFF6a,
+        OCPD = 0xFF6b
     }
 }
 
@@ -92,6 +93,12 @@ pub struct MemReg {
     reg: u8,
     read_mask: u8,
     write_mask: u8,
+}
+
+impl Default for MemReg {
+    fn default() -> Self {
+        MemReg::new(0, 0xff, 0xff)
+    }
 }
 
 impl MemReg {
@@ -129,6 +136,7 @@ pub struct MMUInternal<'a> {
     display: Display,
     controller: Controller,
     dma: DMA,
+    hdma: HDMA,
     svbk: MemReg, //TODO: GBC
     key1: MemReg, //TODO: GBC
     bios: Mem,
@@ -175,7 +183,11 @@ impl MMUInternal<'_> {
     pub fn speed_change(&self) -> bool {
         (self.key1.reg & 0x1) != 0
     }
-    pub fn new(cart: Cart, serial: Option<&mut dyn Write>, boot_rom: Option<Vec<u8>>) -> MMUInternal {
+    pub fn new(
+        cart: Cart,
+        serial: Option<&mut dyn Write>,
+        boot_rom: Option<Vec<u8>>,
+    ) -> MMUInternal {
         let bios = Mem::new(
             true,
             0,
@@ -210,6 +222,7 @@ impl MMUInternal<'_> {
             ram1,
             ram2,
             dma: DMA::new(),
+            hdma: HDMA::new(),
             interrupt_flag,
             effectful_change: true,
         }
@@ -238,7 +251,8 @@ impl MMUInternal<'_> {
             0xA000..=0xBFFF => &mut self.cart as &mut dyn Peripheral,
             0xC000..=0xCFFF => &mut self.ram0[0] as &mut dyn Peripheral,
             0xD000..=0xDFFF => {
-                &mut self.ram0[usize::from(std::cmp::max(self.svbk.reg(), 1))] as &mut dyn Peripheral
+                &mut self.ram0[usize::from(std::cmp::max(self.svbk.reg(), 1))]
+                    as &mut dyn Peripheral
             }
             0xE000..=0xEFFF => {
                 /* echo of ram0 */
@@ -266,6 +280,7 @@ impl MMUInternal<'_> {
             0xff70 => &mut self.svbk as &mut dyn Peripheral, //TODO: GBC
             0xff4d => &mut self.key1 as &mut dyn Peripheral, //TODO: GBC
             0xff46 => &mut self.dma as &mut dyn Peripheral,
+            0xff51..=0xff55 => &mut self.hdma as &mut dyn Peripheral,
             0xFF80..=0xFFFF => &mut self.ram1 as &mut dyn Peripheral,
             _ => &mut self.fake_mem as &mut dyn Peripheral,
         }
@@ -274,6 +289,21 @@ impl MMUInternal<'_> {
         if self.last_sync < self.time {
             let mut interrupt_flag = 0;
             let cycles = self.time - self.last_sync;
+            if self.dma.is_active() {
+                self.dma.step(data, cycles);
+                for (s, d) in self.dma.copy_bytes() {
+                    let v = self.read_byte(s);
+                    self.write_byte(d, v);
+                }
+            }
+            if self.hdma.is_active() {
+                /* TODO: This needs to hook into Vblanks in some cases */
+                self.hdma.step(data, cycles);
+                for (s, d) in self.hdma.copy_bytes() {
+                    let v = self.read_byte(s);
+                    self.write_byte(d, v);
+                }
+            }
             self.walk_peripherals(|p| {
                 if let Some(i) = p.step(data, cycles) {
                     interrupt_flag |= mask_u8!(i);
@@ -297,9 +327,6 @@ impl MMUInternal<'_> {
     }
     pub fn time(&self) -> cycles::CycleCount {
         self.time
-    }
-    pub fn swap_dma(&mut self, new_dma: DMA) -> DMA {
-        std::mem::replace(&mut self.dma, new_dma)
     }
     pub fn set_controls(&mut self, controls: u8) {
         self.controller.set_controls(controls);
@@ -328,9 +355,6 @@ impl MMUInternal<'_> {
     }
     pub fn set_time(&mut self, v: cycles::CycleCount) {
         self.time = v;
-    }
-    pub fn dma_active(&mut self) -> bool {
-        self.dma.is_active()
     }
     pub fn disable_bios(&mut self) {
         self.bios_exists = false;

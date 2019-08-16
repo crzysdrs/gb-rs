@@ -3,7 +3,6 @@ use super::mmu::*;
 use crate::cart::Cart;
 #[cfg(test)]
 use crate::cpu::Registers;
-use crate::dma::DMA;
 use crate::peripherals::PeripheralData;
 use std::io::Write;
 
@@ -87,18 +86,11 @@ impl<'a> GB<'a> {
         let finish_time = time.map(|x| x + self.mem.time());
         real.reset_vblank();
         let mut mmu = MMU::new(&mut self.mem, real);
-        while time.is_none()
-            || finish_time
-                .map(|x| mmu.bus.time() < x)
-                .unwrap_or_else(|| false)
+        while finish_time
+            .map(|x| mmu.bus.time() < x)
+            .unwrap_or_else(|| true)
         {
             self.cpu.execute(&mut mmu);
-            if mmu.bus.dma_active() {
-                let fake_dma = DMA::new();
-                let mut real_dma = mmu.bus.swap_dma(fake_dma);
-                real_dma.run(&mut mmu);
-                mmu.bus.swap_dma(real_dma);
-            }
             mmu.sync_peripherals();
 
             if self.cpu.is_dead(&mmu) {

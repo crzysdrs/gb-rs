@@ -227,17 +227,17 @@ impl FrameSequencer {
     }
 }
 
-struct WaitTimer {
+pub struct WaitTimer {
     acc: cycles::CycleCount,
 }
 
 impl WaitTimer {
-    fn new() -> WaitTimer {
+    pub fn new() -> WaitTimer {
         WaitTimer {
             acc: cycles::Cycles::new(0),
         }
     }
-    fn ready(
+    pub fn ready(
         &mut self,
         new_cycles: cycles::CycleCount,
         required: cycles::CycleCount,
@@ -254,7 +254,7 @@ impl WaitTimer {
             None
         }
     }
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.acc = cycles::Cycles::new(0);
     }
 }
