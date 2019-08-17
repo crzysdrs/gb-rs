@@ -169,6 +169,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                 _ => {}
             }
         }
+        //controls = !(GBControl::Up as u8 | GBControl::A as u8);
         gb.set_controls(controls);
         let ticks = timer_sub.performance_counter();
         let elapsed = ticks - last_ticks;
@@ -246,6 +247,12 @@ fn main() -> Result<(), std::io::Error> {
     println!("SI from Cycles: {}", s2);
     let s3 = gb::cycles::CGB::from(1.0 * si::S / 4096.0);
     println!("Hz {}", s3);
+    let palettes: Vec<_> = gb::display::KEY_PALETTES
+        .iter()
+        .enumerate()
+        .map(|(i, k)| format!("{} ({})", i, k.keys))
+        .collect();
+    let palettes: Vec<_> = palettes.iter().map(|x| x.as_str()).collect();
 
     let matches = App::new("GB Rom Emulator")
         .version("0.0.1")
@@ -282,6 +289,13 @@ fn main() -> Result<(), std::io::Error> {
                 .help("Specify a boot rom"),
         )
         .arg(
+            Arg::with_name("palette")
+                .short("p")
+                .takes_value(true)
+                .help("Specify a custom GBC Palette (if using GB rom w/ no boot rom)")
+                .long_help(&palettes.join("\n")),
+        )
+        .arg(
             Arg::with_name("v")
                 .short("v")
                 .multiple(true)
@@ -290,6 +304,9 @@ fn main() -> Result<(), std::io::Error> {
         .get_matches();
 
     let rom = std::path::Path::new(matches.value_of("ROM").unwrap());
+    let palette: Option<usize> = matches
+        .value_of("palette")
+        .map(|x| x.parse().expect("Invalid Palette Number"));
     let boot_rom = match matches.value_of("boot-rom") {
         Some(name) => {
             let mut file = std::fs::File::open(name)?;
@@ -361,6 +378,7 @@ fn main() -> Result<(), std::io::Error> {
         Some(&mut *serial),
         matches.occurrences_of("trace") > 0,
         boot_rom,
+        palette,
     );
 
     if matches.occurrences_of("no-display") > 0 {

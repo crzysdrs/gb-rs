@@ -354,6 +354,7 @@ mod tests {
                         Some(&mut buf),
                         false,
                         None,
+                        None,
                     );
                     gb.step_timeout(Some((30.0 * dimensioned::si::S).into()), &mut p);
                     read_screen(&mut gb)
@@ -377,6 +378,7 @@ mod tests {
                         Cart::new(include_bytes!($path).to_vec()),
                         Some(&mut buf),
                         false,
+                        None,
                         None,
                     );
                     gb.magic_breakpoint();

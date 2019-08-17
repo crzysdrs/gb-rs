@@ -1,6 +1,7 @@
 use crate::cart::CGBStatus;
 use crate::cpu::InterruptFlag;
 use crate::cycles;
+use crate::mmu::MemRegister;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use itertools::Itertools;
 use std::collections::VecDeque;
@@ -8,6 +9,194 @@ use std::collections::VecDeque;
 pub const SCREEN_X: usize = 160;
 pub const SCREEN_Y: usize = 144;
 pub const BYTES_PER_PIXEL: usize = 4;
+
+pub const PALETTE_COLORS: [[u8; 3]; 76] = [
+    //[r, g, b]
+    [0x00, 0x00, 0x00],
+    [0x00, 0x00, 0xFF],
+    [0x00, 0x3A, 0x3A],
+    [0x00, 0x4A, 0x00],
+    [0x00, 0x63, 0x00],
+    [0x00, 0x63, 0xC5],
+    [0x00, 0x84, 0x00],
+    [0x00, 0x84, 0x84],
+    [0x00, 0x84, 0xFF],
+    [0x00, 0xFF, 0x00],
+    [0x31, 0x84, 0x00],
+    [0x3A, 0x29, 0x00],
+    [0x42, 0x73, 0x7B],
+    [0x4A, 0x00, 0x00],
+    [0x52, 0x52, 0x52],
+    [0x52, 0x52, 0x8C],
+    [0x52, 0xDE, 0x00],
+    [0x52, 0xFF, 0x00],
+    [0x5A, 0x31, 0x08],
+    [0x5A, 0x5A, 0x5A],
+    [0x5A, 0xBD, 0xFF],
+    [0x63, 0x00, 0x00],
+    [0x63, 0x94, 0x73],
+    [0x63, 0xA5, 0xFF],
+    [0x63, 0xEF, 0xEF],
+    [0x6B, 0x52, 0x31],
+    [0x6B, 0xFF, 0x00],
+    [0x7B, 0x4A, 0x00],
+    [0x7B, 0xFF, 0x00],
+    [0x7B, 0xFF, 0x31],
+    [0x84, 0x31, 0x00],
+    [0x84, 0x6B, 0x29],
+    [0x8C, 0x8C, 0xDE],
+    [0x94, 0x3A, 0x00],
+    [0x94, 0x3A, 0x3A],
+    [0x94, 0x42, 0x00],
+    [0x94, 0x94, 0x94],
+    [0x94, 0x94, 0xFF],
+    [0x94, 0xB5, 0xFF],
+    [0x9C, 0x63, 0x00],
+    [0x9C, 0x84, 0x31],
+    [0xA5, 0x84, 0x52],
+    [0xA5, 0x9C, 0xFF],
+    [0xA5, 0xA5, 0xA5],
+    [0xAD, 0x5A, 0x42],
+    [0xAD, 0xAD, 0x84],
+    [0xB5, 0x73, 0x00],
+    [0xB5, 0xB5, 0xFF],
+    [0xCE, 0x9C, 0x84],
+    [0xD6, 0x00, 0x00],
+    [0xE6, 0x00, 0x00],
+    [0xF7, 0xC5, 0xA5],
+    [0xFF, 0x00, 0x00],
+    [0xFF, 0x00, 0xFF],
+    [0xFF, 0x42, 0x00],
+    [0xFF, 0x52, 0x4A],
+    [0xFF, 0x63, 0x52],
+    [0xFF, 0x73, 0x00],
+    [0xFF, 0x84, 0x00],
+    [0xFF, 0x84, 0x84],
+    [0xFF, 0x94, 0x94],
+    [0xFF, 0x9C, 0x00],
+    [0xFF, 0xAD, 0x63],
+    [0xFF, 0xC5, 0x42],
+    [0xFF, 0xCE, 0x00],
+    [0xFF, 0xD6, 0x00],
+    [0xFF, 0xDE, 0x00],
+    [0xFF, 0xE6, 0xC5],
+    [0xFF, 0xFF, 0x00],
+    [0xFF, 0xFF, 0x3A],
+    [0xFF, 0xFF, 0x7B],
+    [0xFF, 0xFF, 0x94],
+    [0xFF, 0xFF, 0x9C],
+    [0xFF, 0xFF, 0xA5],
+    [0xFF, 0xFF, 0xCE],
+    [0xFF, 0xFF, 0xFF],
+];
+pub struct CustomPalette {
+    bg: [u8; 4],
+    obj0: [u8; 4],
+    obj1: [u8; 4],
+}
+
+pub struct KeyPalette {
+    pub keys: &'static str,
+    palette: CustomPalette,
+}
+pub const KEY_PALETTES: [KeyPalette; 12] = [
+    KeyPalette {
+        keys: "Right",
+        palette: CustomPalette {
+            bg: [75, 17, 54, 0],
+            obj0: [75, 17, 54, 0],
+            obj1: [75, 17, 54, 0],
+        },
+    },
+    KeyPalette {
+        keys: "A + Down",
+        palette: CustomPalette {
+            bg: [75, 68, 52, 0],
+            obj0: [75, 68, 52, 0],
+            obj1: [75, 68, 52, 0],
+        },
+    },
+    KeyPalette {
+        keys: "Up",
+        palette: CustomPalette {
+            bg: [75, 62, 30, 0],
+            obj0: [75, 62, 30, 0],
+            obj1: [75, 62, 30, 0],
+        },
+    },
+    KeyPalette {
+        keys: "B + Right",
+        palette: CustomPalette {
+            bg: [0, 7, 66, 75],
+            obj0: [0, 7, 66, 75],
+            obj1: [0, 7, 66, 75],
+        },
+    },
+    KeyPalette {
+        keys: "B + Left",
+        palette: CustomPalette {
+            bg: [75, 43, 14, 0],
+            obj0: [75, 43, 14, 0],
+            obj1: [75, 43, 14, 0],
+        },
+    },
+    KeyPalette {
+        keys: "Down",
+        palette: CustomPalette {
+            bg: [73, 60, 37, 0],
+            obj0: [73, 60, 37, 0],
+            obj1: [73, 60, 37, 0],
+        },
+    },
+    KeyPalette {
+        keys: "B + Up",
+        palette: CustomPalette {
+            bg: [67, 48, 31, 18],
+            obj0: [75, 62, 30, 0],
+            obj1: [75, 62, 30, 0],
+        },
+    },
+    KeyPalette {
+        keys: "A + Right",
+        palette: CustomPalette {
+            bg: [75, 29, 5, 0],
+            obj0: [75, 59, 34, 0],
+            obj1: [75, 59, 34, 0],
+        },
+    },
+    KeyPalette {
+        keys: "A + Left",
+        palette: CustomPalette {
+            bg: [75, 32, 15, 0],
+            obj0: [75, 59, 34, 0],
+            obj1: [75, 62, 30, 0],
+        },
+    },
+    KeyPalette {
+        keys: "A + Up",
+        palette: CustomPalette {
+            bg: [75, 59, 34, 0],
+            obj0: [75, 29, 6, 0],
+            obj1: [75, 23, 1, 0],
+        },
+    },
+    KeyPalette {
+        keys: "Left",
+        palette: CustomPalette {
+            bg: [75, 23, 1, 0],
+            obj0: [75, 59, 34, 0],
+            obj1: [75, 29, 6, 0],
+        },
+    },
+    KeyPalette {
+        keys: "B + Down",
+        palette: CustomPalette {
+            bg: [75, 68, 27, 0],
+            obj0: [75, 23, 1, 0],
+            obj1: [75, 29, 6, 0],
+        },
+    },
+];
 
 #[derive(PartialEq, Copy, Clone)]
 enum DisplayState {
@@ -71,6 +260,12 @@ struct Color {
     low: u8,
 }
 
+enum DisplayMode {
+    StrictGB,
+    CGBCompat,
+    CGB,
+}
+
 pub struct Display {
     vram: [u8; (2 * 8) << 10],
     oam: [SpriteAttribute; 40],
@@ -98,7 +293,7 @@ pub struct Display {
     state: DisplayState,
     changed_state: bool,
     frame: u64,
-    cgb_mode: CGBStatus,
+    cgb_mode: DisplayMode,
     bgpalette: [[Color; 4]; 8],
     objpalette: [[Color; 4]; 8],
 }
@@ -116,8 +311,19 @@ impl Display {
     }
 
     pub fn new(cgb: CGBStatus) -> Display {
+        let cgb_mode = match cgb {
+            CGBStatus::GB => {
+                if false {
+                    /* TODO: optionally allow user to go back to GB */
+                    DisplayMode::StrictGB
+                } else {
+                    DisplayMode::CGBCompat
+                }
+            }
+            CGBStatus::SupportsCGB | CGBStatus::CGBOnly => DisplayMode::CGB,
+        };
         Display {
-            cgb_mode: cgb,
+            cgb_mode,
             frame: 0,
             changed_state: false,
             vram: [0; (2 * 8) << 10],
@@ -151,6 +357,273 @@ impl Display {
             unused_cycles: cycles::Cycles::new(0),
             bgpalette: [[Color { high: 0, low: 0 }; 4]; 8],
             objpalette: [[Color { high: 0, low: 0 }; 4]; 8],
+        }
+    }
+    pub fn init(&mut self, checksum: u8, dis: u8, key_palette: Option<usize>) {
+        fn convert_palette(display: &mut Display, p: &[u8; 4], reg: MemRegister) {
+            p.iter()
+                .map(|m| {
+                    let c = PALETTE_COLORS[usize::from(*m)];
+                    (c[2] as u16 & 0xf8) << 7
+                        | (c[1] as u16 & 0xf8) << 2
+                        | (c[0] as u16 & 0xf8) >> 3
+                })
+                .flat_map(|d| u16::to_le_bytes(d).to_vec().into_iter())
+                .for_each(|d| display.write_byte(reg as u16, d))
+        }
+
+        let chosen = key_palette
+            .and_then(|p| KEY_PALETTES.get(p))
+            .map(|key| &key.palette);
+
+        let builtin = &match (checksum, dis) {
+            (0xDB, _) | (0x15, _) => CustomPalette {
+                bg: [75, 68, 52, 0],
+                obj0: [75, 68, 52, 0],
+                obj1: [75, 68, 52, 0],
+            },
+            (0x6B, _) | (0x18, 0x4B) | (0x6A, 0x4B) => CustomPalette {
+                bg: [75, 32, 15, 0],
+                obj0: [63, 65, 33, 13],
+                obj1: [75, 20, 52, 1],
+            },
+            (0x14, _) => CustomPalette {
+                bg: [75, 59, 34, 0],
+                obj0: [75, 29, 6, 0],
+                obj1: [75, 59, 34, 0],
+            },
+            (0xA8, _) | (0x86, _) => CustomPalette {
+                bg: [72, 38, 22, 2],
+                obj0: [63, 65, 33, 13],
+                obj1: [75, 59, 34, 0],
+            },
+            (0x4B, _) | (0x90, _) | (0x9A, _) | (0xBD, _) | (0x28, 0x46) => CustomPalette {
+                bg: [75, 29, 6, 0],
+                obj0: [75, 59, 34, 0],
+                obj1: [75, 59, 34, 0],
+            },
+            (0x3D, _) | (0x6A, 0x49) => CustomPalette {
+                bg: [75, 17, 54, 0],
+                obj0: [75, 59, 34, 0],
+                obj1: [75, 59, 34, 0],
+            },
+            (0x3E, _) | (0xE0, _) => CustomPalette {
+                bg: [75, 61, 52, 0],
+                obj0: [75, 61, 52, 0],
+                obj1: [75, 20, 52, 1],
+            },
+            (0x4E, _) => CustomPalette {
+                bg: [75, 23, 1, 0],
+                obj0: [75, 59, 34, 0],
+                obj1: [75, 70, 8, 52],
+            },
+            (0x17, _) | (0x8B, _) | (0x27, 0x4E) | (0x61, 0x41) => CustomPalette {
+                bg: [75, 29, 6, 0],
+                obj0: [75, 59, 34, 0],
+                obj1: [75, 23, 1, 0],
+            },
+            (0x70, _) => CustomPalette {
+                bg: [75, 59, 34, 0],
+                obj0: [75, 9, 10, 3],
+                obj1: [75, 23, 1, 0],
+            },
+            (0x3C, _) => CustomPalette {
+                bg: [75, 23, 1, 0],
+                obj0: [75, 23, 1, 0],
+                obj1: [75, 59, 34, 0],
+            },
+            (0x46, 0x45) => CustomPalette {
+                bg: [47, 71, 44, 0],
+                obj0: [0, 75, 59, 34],
+                obj1: [0, 75, 59, 34],
+            },
+            (0x5C, _) | (0x49, _) | (0xB3, 0x42) | (0x27, 0x42) => CustomPalette {
+                bg: [42, 68, 4, 0],
+                obj0: [56, 49, 21, 0],
+                obj1: [1, 75, 70, 8],
+            },
+            (0x10, _)
+            | (0xF6, _)
+            | (0x68, _)
+            | (0x29, _)
+            | (0x52, _)
+            | (0x01, _)
+            | (0x5D, _)
+            | (0x6D, _) => CustomPalette {
+                bg: [75, 62, 30, 0],
+                obj0: [75, 23, 1, 0],
+                obj1: [75, 29, 6, 0],
+            },
+            (0x19, _) => CustomPalette {
+                bg: [75, 61, 52, 0],
+                obj0: [75, 59, 34, 0],
+                obj1: [75, 59, 34, 0],
+            },
+            (0xD3, 0x52) => CustomPalette {
+                bg: [75, 32, 15, 0],
+                obj0: [75, 59, 34, 0],
+                obj1: [75, 32, 15, 0],
+            },
+            (0xBF, 0x20) => CustomPalette {
+                bg: [75, 32, 15, 0],
+                obj0: [75, 59, 34, 0],
+                obj1: [75, 59, 34, 0],
+            },
+            (0xF2, _) | (0x69, _) | (0x0D, 0x52) => CustomPalette {
+                bg: [75, 68, 52, 0],
+                obj0: [75, 68, 52, 0],
+                obj1: [75, 20, 52, 1],
+            },
+            (0x95, _) | (0xB3, 0x52) => CustomPalette {
+                bg: [75, 17, 54, 0],
+                obj0: [75, 17, 54, 0],
+                obj1: [75, 20, 52, 1],
+            },
+            (0x8C, _) => CustomPalette {
+                bg: [75, 45, 12, 0],
+                obj0: [75, 57, 35, 0],
+                obj1: [75, 45, 12, 0],
+            },
+            (0x59, _) | (0xC6, 0x41) => CustomPalette {
+                bg: [75, 45, 12, 0],
+                obj0: [75, 57, 35, 0],
+                obj1: [75, 20, 52, 1],
+            },
+            (0x97, _) | (0x39, _) | (0x43, _) => CustomPalette {
+                bg: [75, 62, 30, 0],
+                obj0: [75, 23, 1, 0],
+                obj1: [75, 23, 1, 0],
+            },
+            (0xC9, _) => CustomPalette {
+                bg: [74, 24, 40, 19],
+                obj0: [75, 57, 35, 0],
+                obj1: [75, 23, 1, 0],
+            },
+            (0x9C, _) => CustomPalette {
+                bg: [75, 32, 15, 0],
+                obj0: [75, 32, 15, 0],
+                obj1: [63, 65, 33, 13],
+            },
+            (0xF4, 0x2D) => CustomPalette {
+                bg: [75, 29, 5, 0],
+                obj0: [75, 59, 34, 0],
+                obj1: [75, 23, 1, 0],
+            },
+            (0x16, _)
+            | (0x92, _)
+            | (0x35, _)
+            | (0x75, _)
+            | (0x99, _)
+            | (0x0C, _)
+            | (0xB7, _)
+            | (0x67, _) => CustomPalette {
+                bg: [75, 62, 30, 0],
+                obj0: [75, 62, 30, 0],
+                obj1: [75, 62, 30, 0],
+            },
+            (0xD3, 0x49) => CustomPalette {
+                bg: [75, 45, 12, 0],
+                obj0: [75, 62, 30, 0],
+                obj1: [75, 23, 1, 0],
+            },
+            (0x88, _) => CustomPalette {
+                bg: [42, 68, 4, 0],
+                obj0: [42, 68, 4, 0],
+                obj1: [42, 68, 4, 0],
+            },
+            (0x34, _) | (0x66, 0x45) | (0xF4, 0x20) => CustomPalette {
+                bg: [75, 28, 46, 0],
+                obj0: [75, 59, 34, 0],
+                obj1: [75, 59, 34, 0],
+            },
+            (0x46, 0x52) => CustomPalette {
+                bg: [75, 23, 1, 0],
+                obj0: [68, 52, 21, 0],
+                obj1: [75, 29, 6, 0],
+            },
+            (0xE8, _) | (0x28, 0x41) | (0xA5, 0x41) => CustomPalette {
+                bg: [0, 7, 66, 75],
+                obj0: [0, 7, 66, 75],
+                obj1: [0, 7, 66, 75],
+            },
+            (0xA5, 0x52) => CustomPalette {
+                bg: [75, 62, 30, 0],
+                obj0: [75, 29, 6, 0],
+                obj1: [75, 29, 6, 0],
+            },
+            (0xB3, 0x55) => CustomPalette {
+                bg: [75, 45, 12, 0],
+                obj0: [75, 57, 35, 0],
+                obj1: [75, 57, 35, 0],
+            },
+            (0xAA, _) => CustomPalette {
+                bg: [75, 29, 5, 0],
+                obj0: [75, 59, 34, 0],
+                obj1: [75, 29, 5, 0],
+            },
+            (0x36, _) => CustomPalette {
+                bg: [16, 58, 68, 75],
+                obj0: [75, 75, 23, 1],
+                obj1: [75, 59, 34, 0],
+            },
+            (0xFF, _) | (0x71, _) => CustomPalette {
+                bg: [75, 61, 52, 0],
+                obj0: [75, 61, 52, 0],
+                obj1: [75, 61, 52, 0],
+            },
+            (0x1D, _) => CustomPalette {
+                bg: [42, 68, 4, 0],
+                obj0: [56, 49, 21, 0],
+                obj1: [56, 49, 21, 0],
+            },
+            (0x0D, 0x45) => CustomPalette {
+                bg: [75, 32, 15, 0],
+                obj0: [63, 65, 33, 13],
+                obj1: [63, 65, 33, 13],
+            },
+            (0xF7, _) | (0xA2, _) => CustomPalette {
+                bg: [75, 62, 30, 0],
+                obj0: [75, 29, 6, 0],
+                obj1: [75, 23, 1, 0],
+            },
+            (0x9D, _) => CustomPalette {
+                bg: [75, 32, 15, 0],
+                obj0: [75, 59, 34, 0],
+                obj1: [75, 62, 30, 0],
+            },
+            (0x58, _) => CustomPalette {
+                bg: [75, 43, 14, 0],
+                obj0: [75, 43, 14, 0],
+                obj1: [75, 43, 14, 0],
+            },
+            (0x6F, _) => CustomPalette {
+                bg: [75, 64, 39, 0],
+                obj0: [75, 64, 39, 0],
+                obj1: [75, 64, 39, 0],
+            },
+            (0x61, 0x45) => CustomPalette {
+                bg: [75, 23, 1, 0],
+                obj0: [75, 59, 34, 0],
+                obj1: [75, 23, 1, 0],
+            },
+            (0xD1, _) | (0xF0, _) | (0xCE, _) | (0xBF, 0x43) => CustomPalette {
+                bg: [26, 75, 55, 0],
+                obj0: [75, 75, 23, 1],
+                obj1: [75, 62, 30, 0],
+            },
+            (0x3F, _) | (0xC6, 0x20) | (0x18, 0x49) | (0x66, 0x4C) | (_, _) => CustomPalette {
+                bg: [75, 29, 5, 0],
+                obj0: [75, 59, 34, 0],
+                obj1: [75, 59, 34, 0],
+            },
+        };
+
+        if let Some(p) = chosen.or(Some(builtin)) {
+            self.write_byte(MemRegister::BGPS as u16, 0x80);
+            convert_palette(self, &p.bg, MemRegister::BGPD);
+            self.write_byte(MemRegister::OBPS as u16, 0x80);
+            convert_palette(self, &p.obj0, MemRegister::OBPD);
+            convert_palette(self, &p.obj1, MemRegister::OBPD);
         }
     }
     pub fn oam_lookup(&self, idx: OAMIdx) -> Option<&SpriteAttribute> {
@@ -229,10 +702,8 @@ impl Display {
         BGIdx(
             Display::bank_vram_ro(&self.vram, 0)[idx as usize],
             match self.cgb_mode {
-                CGBStatus::GB => 0,
-                CGBStatus::SupportsCGB | CGBStatus::CGBOnly => {
-                    Display::bank_vram_ro(&self.vram, 1)[idx as usize]
-                }
+                DisplayMode::StrictGB | DisplayMode::CGBCompat => 0,
+                DisplayMode::CGB => Display::bank_vram_ro(&self.vram, 1)[idx as usize],
             },
         )
     }
@@ -249,10 +720,8 @@ impl Display {
             BGIdx(
                 Display::bank_vram_ro(&self.vram, 0)[idx as usize],
                 match self.cgb_mode {
-                    CGBStatus::GB => 0,
-                    CGBStatus::SupportsCGB | CGBStatus::CGBOnly => {
-                        Display::bank_vram_ro(&self.vram, 1)[idx as usize]
-                    }
+                    DisplayMode::StrictGB | DisplayMode::CGBCompat => 0,
+                    DisplayMode::CGB => Display::bank_vram_ro(&self.vram, 1)[idx as usize],
                 },
             ),
             Coord(0, y % 8),
@@ -377,8 +846,8 @@ impl Display {
                     };
                     let shade_id = (pal >> (shade_id * 2)) & 0b11;
                     let gbc = match self.cgb_mode {
-                        CGBStatus::CGBOnly | CGBStatus::SupportsCGB => true,
-                        CGBStatus::GB => false,
+                        DisplayMode::CGB | DisplayMode::CGBCompat => true,
+                        DisplayMode::StrictGB => false,
                     };
                     if gbc {
                         let palette = match palette {
@@ -611,8 +1080,8 @@ impl Tile {
         };
 
         let gbc = match display.cgb_mode {
-            CGBStatus::CGBOnly | CGBStatus::SupportsCGB => true,
-            CGBStatus::GB => false,
+            DisplayMode::CGB => true,
+            DisplayMode::StrictGB | DisplayMode::CGBCompat => false,
         };
         let (priority, palette) = match *self {
             Tile::Sprite(oam, _) => {
@@ -779,6 +1248,7 @@ impl Addressable for Display {
                 self.obpd = v;
                 self.obps = update_color_palette(&mut self.objpalette, self.obps, self.obpd);
             }
+            0xff44 => { /* read only */ }
             _ => *self.lookup(addr) = v,
         }
     }

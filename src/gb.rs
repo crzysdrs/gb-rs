@@ -1,6 +1,6 @@
 use super::cpu::*;
 use super::mmu::*;
-use crate::cart::Cart;
+use crate::cart::{CGBStatus, Cart};
 #[cfg(test)]
 use crate::cpu::Registers;
 use crate::peripherals::PeripheralData;
@@ -29,16 +29,23 @@ impl<'a> GB<'a> {
         serial: Option<&'b mut dyn Write>,
         trace: bool,
         boot_rom: Option<Vec<u8>>,
+        palette: Option<usize>,
     ) -> GB {
         let has_bootrom = boot_rom.is_some();
         let cgb = cart.cgb();
+        let hash = cart.title_hash();
+        let dis = *cart.title().as_bytes().iter().nth(3).unwrap();
         let mut gb = GB {
             cpu: CPU::new(trace),
             mem: MMUInternal::new(cart, serial, boot_rom),
         };
         if !has_bootrom {
             let mut data = PeripheralData::empty();
-            gb.cpu.initialize(cgb, &mut MMU::new(&mut gb.mem, &mut data));
+            gb.cpu
+                .initialize(cgb, &mut MMU::new(&mut gb.mem, &mut data));
+            if let CGBStatus::GB = cgb {
+                gb.mem.get_display_mut().init(hash, dis, palette);
+            }
         }
         gb
     }

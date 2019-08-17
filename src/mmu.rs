@@ -82,10 +82,10 @@ enum_from_primitive! {
         HDMA3 = 0xFF53,
         HDMA4 = 0xFF54,
         HDMA5 = 0xFF55,
-        BCPS = 0xFF68,
-        BCPD = 0xFF69,
-        OCPS = 0xFF6a,
-        OCPD = 0xFF6b
+        BGPS = 0xFF68,
+        BGPD = 0xFF69,
+        OBPS = 0xFF6a,
+        OBPD = 0xFF6b
     }
 }
 
@@ -117,7 +117,7 @@ impl MemReg {
 impl Peripheral for MemReg {}
 impl Addressable for MemReg {
     fn write_byte(&mut self, _addr: u16, val: u8) {
-        self.reg = (val & !self.write_mask) | (val & self.write_mask);
+        self.reg = (self.reg & !self.write_mask) | (val & self.write_mask);
     }
     fn read_byte(&mut self, _addr: u16) -> u8 {
         self.reg & self.read_mask
@@ -236,7 +236,7 @@ impl MMUInternal<'_> {
                     &mut self.cart as &mut dyn Peripheral
                 }
             }
-            0x0100..=0x0200 => &mut self.cart as &mut dyn Peripheral,
+            0x0100..=0x01FF => &mut self.cart as &mut dyn Peripheral,
             0x0200..=0x08FF => {
                 //TODO:GBC
                 if self.bios_exists && self.bios.len() > 256 {
@@ -352,6 +352,9 @@ impl MMUInternal<'_> {
     #[allow(dead_code)]
     pub fn get_display(&self) -> &Display {
         &self.display
+    }
+    pub fn get_display_mut(&mut self) -> &mut Display {
+        &mut self.display
     }
     pub fn set_time(&mut self, v: cycles::CycleCount) {
         self.time = v;

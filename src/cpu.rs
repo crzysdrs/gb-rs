@@ -1,7 +1,7 @@
 use super::alu::{ALUOps, ALU};
-use crate::cart::{CGBStatus};
 use super::instr::{Disasm, Instr};
 use super::mmu::MMU;
+use crate::cart::CGBStatus;
 use crate::mmu::MemRegister;
 use crate::peripherals::Addressable;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -336,7 +336,7 @@ impl CPU {
             self.reg.write(*reg, *val);
         }
         self.reg.write(Reg8::F, 0x0);
-        
+
         let mem_bytes: &[(MemRegister, u8)] = &[
             (MemRegister::NR50, 0x77),
             (MemRegister::NR51, 0xf3),
@@ -352,7 +352,7 @@ impl CPU {
         match cgb {
             CGBStatus::GB => {
                 self.reg.write(Reg8::A, 0x01);
-            },
+            }
             CGBStatus::CGBOnly | CGBStatus::SupportsCGB => {
                 self.reg.write(Reg8::A, 0x11);
                 mem.write_byte_silent(0xff6c, 0xfe);

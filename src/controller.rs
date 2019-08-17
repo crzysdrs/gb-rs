@@ -27,15 +27,13 @@ impl Addressable for Controller {
     fn read_byte(&mut self, addr: u16) -> u8 {
         match MemRegister::from_u64(addr.into()).expect("Valid Register") {
             MemRegister::P1 => {
-                self.p1 &= !0x0f;
-                if self.p1 & 0x30 == 0x30 {
-                    self.p1 |= 0x0f;
-                } else if self.p1 & 0x10 == 0x10 {
-                    self.p1 |= self.read & 0x0f;
-                } else {
-                    self.p1 |= (self.read >> 4) & 0x0f;
+                let button_keys = (self.p1 & 0b0010_0000) == 0;
+                let dir_keys = (self.p1 & 0b0001_0000) == 0;
+                match (button_keys, dir_keys) {
+                    (false, true) => self.p1 | ((self.read >> 4) & 0x0f),
+                    (true, false) => self.p1 | (self.read & 0x0f),
+                    (_, _) => self.p1 | 0xf,
                 }
-                self.p1
             }
             _ => panic!("invalid controller address"),
         }

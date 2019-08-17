@@ -68,8 +68,18 @@ enum BankMode {
 }
 
 impl Cart {
+    pub fn title(&self) -> &String {
+        &self.title
+    }
     pub fn cgb(&self) -> CGBStatus {
         self.cgb
+    }
+    pub fn title_hash(&self) -> u8 {
+        self.title
+            .as_bytes()
+            .iter()
+            .cloned()
+            .fold(0, |acc: u8, v| acc.wrapping_add(v))
     }
     pub fn fake() -> Cart {
         Cart {
@@ -89,13 +99,6 @@ impl Cart {
             _ => CGBStatus::GB,
         };
 
-        /* temporarily disable broken cgb support */
-        // let cgb = match cgb {
-        //     CGBStatus::CGBOnly => {
-        //         panic!("Gameboy Color games not yet supported.");
-        //     }
-        //     _ => CGBStatus::GB,
-        // };
         let end = match cgb {
             CGBStatus::SupportsCGB | CGBStatus::CGBOnly => 0x143,
             _ => 0x144,
@@ -145,7 +148,8 @@ impl Cart {
             0x05 => 64 << 10,
             u => panic!("Unhandled Ram Size: {}", u),
         };
-
+        println!("Title: {}", title);
+        println!("Checksum: 0x{:2x}", rom[0x14d]);
         println!("Ram Size: {}", ram_size);
         println!("ROM Size: {}", rom.len());
         println!("ROM Claimed Size: {}", (32 << 10) << rom[0x148]);
