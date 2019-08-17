@@ -31,13 +31,14 @@ impl<'a> GB<'a> {
         boot_rom: Option<Vec<u8>>,
     ) -> GB {
         let has_bootrom = boot_rom.is_some();
+        let cgb = cart.cgb();
         let mut gb = GB {
             cpu: CPU::new(trace),
             mem: MMUInternal::new(cart, serial, boot_rom),
         };
         if !has_bootrom {
             let mut data = PeripheralData::empty();
-            gb.cpu.initialize(&mut MMU::new(&mut gb.mem, &mut data));
+            gb.cpu.initialize(cgb, &mut MMU::new(&mut gb.mem, &mut data));
         }
         gb
     }

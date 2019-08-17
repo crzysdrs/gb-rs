@@ -1,4 +1,5 @@
 use super::alu::{ALUOps, ALU};
+use crate::cart::{CGBStatus};
 use super::instr::{Disasm, Instr};
 use super::mmu::MMU;
 use crate::mmu::MemRegister;
@@ -321,10 +322,10 @@ impl CPU {
         mem.write_all(&item.to_le_bytes()).expect("Memory wraps");
     }
 
-    pub fn initialize(&mut self, mem: &mut MMU) {
+    pub fn initialize(&mut self, cgb: CGBStatus, mem: &mut MMU) {
         mem.bus.disable_bios();
+
         let regs: &[(Reg16, u16)] = &[
-            (Reg16::AF, 0x0001),
             (Reg16::BC, 0x0013),
             (Reg16::DE, 0x00d8),
             (Reg16::HL, 0x014d),
@@ -334,6 +335,8 @@ impl CPU {
         for (reg, val) in regs.iter() {
             self.reg.write(*reg, *val);
         }
+        self.reg.write(Reg8::F, 0x0);
+        
         let mem_bytes: &[(MemRegister, u8)] = &[
             (MemRegister::NR50, 0x77),
             (MemRegister::NR51, 0xf3),
@@ -345,6 +348,16 @@ impl CPU {
         ];
         for (addr, val) in mem_bytes.iter() {
             mem.write_byte_silent(*addr as u16, *val);
+        }
+        match cgb {
+            CGBStatus::GB => {
+                self.reg.write(Reg8::A, 0x01);
+            },
+            CGBStatus::CGBOnly | CGBStatus::SupportsCGB => {
+                self.reg.write(Reg8::A, 0x11);
+                mem.write_byte_silent(0xff6c, 0xfe);
+                mem.write_byte_silent(0xff75, 0x8f);
+            }
         }
     }
     fn move_pc(&mut self, mem: &mut MMU, v: u16) {
