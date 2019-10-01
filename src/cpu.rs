@@ -1,5 +1,5 @@
 use super::alu::{ALUOps, ALU};
-use super::instr::{Disasm, Instr};
+use super::instr::{Disasm, Instr, RelAddr};
 use super::mmu::MMU;
 use crate::cart::CGBStatus;
 use crate::mmu::MemRegister;
@@ -50,7 +50,7 @@ pub enum Flag {
     C = 1 << 4,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Cond {
     Z,
     NZ,
@@ -366,25 +366,25 @@ impl CPU {
     }
     pub fn execute_instr(&mut self, mut mem: &mut MMU, prev_pc: u16, instr: Instr) {
         match instr {
-            Instr::ADC_r8_d8(x0, x1) => alu_result!(
+            Instr::ADC_r8_d8(x1) => alu_result!(
                 self,
-                x0,
-                ALU::adc(self.reg.read(x0), x1, self.reg.get_flag(Flag::C))
+                Reg8::A,
+                ALU::adc(self.reg.read(Reg8::A), x1, self.reg.get_flag(Flag::C))
             ),
-            Instr::ADC_r8_ir16(x0, x1) => alu_result!(
+            Instr::ADC_r8_ir16(x1) => alu_result!(
                 self,
-                x0,
+                Reg8::A,
                 ALU::adc(
-                    self.reg.read(x0),
+                    self.reg.read(Reg8::A),
                     mem.read_byte(self.reg.read(x1)),
                     self.reg.get_flag(Flag::C)
                 )
             ),
-            Instr::ADC_r8_r8(x0, x1) => alu_result!(
+            Instr::ADC_r8_r8(x1) => alu_result!(
                 self,
-                x0,
+                Reg8::A,
                 ALU::adc(
-                    self.reg.read(x0),
+                    self.reg.read(Reg8::A),
                     self.reg.read(x1),
                     self.reg.get_flag(Flag::C)
                 )
@@ -437,12 +437,12 @@ impl CPU {
             Instr::CALL_COND_a16(x0, x1) => {
                 if self.check_flag(x0) {
                     self.push16(mem, Reg16::PC);
-                    self.move_pc(mem, x1);
+                    self.move_pc(mem, x1.into());
                 }
             }
             Instr::CALL_a16(x0) => {
                 self.push16(mem, Reg16::PC);
-                self.move_pc(mem, x0);
+                self.move_pc(mem, x0.into());
             }
             Instr::CCF => {
                 if self.check_flag(Cond::C) {
@@ -551,15 +551,17 @@ impl CPU {
             ),
             Instr::JP_COND_a16(x0, x1) => {
                 if self.check_flag(x0) {
-                    self.move_pc(mem, x1);
+                    self.move_pc(mem, x1.into());
                 }
             }
             Instr::JP_a16(x0) => {
-                if x0 == prev_pc && (self.reg.ime == 0 || mem.read_byte_silent(0xffff) == 0) {
+                if u16::from(x0) == prev_pc
+                    && (self.reg.ime == 0 || mem.read_byte_silent(0xffff) == 0)
+                {
                     /* infinite loop with no interrupts enabled */
                     self.dead = true;
                 }
-                self.move_pc(mem, x0);
+                self.move_pc(mem, x0.into());
             }
             Instr::JP_r16(x0) => {
                 /* how is this possibly faster than JP a16 ? */
@@ -574,7 +576,9 @@ impl CPU {
                 }
             }
             Instr::JR_r8(x0) => {
-                if x0 == -2 && (self.reg.ime == 0 || mem.read_byte_silent(0xffff) == 0) {
+                if x0 == RelAddr::from(-2i8)
+                    && (self.reg.ime == 0 || mem.read_byte_silent(0xffff) == 0)
+                {
                     /* infinite loop with no interrupts enabled */
                     self.dead = true;
                 }
@@ -591,13 +595,13 @@ impl CPU {
             }
             Instr::LD_ia16_r16(x0, x1) => {
                 mem.bus
-                    .seek(SeekFrom::Start(u64::from(x0)))
+                    .seek(SeekFrom::Start(u64::from(u16::from(x0))))
                     .expect("All addresses valid");
                 mem.write_all(&u16::to_le_bytes(self.reg.read(x1)))
                     .expect("Memory wraps");
             }
             Instr::LD_ia16_r8(x0, x1) => {
-                mem.write_byte(x0, self.reg.read(x1));
+                mem.write_byte(x0.into(), self.reg.read(x1));
             }
             Instr::LD_ir16_d8(x0, x1) => mem.write_byte(self.reg.read(x0), x1),
             Instr::LD_ir16_r8(x0, x1) => {
@@ -631,7 +635,7 @@ impl CPU {
                 self.reg.write(x0, x1);
             }
             Instr::LD_r8_ia16(x0, x1) => {
-                self.reg.write(x0, mem.read_byte(x1));
+                self.reg.write(x0, mem.read_byte(x1.into()));
             }
             Instr::LD_r8_ir16(x0, x1) => {
                 self.reg.write(x0, mem.read_byte(self.reg.read(x1)));
@@ -804,25 +808,25 @@ impl CPU {
                 self.push16(&mut mem, Reg16::PC);
                 self.move_pc(mem, u16::from(x0));
             }
-            Instr::SBC_r8_d8(x0, x1) => alu_result!(
+            Instr::SBC_r8_d8(x1) => alu_result!(
                 self,
                 Reg8::A,
-                ALU::sbc(self.reg.read(x0), x1, self.reg.get_flag(Flag::C))
+                ALU::sbc(self.reg.read(Reg8::A), x1, self.reg.get_flag(Flag::C))
             ),
-            Instr::SBC_r8_ir16(x0, x1) => alu_result!(
+            Instr::SBC_r8_ir16(x1) => alu_result!(
                 self,
                 Reg8::A,
                 ALU::sbc(
-                    self.reg.read(x0),
+                    self.reg.read(Reg8::A),
                     mem.read_byte(self.reg.read(x1)),
                     self.reg.get_flag(Flag::C)
                 )
             ),
-            Instr::SBC_r8_r8(x0, x1) => alu_result!(
+            Instr::SBC_r8_r8(x1) => alu_result!(
                 self,
                 Reg8::A,
                 ALU::sbc(
-                    self.reg.read(x0),
+                    self.reg.read(Reg8::A),
                     self.reg.read(x1),
                     self.reg.get_flag(Flag::C)
                 )
@@ -865,7 +869,7 @@ impl CPU {
             }
             Instr::SRL_r8(x0) => alu_result!(self, x0, ALU::sr(self.reg.read(x0), false)),
             /* halt cpu and lcd display until button press */
-            Instr::STOP_0(_x0) => {
+            Instr::STOP => {
                 if mem.bus.speed_change() {
                     mem.bus.toggle_speed();
                 } else {

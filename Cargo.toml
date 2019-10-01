@@ -3,10 +3,15 @@ name = "gb"
 version = "0.1.0"
 authors = ["Mitch Souders <mitch.souders@gmail.com>"]
 edition = "2018"
+default-run = "gb-rs"
 
 [[bin]]
 name = "gb-rs"
 path = "src/bin.rs"
+
+[[bin]]
+name = "gbdis"
+path = "src/dis.rs"
 
 [profile.release]
 debug = true
@@ -20,12 +25,16 @@ num = "0.2.0"
 vcd = "0.4.0"
 lazy_static = "1.1.0"
 dimensioned = "0.7.0"
-
-[features]
-strict = []
-vcd_dump = []
+num-traits = "0.2.8"
+intervaltree = "0.2.4"
+nom = "5.0.1"
+tempdir = "0.3.7"
 
 [dependencies.sdl2]
 default-features = false
 features = ["gfx"]
 version = "0.31.0"
+
+[features]
+strict = []
+vcd_dump = []

@@ -258,7 +258,7 @@ mod emptymem;
 mod fakemem;
 pub mod gb;
 mod hdma;
-mod instr;
+pub mod instr;
 mod mem;
 mod mmu;
 pub mod peripherals;

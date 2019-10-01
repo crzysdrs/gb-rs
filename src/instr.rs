@@ -4,12 +4,51 @@ use std::io::Write;
 use crate::cpu::{Cond, Reg16, Reg8};
 use crate::peripherals::Addressable;
 
+#[derive(Copy, Clone, PartialEq)]
+pub struct Addr(u16);
+#[derive(Copy, Clone, PartialEq)]
+pub struct RelAddr(i8);
+
+impl std::ops::Add<Addr> for RelAddr {
+    type Output = Addr;
+    fn add(self, other: Addr) -> Addr {
+        Addr(other.0.wrapping_add(self.0 as i16 as u16))
+    }
+}
+
+impl From<i8> for RelAddr {
+    fn from(v: i8) -> RelAddr {
+        RelAddr(v)
+    }
+}
+
+impl From<RelAddr> for i16 {
+    fn from(addr: RelAddr) -> i16 {
+        addr.0 as i16
+    }
+}
+impl From<u16> for Addr {
+    fn from(v: u16) -> Addr {
+        Addr(v)
+    }
+}
+impl From<u8> for Addr {
+    fn from(v: u8) -> Addr {
+        Addr(0xff00 + v as u16)
+    }
+}
+
+impl From<Addr> for u16 {
+    fn from(a: Addr) -> u16 {
+        a.0
+    }
+}
 #[allow(non_camel_case_types)]
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum Instr {
-    ADC_r8_d8(Reg8, u8),
-    ADC_r8_ir16(Reg8, Reg16),
-    ADC_r8_r8(Reg8, Reg8),
+    ADC_r8_d8(u8),
+    ADC_r8_ir16(Reg16),
+    ADC_r8_r8(Reg8),
     ADD_r16_r16(Reg16, Reg16),
     ADD_r16_r8(Reg16, i8),
     ADD_r8_d8(Reg8, u8),
@@ -18,8 +57,8 @@ pub enum Instr {
     AND_d8(u8),
     AND_ir16(Reg16),
     AND_r8(Reg8),
-    CALL_COND_a16(Cond, u16),
-    CALL_a16(u16),
+    CALL_COND_a16(Cond, Addr),
+    CALL_a16(Addr),
     CCF,
     CPL,
     CP_d8(u8),
@@ -36,15 +75,15 @@ pub enum Instr {
     INC_r16(Reg16),
     INC_r8(Reg8),
     INVALID(u8),
-    JP_COND_a16(Cond, u16),
-    JP_a16(u16),
+    JP_COND_a16(Cond, Addr),
+    JP_a16(Addr),
     JP_r16(Reg16),
-    JR_COND_r8(Cond, i8),
-    JR_r8(i8),
+    JR_COND_r8(Cond, RelAddr),
+    JR_r8(RelAddr),
     LDH_ia8_r8(u8, Reg8),
     LDH_r8_ia8(Reg8, u8),
-    LD_ia16_r16(u16, Reg16),
-    LD_ia16_r8(u16, Reg8),
+    LD_ia16_r16(Addr, Reg16),
+    LD_ia16_r8(Addr, Reg8),
     LD_ir16_d8(Reg16, u8),
     LD_ir16_r8(Reg16, Reg8),
     LD_iir16_r8(Reg16, Reg8),
@@ -54,7 +93,7 @@ pub enum Instr {
     LD_r16_r16(Reg16, Reg16),
     LD_r16_r16_r8(Reg16, Reg16, i8),
     LD_r8_d8(Reg8, u8),
-    LD_r8_ia16(Reg8, u16),
+    LD_r8_ia16(Reg8, Addr),
     LD_r8_ir16(Reg8, Reg16),
     LD_r8_iir16(Reg8, Reg16),
     LD_r8_dir16(Reg8, Reg16),
@@ -74,11 +113,11 @@ pub enum Instr {
     RRA,
     RRCA,
     RST_LIT(u8),
-    SBC_r8_d8(Reg8, u8),
-    SBC_r8_ir16(Reg8, Reg16),
-    SBC_r8_r8(Reg8, Reg8),
+    SBC_r8_d8(u8),
+    SBC_r8_ir16(Reg16),
+    SBC_r8_r8(Reg8),
     SCF,
-    STOP_0(u8),
+    STOP,
     SUB_d8(u8),
     SUB_ir16(Reg16),
     SUB_r8(Reg8),
@@ -121,15 +160,21 @@ impl Disasm {
             len: 0,
         }
     }
-    // pub fn to_bytes(&self) -> &[u8] {
-    //     &self.bytes[..self.len]
-    // }
-    // pub fn reset(&mut self) {
-    //     self.len = 0;
-    // }
+    pub fn empty(&self) -> bool {
+        self.len == 0
+    }
+    pub fn to_bytes(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+    pub fn reset(&mut self) {
+        self.len = 0;
+    }
     fn append_byte(&mut self, b: u8) {
         self.bytes[self.len] = b;
         self.len += 1;
+    }
+    pub fn len(&self) -> usize {
+        self.len
     }
     pub fn cb_prefix(b: u8) -> Instr {
         match b {
@@ -399,22 +444,22 @@ impl Disasm {
                 let val = u16::from_le_bytes([self.bytes[1], self.bytes[2]]);
                 let r = match self.bytes[0] {
                     0x01 => Instr::LD_r16_d16(Reg16::BC, val),
-                    0x08 => Instr::LD_ia16_r16(val, Reg16::SP),
+                    0x08 => Instr::LD_ia16_r16(Addr::from(val), Reg16::SP),
                     0x11 => Instr::LD_r16_d16(Reg16::DE, val),
                     0x21 => Instr::LD_r16_d16(Reg16::HL, val),
                     0x31 => Instr::LD_r16_d16(Reg16::SP, val),
-                    0xc2 => Instr::JP_COND_a16(Cond::NZ, val),
-                    0xc3 => Instr::JP_a16(val),
-                    0xc4 => Instr::CALL_COND_a16(Cond::NZ, val),
-                    0xca => Instr::JP_COND_a16(Cond::Z, val),
-                    0xcc => Instr::CALL_COND_a16(Cond::Z, val),
-                    0xcd => Instr::CALL_a16(val),
-                    0xd2 => Instr::JP_COND_a16(Cond::NC, val),
-                    0xd4 => Instr::CALL_COND_a16(Cond::NC, val),
-                    0xda => Instr::JP_COND_a16(Cond::C, val),
-                    0xdc => Instr::CALL_COND_a16(Cond::C, val),
-                    0xea => Instr::LD_ia16_r8(val, Reg8::A),
-                    0xfa => Instr::LD_r8_ia16(Reg8::A, val),
+                    0xc2 => Instr::JP_COND_a16(Cond::NZ, Addr::from(val)),
+                    0xc3 => Instr::JP_a16(Addr::from(val)),
+                    0xc4 => Instr::CALL_COND_a16(Cond::NZ, Addr::from(val)),
+                    0xca => Instr::JP_COND_a16(Cond::Z, Addr::from(val)),
+                    0xcc => Instr::CALL_COND_a16(Cond::Z, Addr::from(val)),
+                    0xcd => Instr::CALL_a16(Addr::from(val)),
+                    0xd2 => Instr::JP_COND_a16(Cond::NC, Addr::from(val)),
+                    0xd4 => Instr::CALL_COND_a16(Cond::NC, Addr::from(val)),
+                    0xda => Instr::JP_COND_a16(Cond::C, Addr::from(val)),
+                    0xdc => Instr::CALL_COND_a16(Cond::C, Addr::from(val)),
+                    0xea => Instr::LD_ia16_r8(Addr::from(val), Reg8::A),
+                    0xfa => Instr::LD_r8_ia16(Reg8::A, Addr::from(val)),
                     _ => unreachable!("Invalid 3 byte instruction"),
                 };
                 Some(r)
@@ -423,21 +468,21 @@ impl Disasm {
                 0x06 => Some(Instr::LD_r8_d8(Reg8::B, b)),
                 0x0e => Some(Instr::LD_r8_d8(Reg8::C, b)),
                 0x16 => Some(Instr::LD_r8_d8(Reg8::D, b)),
-                0x18 => Some(Instr::JR_r8(b as i8)),
+                0x18 => Some(Instr::JR_r8(RelAddr(b as i8))),
                 0x1e => Some(Instr::LD_r8_d8(Reg8::E, b)),
-                0x20 => Some(Instr::JR_COND_r8(Cond::NZ, b as i8)),
+                0x20 => Some(Instr::JR_COND_r8(Cond::NZ, RelAddr(b as i8))),
                 0x26 => Some(Instr::LD_r8_d8(Reg8::H, b)),
-                0x28 => Some(Instr::JR_COND_r8(Cond::Z, b as i8)),
+                0x28 => Some(Instr::JR_COND_r8(Cond::Z, RelAddr(b as i8))),
                 0x2e => Some(Instr::LD_r8_d8(Reg8::L, b)),
-                0x30 => Some(Instr::JR_COND_r8(Cond::NC, b as i8)),
+                0x30 => Some(Instr::JR_COND_r8(Cond::NC, RelAddr(b as i8))),
                 0x36 => Some(Instr::LD_ir16_d8(Reg16::HL, b)),
-                0x38 => Some(Instr::JR_COND_r8(Cond::C, b as i8)),
+                0x38 => Some(Instr::JR_COND_r8(Cond::C, RelAddr(b as i8))),
                 0x3e => Some(Instr::LD_r8_d8(Reg8::A, b)),
                 0xc6 => Some(Instr::ADD_r8_d8(Reg8::A, b)),
                 0xcb => Some(Disasm::cb_prefix(b)),
-                0xce => Some(Instr::ADC_r8_d8(Reg8::A, b)),
+                0xce => Some(Instr::ADC_r8_d8(b)),
                 0xd6 => Some(Instr::SUB_d8(b)),
-                0xde => Some(Instr::SBC_r8_d8(Reg8::A, b)),
+                0xde => Some(Instr::SBC_r8_d8(b)),
                 0xe0 => Some(Instr::LDH_ia8_r8(b, Reg8::A)),
                 0xe6 => Some(Instr::AND_d8(b)),
                 0xe8 => Some(Instr::ADD_r16_r8(Reg16::SP, b as i8)),
@@ -461,7 +506,7 @@ impl Disasm {
                 0x0c => Some(Instr::INC_r8(Reg8::C)),
                 0x0d => Some(Instr::DEC_r8(Reg8::C)),
                 0x0f => Some(Instr::RRCA),
-                0x10 => Some(Instr::STOP_0(0)),
+                0x10 => Some(Instr::STOP),
                 0x12 => Some(Instr::LD_ir16_r8(Reg16::DE, Reg8::A)),
                 0x13 => Some(Instr::INC_r16(Reg16::DE)),
                 0x14 => Some(Instr::INC_r8(Reg8::D)),
@@ -567,14 +612,14 @@ impl Disasm {
                 0x85 => Some(Instr::ADD_r8_r8(Reg8::A, Reg8::L)),
                 0x86 => Some(Instr::ADD_r8_ir16(Reg8::A, Reg16::HL)),
                 0x87 => Some(Instr::ADD_r8_r8(Reg8::A, Reg8::A)),
-                0x88 => Some(Instr::ADC_r8_r8(Reg8::A, Reg8::B)),
-                0x89 => Some(Instr::ADC_r8_r8(Reg8::A, Reg8::C)),
-                0x8a => Some(Instr::ADC_r8_r8(Reg8::A, Reg8::D)),
-                0x8b => Some(Instr::ADC_r8_r8(Reg8::A, Reg8::E)),
-                0x8c => Some(Instr::ADC_r8_r8(Reg8::A, Reg8::H)),
-                0x8d => Some(Instr::ADC_r8_r8(Reg8::A, Reg8::L)),
-                0x8e => Some(Instr::ADC_r8_ir16(Reg8::A, Reg16::HL)),
-                0x8f => Some(Instr::ADC_r8_r8(Reg8::A, Reg8::A)),
+                0x88 => Some(Instr::ADC_r8_r8(Reg8::B)),
+                0x89 => Some(Instr::ADC_r8_r8(Reg8::C)),
+                0x8a => Some(Instr::ADC_r8_r8(Reg8::D)),
+                0x8b => Some(Instr::ADC_r8_r8(Reg8::E)),
+                0x8c => Some(Instr::ADC_r8_r8(Reg8::H)),
+                0x8d => Some(Instr::ADC_r8_r8(Reg8::L)),
+                0x8e => Some(Instr::ADC_r8_ir16(Reg16::HL)),
+                0x8f => Some(Instr::ADC_r8_r8(Reg8::A)),
                 0x90 => Some(Instr::SUB_r8(Reg8::B)),
                 0x91 => Some(Instr::SUB_r8(Reg8::C)),
                 0x92 => Some(Instr::SUB_r8(Reg8::D)),
@@ -583,14 +628,14 @@ impl Disasm {
                 0x95 => Some(Instr::SUB_r8(Reg8::L)),
                 0x96 => Some(Instr::SUB_ir16(Reg16::HL)),
                 0x97 => Some(Instr::SUB_r8(Reg8::A)),
-                0x98 => Some(Instr::SBC_r8_r8(Reg8::A, Reg8::B)),
-                0x99 => Some(Instr::SBC_r8_r8(Reg8::A, Reg8::C)),
-                0x9a => Some(Instr::SBC_r8_r8(Reg8::A, Reg8::D)),
-                0x9b => Some(Instr::SBC_r8_r8(Reg8::A, Reg8::E)),
-                0x9c => Some(Instr::SBC_r8_r8(Reg8::A, Reg8::H)),
-                0x9d => Some(Instr::SBC_r8_r8(Reg8::A, Reg8::L)),
-                0x9e => Some(Instr::SBC_r8_ir16(Reg8::A, Reg16::HL)),
-                0x9f => Some(Instr::SBC_r8_r8(Reg8::A, Reg8::A)),
+                0x98 => Some(Instr::SBC_r8_r8(Reg8::B)),
+                0x99 => Some(Instr::SBC_r8_r8(Reg8::C)),
+                0x9a => Some(Instr::SBC_r8_r8(Reg8::D)),
+                0x9b => Some(Instr::SBC_r8_r8(Reg8::E)),
+                0x9c => Some(Instr::SBC_r8_r8(Reg8::H)),
+                0x9d => Some(Instr::SBC_r8_r8(Reg8::L)),
+                0x9e => Some(Instr::SBC_r8_ir16(Reg16::HL)),
+                0x9f => Some(Instr::SBC_r8_r8(Reg8::A)),
                 0xa0 => Some(Instr::AND_r8(Reg8::B)),
                 0xa1 => Some(Instr::AND_r8(Reg8::C)),
                 0xa2 => Some(Instr::AND_r8(Reg8::D)),
@@ -661,109 +706,232 @@ impl Disasm {
     }
 }
 
-impl fmt::Display for Instr {
+pub type NameAddressFn<'a> = dyn Fn(u16) -> Option<String> + 'a;
+
+pub trait FormatCode {
+    fn to_code(&self, instr: std::ops::Range<u16>, addrs: &NameAddressFn)
+        -> String;
+}
+
+impl std::fmt::Display for Instr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.to_code(0..0, &|_| None))
+    }
+}
+
+impl FormatCode for RelAddr {
+    fn to_code(
+        &self,
+        instr: std::ops::Range<u16>,
+        remap: &NameAddressFn,
+    ) -> String {
+        use std::convert::TryFrom;
+        let rel = u16::try_from(self.0.abs()).unwrap();
+        let pc = instr.end - 1; /* jr computes from 1 byte back */
+        let addr = if self.0 > 0 {
+            pc.wrapping_add(rel)
+        } else {
+            pc.wrapping_sub(rel)
+        };
+        if let Some(s) = remap(addr) {
+            format!("{}", s)
+        } else if self.0 >= 0 {
+            format!("${:02x}", self.0)
+        } else {
+            format!("-${:02x}", self.0.abs())
+        }
+    }
+}
+
+impl FormatCode for Addr {
+    fn to_code(
+        &self,
+        _instr: std::ops::Range<u16>,
+        remap: &NameAddressFn,
+    ) -> String {
+        if let Some(s) = remap(self.0) {
+            format!("{}", s)
+        } else {
+            format!("${:04x}", self.0)
+        }
+    }
+}
+
+impl FormatCode for u8 {
+    fn to_code(
+        &self,
+        _instr: std::ops::Range<u16>,
+        _remap: &NameAddressFn,
+    ) -> String {
+        format!("${:02x}", self)
+    }
+}
+impl FormatCode for i8 {
+    fn to_code(
+        &self,
+        _instr: std::ops::Range<u16>,
+        _remap: &NameAddressFn,
+    ) -> String {
+        format!("${:02x}", self)
+    }
+}
+impl FormatCode for u16 {
+    fn to_code(
+        &self,
+        _instr: std::ops::Range<u16>,
+        _remap: &NameAddressFn,
+    ) -> String {
+        format!("${:04x}", self)
+    }
+}
+
+impl FormatCode for Reg8 {
+    fn to_code(
+        &self,
+        _instr: std::ops::Range<u16>,
+        _remap: &NameAddressFn,
+    ) -> String {
+        format!("{:?}", self)
+    }
+}
+
+impl FormatCode for Cond {
+    fn to_code(
+        &self,
+        _instr: std::ops::Range<u16>,
+        _remap: &NameAddressFn,
+    ) -> String {
+        format!("{:?}", self).to_lowercase()
+    }
+}
+
+impl FormatCode for Reg16 {
+    fn to_code(
+        &self,
+        _instr: std::ops::Range<u16>,
+        _remap: &NameAddressFn,
+    ) -> String {
+        format!("{:?}", self)
+    }
+}
+
+impl FormatCode for Instr {
+    fn to_code(
+        &self,
+        instr: std::ops::Range<u16>,
+        remap: &NameAddressFn,
+    ) -> String {
+        let f = |v: &dyn FormatCode| v.to_code(instr.clone(), remap);
+
+        let omit_a = |v: &Reg8| {
+            if let Reg8::A = *v {
+                String::from("")
+            } else {
+                format!("{},", f(v))
+            }
+        };
+
         match self {
-            Instr::ADC_r8_d8(x0, x1) => write!(f, "ADC {:x?},{:x?}", x0, x1),
-            Instr::ADC_r8_ir16(x0, x1) => write!(f, "ADC {:x?},({:x?})", x0, x1),
-            Instr::ADC_r8_r8(x0, x1) => write!(f, "ADC {:x?},{:x?}", x0, x1),
-            Instr::ADD_r16_r16(x0, x1) => write!(f, "ADD {:x?},{:x?}", x0, x1),
-            Instr::ADD_r16_r8(x0, x1) => write!(f, "ADD {:x?},{:x?}", x0, x1),
-            Instr::ADD_r8_d8(x0, x1) => write!(f, "ADD {:x?},{:x?}", x0, x1),
-            Instr::ADD_r8_ir16(x0, x1) => write!(f, "ADD {:x?},({:x?})", x0, x1),
-            Instr::ADD_r8_r8(x0, x1) => write!(f, "ADD {:x?},{:x?}", x0, x1),
-            Instr::AND_d8(x0) => write!(f, "AND {:x?}", x0),
-            Instr::AND_ir16(x0) => write!(f, "AND ({:x?})", x0),
-            Instr::AND_r8(x0) => write!(f, "AND {:x?}", x0),
-            Instr::CALL_COND_a16(x0, x1) => write!(f, "CALL {:x?},{:x?}", x0, x1),
-            Instr::CALL_a16(x0) => write!(f, "CALL {:x?}", x0),
-            Instr::CCF => write!(f, "CCF"),
-            Instr::CPL => write!(f, "CPL"),
-            Instr::CP_d8(x0) => write!(f, "CP {:x?}", x0),
-            Instr::CP_ir16(x0) => write!(f, "CP ({:x?})", x0),
-            Instr::CP_r8(x0) => write!(f, "CP {:x?}", x0),
-            Instr::DAA => write!(f, "DAA"),
-            Instr::DEC_ir16(x0) => write!(f, "DEC ({:x?})", x0),
-            Instr::DEC_r16(x0) => write!(f, "DEC {:x?}", x0),
-            Instr::DEC_r8(x0) => write!(f, "DEC {:x?}", x0),
-            Instr::DI => write!(f, "DI"),
-            Instr::EI => write!(f, "EI"),
-            Instr::HALT => write!(f, "HALT"),
-            Instr::INC_ir16(x0) => write!(f, "INC ({:x?})", x0),
-            Instr::INC_r16(x0) => write!(f, "INC {:x?}", x0),
-            Instr::INC_r8(x0) => write!(f, "INC {:x?}", x0),
-            Instr::INVALID(x0) => write!(f, "INVALID 0x{:x}", x0),
-            Instr::JP_COND_a16(x0, x1) => write!(f, "JP {:x?},{:x?}", x0, x1),
-            Instr::JP_a16(x0) => write!(f, "JP {:x?}", x0),
-            Instr::JP_r16(x0) => write!(f, "JP {:x?}", x0),
-            Instr::JR_COND_r8(x0, x1) => write!(f, "JR {:x?},{:x?}", x0, x1),
-            Instr::JR_r8(x0) => write!(f, "JR {:x?}", x0),
-            Instr::LDH_ia8_r8(x0, x1) => write!(f, "LDH ({:x?}),{:x?}", x0, x1),
-            Instr::LDH_r8_ia8(x0, x1) => write!(f, "LDH {:x?},({:x?})", x0, x1),
-            Instr::LD_ia16_r16(x0, x1) => write!(f, "LD ({:x?}),{:x?}", x0, x1),
-            Instr::LD_ia16_r8(x0, x1) => write!(f, "LD ({:x?}),{:x?}", x0, x1),
-            Instr::LD_ir16_d8(x0, x1) => write!(f, "LD ({:x?}),{:x?}", x0, x1),
-            Instr::LD_ir16_r8(x0, x1) => write!(f, "LD ({:x?}),{:x?}", x0, x1),
-            Instr::LD_iir16_r8(x0, x1) => write!(f, "LD ({:x?}+),{:x?}", x0, x1),
-            Instr::LD_dir16_r8(x0, x1) => write!(f, "LD ({:x?}-),{:x?}", x0, x1),
-            Instr::LD_ir8_r8(x0, x1) => write!(f, "LD ({:x?}),{:x?}", x0, x1),
-            Instr::LD_r16_d16(x0, x1) => write!(f, "LD {:x?},{:x?}", x0, x1),
-            Instr::LD_r16_r16(x0, x1) => write!(f, "LD {:x?},{:x?}", x0, x1),
-            Instr::LD_r16_r16_r8(x0, x1, x2) => write!(f, "LD {:x?},{:x?},{:x?}", x0, x1, x2),
-            Instr::LD_r8_d8(x0, x1) => write!(f, "LD {:x?},{:x?}", x0, x1),
-            Instr::LD_r8_ia16(x0, x1) => write!(f, "LD {:x?},({:x?})", x0, x1),
-            Instr::LD_r8_ir16(x0, x1) => write!(f, "LD {:x?},({:x?})", x0, x1),
-            Instr::LD_r8_iir16(x0, x1) => write!(f, "LD {:x?},({:x?}+)", x0, x1),
-            Instr::LD_r8_dir16(x0, x1) => write!(f, "LD {:x?},({:x?}-)", x0, x1),
-            Instr::LD_r8_ir8(x0, x1) => write!(f, "LD {:x?},({:x?})", x0, x1),
-            Instr::LD_r8_r8(x0, x1) => write!(f, "LD {:x?},{:x?}", x0, x1),
-            Instr::NOP => write!(f, "NOP"),
-            Instr::OR_d8(x0) => write!(f, "OR {:x?}", x0),
-            Instr::OR_ir16(x0) => write!(f, "OR ({:x?})", x0),
-            Instr::OR_r8(x0) => write!(f, "OR {:x?}", x0),
-            Instr::POP_r16(x0) => write!(f, "POP {:x?}", x0),
-            Instr::PUSH_r16(x0) => write!(f, "PUSH {:x?}", x0),
-            Instr::RET => write!(f, "RET"),
-            Instr::RETI => write!(f, "RETI"),
-            Instr::RET_COND(x0) => write!(f, "RET {:x?}", x0),
-            Instr::RLA => write!(f, "RLA"),
-            Instr::RLCA => write!(f, "RLCA"),
-            Instr::RRA => write!(f, "RRA"),
-            Instr::RRCA => write!(f, "RRCA"),
-            Instr::RST_LIT(x0) => write!(f, "RST {:x?}", x0),
-            Instr::SBC_r8_d8(x0, x1) => write!(f, "SBC {:x?},{:x?}", x0, x1),
-            Instr::SBC_r8_ir16(x0, x1) => write!(f, "SBC {:x?},({:x?})", x0, x1),
-            Instr::SBC_r8_r8(x0, x1) => write!(f, "SBC {:x?},{:x?}", x0, x1),
-            Instr::SCF => write!(f, "SCF"),
-            Instr::STOP_0(x0) => write!(f, "STOP {:x?}", x0),
-            Instr::SUB_d8(x0) => write!(f, "SUB {:x?}", x0),
-            Instr::SUB_ir16(x0) => write!(f, "SUB ({:x?})", x0),
-            Instr::SUB_r8(x0) => write!(f, "SUB {:x?}", x0),
-            Instr::XOR_d8(x0) => write!(f, "XOR {:x?}", x0),
-            Instr::XOR_ir16(x0) => write!(f, "XOR ({:x?})", x0),
-            Instr::XOR_r8(x0) => write!(f, "XOR {:x?}", x0),
-            Instr::BIT_l8_ir16(x0, x1) => write!(f, "BIT {:x?},({:x?})", x0, x1),
-            Instr::BIT_l8_r8(x0, x1) => write!(f, "BIT {:x?},{:x?}", x0, x1),
-            Instr::RES_l8_ir16(x0, x1) => write!(f, "RES {:x?},({:x?})", x0, x1),
-            Instr::RES_l8_r8(x0, x1) => write!(f, "RES {:x?},{:x?}", x0, x1),
-            Instr::RLC_ir16(x0) => write!(f, "RLC ({:x?})", x0),
-            Instr::RLC_r8(x0) => write!(f, "RLC {:x?}", x0),
-            Instr::RL_ir16(x0) => write!(f, "RL ({:x?})", x0),
-            Instr::RL_r8(x0) => write!(f, "RL {:x?}", x0),
-            Instr::RRC_ir16(x0) => write!(f, "RRC ({:x?})", x0),
-            Instr::RRC_r8(x0) => write!(f, "RRC {:x?}", x0),
-            Instr::RR_ir16(x0) => write!(f, "RR ({:x?})", x0),
-            Instr::RR_r8(x0) => write!(f, "RR {:x?}", x0),
-            Instr::SLA_ir16(x0) => write!(f, "SLA ({:x?})", x0),
-            Instr::SLA_r8(x0) => write!(f, "SLA {:x?}", x0),
-            Instr::SRA_ir16(x0) => write!(f, "SRA ({:x?})", x0),
-            Instr::SRA_r8(x0) => write!(f, "SRA {:x?}", x0),
-            Instr::SRL_ir16(x0) => write!(f, "SRL ({:x?})", x0),
-            Instr::SRL_r8(x0) => write!(f, "SRL {:x?}", x0),
-            Instr::SET_l8_ir16(x0, x1) => write!(f, "SET {:x?},({:x?})", x0, x1),
-            Instr::SET_l8_r8(x0, x1) => write!(f, "SET {:x?},{:x?}", x0, x1),
-            Instr::SWAP_ir16(x0) => write!(f, "SWAP ({:x?})", x0),
-            Instr::SWAP_r8(x0) => write!(f, "SWAP {:x?}", x0),
+            Instr::ADC_r8_d8(x1) => format!("ADC {}", f(x1)),
+            Instr::ADC_r8_ir16(x1) => format!("ADC ({})", f(x1)),
+            Instr::ADC_r8_r8(x1) => format!("ADC {}", f(x1)),
+            Instr::ADD_r16_r16(x0, x1) => format!("ADD {},{}", f(x0), f(x1)),
+            Instr::ADD_r16_r8(x0, x1) => format!("ADD {},{}", f(x0), f(x1)),
+            Instr::ADD_r8_d8(x0, x1) => format!("ADD {} {}", omit_a(x0), f(x1)),
+            Instr::ADD_r8_ir16(x0, x1) => format!("ADD {} ({})", omit_a(x0), f(x1)),
+            Instr::ADD_r8_r8(x0, x1) => format!("ADD {} {}", omit_a(x0), f(x1)),
+            Instr::AND_d8(x0) => format!("AND {}", f(x0)),
+            Instr::AND_ir16(x0) => format!("AND ({})", f(x0)),
+            Instr::AND_r8(x0) => format!("AND {}", f(x0)),
+            Instr::CALL_COND_a16(x0, x1) => format!("CALL {},{}", f(x0), f(x1)),
+            Instr::CALL_a16(x0) => format!("CALL {}", f(x0)),
+            Instr::CCF => format!("CCF"),
+            Instr::CPL => format!("CPL"),
+            Instr::CP_d8(x0) => format!("CP {}", f(x0)),
+            Instr::CP_ir16(x0) => format!("CP ({})", f(x0)),
+            Instr::CP_r8(x0) => format!("CP {}", f(x0)),
+            Instr::DAA => format!("DAA"),
+            Instr::DEC_ir16(x0) => format!("DEC ({})", f(x0)),
+            Instr::DEC_r16(x0) => format!("DEC {}", f(x0)),
+            Instr::DEC_r8(x0) => format!("DEC {}", f(x0)),
+            Instr::DI => format!("DI"),
+            Instr::EI => format!("EI"),
+            Instr::HALT => format!("HALT"),
+            Instr::INC_ir16(x0) => format!("INC ({})", f(x0)),
+            Instr::INC_r16(x0) => format!("INC {}", f(x0)),
+            Instr::INC_r8(x0) => format!("INC {}", f(x0)),
+            Instr::INVALID(x0) => format!(".db {}", f(x0)),
+            Instr::JP_COND_a16(x0, x1) => format!("JP {},{}", f(x0), f(x1)),
+            Instr::JP_a16(x0) => format!("JP {}", f(x0)),
+            Instr::JP_r16(x0) => format!("JP {}", f(x0)),
+            Instr::JR_COND_r8(x0, x1) => format!("JR {},{}", f(x0), f(x1)),
+            Instr::JR_r8(x0) => format!("JR {}", f(x0)),
+            Instr::LDH_ia8_r8(x0, x1) => format!("LDH ({}),{}", f(x0), f(x1)),
+            Instr::LDH_r8_ia8(x0, x1) => format!("LDH {},({})", f(x0), f(x1)),
+            Instr::LD_ia16_r16(x0, x1) => format!("LD ({}),{}", f(x0), f(x1)),
+            Instr::LD_ia16_r8(x0, x1) => format!("LD ({}),{}", f(x0), f(x1)),
+            Instr::LD_ir16_d8(x0, x1) => format!("LD ({}),{}", f(x0), f(x1)),
+            Instr::LD_ir16_r8(x0, x1) => format!("LD ({}),{}", f(x0), f(x1)),
+            Instr::LD_iir16_r8(x0, x1) => format!("LD ({}+),{}", f(x0), f(x1)),
+            Instr::LD_dir16_r8(x0, x1) => format!("LD ({}-),{}", f(x0), f(x1)),
+            Instr::LD_ir8_r8(x0, x1) => format!("LD ($FF00 + {}),{}", f(x0), f(x1)),
+            Instr::LD_r16_d16(x0, x1) => format!("LD {},{}", f(x0), f(x1)),
+            Instr::LD_r16_r16(x0, x1) => format!("LD {},{}", f(x0), f(x1)),
+            Instr::LD_r16_r16_r8(x0, x1, x2) => format!("LD {},{},{}", f(x0), f(x1), f(x2)),
+            Instr::LD_r8_d8(x0, x1) => format!("LD {},{}", f(x0), f(x1)),
+            Instr::LD_r8_ia16(x0, x1) => format!("LD {},({})", f(x0), f(x1)),
+            Instr::LD_r8_ir16(x0, x1) => format!("LD {},({})", f(x0), f(x1)),
+            Instr::LD_r8_iir16(x0, x1) => format!("LD {},({}+)", f(x0), f(x1)),
+            Instr::LD_r8_dir16(x0, x1) => format!("LD {},({}-)", f(x0), f(x1)),
+            Instr::LD_r8_ir8(x0, x1) => format!("LD {},($FF00 + {})", f(x0), f(x1)),
+            Instr::LD_r8_r8(x0, x1) => format!("LD {},{}", f(x0), f(x1)),
+            Instr::NOP => format!("NOP"),
+            Instr::OR_d8(x0) => format!("OR {}", f(x0)),
+            Instr::OR_ir16(x0) => format!("OR ({})", f(x0)),
+            Instr::OR_r8(x0) => format!("OR {}", f(x0)),
+            Instr::POP_r16(x0) => format!("POP {}", f(x0)),
+            Instr::PUSH_r16(x0) => format!("PUSH {}", f(x0)),
+            Instr::RET => format!("RET"),
+            Instr::RETI => format!("RETI"),
+            Instr::RET_COND(x0) => format!("RET {}", f(x0)),
+            Instr::RLA => format!("RLA"),
+            Instr::RLCA => format!("RLCA"),
+            Instr::RRA => format!("RRA"),
+            Instr::RRCA => format!("RRCA"),
+            Instr::RST_LIT(x0) => format!("RST {}", f(x0)),
+            Instr::SBC_r8_d8(x1) => format!("SBC {}", f(x1)),
+            Instr::SBC_r8_ir16(x1) => format!("SBC ({})", f(x1)),
+            Instr::SBC_r8_r8(x1) => format!("SBC {}", f(x1)),
+            Instr::SCF => format!("SCF"),
+            Instr::STOP => format!("STOP"),
+            Instr::SUB_d8(x0) => format!("SUB {}", f(x0)),
+            Instr::SUB_ir16(x0) => format!("SUB ({})", f(x0)),
+            Instr::SUB_r8(x0) => format!("SUB {}", f(x0)),
+            Instr::XOR_d8(x0) => format!("XOR {}", f(x0)),
+            Instr::XOR_ir16(x0) => format!("XOR ({})", f(x0)),
+            Instr::XOR_r8(x0) => format!("XOR {}", f(x0)),
+            Instr::BIT_l8_ir16(x0, x1) => format!("BIT {},({})", f(x0), f(x1)),
+            Instr::BIT_l8_r8(x0, x1) => format!("BIT {},{}", f(x0), f(x1)),
+            Instr::RES_l8_ir16(x0, x1) => format!("RES {},({})", f(x0), f(x1)),
+            Instr::RES_l8_r8(x0, x1) => format!("RES {},{}", f(x0), f(x1)),
+            Instr::RLC_ir16(x0) => format!("RLC ({})", f(x0)),
+            Instr::RLC_r8(x0) => format!("RLC {}", f(x0)),
+            Instr::RL_ir16(x0) => format!("RL ({})", f(x0)),
+            Instr::RL_r8(x0) => format!("RL {}", f(x0)),
+            Instr::RRC_ir16(x0) => format!("RRC ({})", f(x0)),
+            Instr::RRC_r8(x0) => format!("RRC {}", f(x0)),
+            Instr::RR_ir16(x0) => format!("RR ({})", f(x0)),
+            Instr::RR_r8(x0) => format!("RR {}", f(x0)),
+            Instr::SLA_ir16(x0) => format!("SLA ({})", f(x0)),
+            Instr::SLA_r8(x0) => format!("SLA {}", f(x0)),
+            Instr::SRA_ir16(x0) => format!("SRA ({})", f(x0)),
+            Instr::SRA_r8(x0) => format!("SRA {}", f(x0)),
+            Instr::SRL_ir16(x0) => format!("SRL ({})", f(x0)),
+            Instr::SRL_r8(x0) => format!("SRL {}", f(x0)),
+            Instr::SET_l8_ir16(x0, x1) => format!("SET {},({})", f(x0), f(x1)),
+            Instr::SET_l8_r8(x0, x1) => format!("SET {},{}", f(x0), f(x1)),
+            Instr::SWAP_ir16(x0) => format!("SWAP ({})", f(x0)),
+            Instr::SWAP_r8(x0) => format!("SWAP {}", f(x0)),
         }
     }
 }

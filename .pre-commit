@@ -7,4 +7,6 @@ IFS=$'\n\t'
 cargo fmt
 cargo build --features strict
 cargo build --features strict --release
+(cd mooneye-gb && make -C tests all)
+#(cd blarg && ./ninja.py && ninja)
 cargo test  --features strict --release
