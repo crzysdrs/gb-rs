@@ -11,13 +11,14 @@ ln -s -f ../../.pre-commit ./.git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit
 
 if [ ! -d "blarg" ] ; then
-    git clone https://github.com/crzysdrs/blarggs-test-roms.git blarg
+    env -i git clone https://github.com/crzysdrs/blarggs-test-roms.git blarg
+    (cd blarg && env -i git checkout -f a4c48cc)
 fi
 if [ ! -d "mooneye-gb" ] ; then
-    git clone https://github.com/Gekkio/mooneye-gb
+    env -i git clone https://github.com/Gekkio/mooneye-gb
+    (cd mooneye-gb && env -i git checkout -f  bc620a6)
 fi
-#(cd mooneye-gb && git reset --hard bc620a6  && git clean -f xo)
-#(cd blarg && git reset --hard a4c48cc && git clean -f)
+
 cargo fmt
 cargo build 
 cargo build --release
