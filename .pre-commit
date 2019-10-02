@@ -7,14 +7,17 @@ IFS=$'\n\t'
 export RUSTFLAGS="-D warnings"
 export TESTDIR=`pwd`
 
+ln -s -f ../../.pre-commit ./.git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+
 if [ ! -d "blarg" ] ; then
     git clone https://github.com/crzysdrs/blarggs-test-roms.git blarg
 fi
 if [ ! -d "mooneye-gb" ] ; then
     git clone https://github.com/Gekkio/mooneye-gb
 fi
-(cd mooneye-gb && git reset --hard bc620a6  && git clean -f xo)
-(cd blarg && git reset --hard a4c48cc && git clean -f)
+#(cd mooneye-gb && git reset --hard bc620a6  && git clean -f xo)
+#(cd blarg && git reset --hard a4c48cc && git clean -f)
 cargo fmt
 cargo build 
 cargo build --release
