@@ -893,16 +893,18 @@ mod tests {
     #[test]
     fn dis_test() {
         let dir = TempDir::new("dis").unwrap();
-        let rom = "blarg/roms/cpu_instrs/01-special.gb";
+        let rom_dir = std::path::PathBuf::from(concat!(env!("TESTDIR"), "/blarg/roms/cpu_instrs/"));
+        let rom = rom_dir.join("01-special.gb");
+        let syms = rom_dir.join("01-special.sym");
         let default_sym = dir.path().join("default.sym");
         {
             let mut default = std::fs::File::create(&default_sym).unwrap();
             write!(default, "[memmap]\n01 c000\n").unwrap();
         }
         dis_rom(
-            rom,
+            &rom.to_string_lossy(),
             Some(vec![
-                "blarg/roms/cpu_instrs/01-special.sym",
+                &syms.to_string_lossy(),
                 &default_sym.to_string_lossy(),
             ]),
             &std::path::PathBuf::from(dir.path()),

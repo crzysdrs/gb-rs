@@ -237,7 +237,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
 
 fn main() -> Result<(), std::io::Error> {
     use clap::{App, Arg};
-    use dimensioned::si;
+    use gb::dimensioned::si;
     //let s = si::Second::from(gb::cycles::SECOND);
     //let s : si::Second<u64> = gb::cycles::SECOND.into();
     let s = gb::cycles::CGB::from(1.0 * si::S);

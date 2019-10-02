@@ -709,8 +709,7 @@ impl Disasm {
 pub type NameAddressFn<'a> = dyn Fn(u16) -> Option<String> + 'a;
 
 pub trait FormatCode {
-    fn to_code(&self, instr: std::ops::Range<u16>, addrs: &NameAddressFn)
-        -> String;
+    fn to_code(&self, instr: std::ops::Range<u16>, addrs: &NameAddressFn) -> String;
 }
 
 impl std::fmt::Display for Instr {
@@ -720,11 +719,7 @@ impl std::fmt::Display for Instr {
 }
 
 impl FormatCode for RelAddr {
-    fn to_code(
-        &self,
-        instr: std::ops::Range<u16>,
-        remap: &NameAddressFn,
-    ) -> String {
+    fn to_code(&self, instr: std::ops::Range<u16>, remap: &NameAddressFn) -> String {
         use std::convert::TryFrom;
         let rel = u16::try_from(self.0.abs()).unwrap();
         let pc = instr.end - 1; /* jr computes from 1 byte back */
@@ -744,11 +739,7 @@ impl FormatCode for RelAddr {
 }
 
 impl FormatCode for Addr {
-    fn to_code(
-        &self,
-        _instr: std::ops::Range<u16>,
-        remap: &NameAddressFn,
-    ) -> String {
+    fn to_code(&self, _instr: std::ops::Range<u16>, remap: &NameAddressFn) -> String {
         if let Some(s) = remap(self.0) {
             format!("{}", s)
         } else {
@@ -758,69 +749,41 @@ impl FormatCode for Addr {
 }
 
 impl FormatCode for u8 {
-    fn to_code(
-        &self,
-        _instr: std::ops::Range<u16>,
-        _remap: &NameAddressFn,
-    ) -> String {
+    fn to_code(&self, _instr: std::ops::Range<u16>, _remap: &NameAddressFn) -> String {
         format!("${:02x}", self)
     }
 }
 impl FormatCode for i8 {
-    fn to_code(
-        &self,
-        _instr: std::ops::Range<u16>,
-        _remap: &NameAddressFn,
-    ) -> String {
+    fn to_code(&self, _instr: std::ops::Range<u16>, _remap: &NameAddressFn) -> String {
         format!("${:02x}", self)
     }
 }
 impl FormatCode for u16 {
-    fn to_code(
-        &self,
-        _instr: std::ops::Range<u16>,
-        _remap: &NameAddressFn,
-    ) -> String {
+    fn to_code(&self, _instr: std::ops::Range<u16>, _remap: &NameAddressFn) -> String {
         format!("${:04x}", self)
     }
 }
 
 impl FormatCode for Reg8 {
-    fn to_code(
-        &self,
-        _instr: std::ops::Range<u16>,
-        _remap: &NameAddressFn,
-    ) -> String {
+    fn to_code(&self, _instr: std::ops::Range<u16>, _remap: &NameAddressFn) -> String {
         format!("{:?}", self)
     }
 }
 
 impl FormatCode for Cond {
-    fn to_code(
-        &self,
-        _instr: std::ops::Range<u16>,
-        _remap: &NameAddressFn,
-    ) -> String {
+    fn to_code(&self, _instr: std::ops::Range<u16>, _remap: &NameAddressFn) -> String {
         format!("{:?}", self).to_lowercase()
     }
 }
 
 impl FormatCode for Reg16 {
-    fn to_code(
-        &self,
-        _instr: std::ops::Range<u16>,
-        _remap: &NameAddressFn,
-    ) -> String {
+    fn to_code(&self, _instr: std::ops::Range<u16>, _remap: &NameAddressFn) -> String {
         format!("{:?}", self)
     }
 }
 
 impl FormatCode for Instr {
-    fn to_code(
-        &self,
-        instr: std::ops::Range<u16>,
-        remap: &NameAddressFn,
-    ) -> String {
+    fn to_code(&self, instr: std::ops::Range<u16>, remap: &NameAddressFn) -> String {
         let f = |v: &dyn FormatCode| v.to_code(instr.clone(), remap);
 
         let omit_a = |v: &Reg8| {

@@ -1,0 +1,17 @@
+[package]
+name = "dis"
+version = "0.1.0"
+authors = ["Mitch Souders <mitch.souders@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+nom = "5.0.1"
+itertools = "*"
+clap = "2.31"
+gb = { path = "../core" }
+intervaltree = "0.2.4"
+
+[dev-dependencies]
+tempdir = "0.3.7"
