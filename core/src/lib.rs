@@ -250,7 +250,7 @@ macro_rules! alu_result_mask {
 
 mod alu;
 pub mod cart;
-mod controller;
+pub mod controller;
 mod cpu;
 pub mod display;
 mod dma;

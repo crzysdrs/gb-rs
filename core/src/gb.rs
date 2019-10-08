@@ -99,8 +99,10 @@ impl<'a> GB<'a> {
             .unwrap_or_else(|| true)
         {
             self.cpu.execute(&mut mmu);
-            mmu.sync_peripherals();
 
+            let time = mmu.bus.time();
+            mmu.sync_peripherals();
+            assert_eq!(time, mmu.bus.time());
             if self.cpu.is_dead(&mmu) {
                 /* cpu permanently halted */
                 return GBReason::Dead;

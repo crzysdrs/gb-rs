@@ -110,17 +110,20 @@ impl MemReg {
         }
     }
     pub fn reg(&self) -> u8 {
-        self.reg
+        self.reg & self.read_mask
+    }
+    pub fn set_reg(&mut self, val: u8) {
+        self.reg = (self.reg & !self.write_mask) | (val & self.write_mask);
     }
 }
 
 impl Peripheral for MemReg {}
 impl Addressable for MemReg {
     fn write_byte(&mut self, _addr: u16, val: u8) {
-        self.reg = (self.reg & !self.write_mask) | (val & self.write_mask);
+        self.set_reg(val);
     }
     fn read_byte(&mut self, _addr: u16) -> u8 {
-        self.reg & self.read_mask
+        self.reg()
     }
 }
 
@@ -147,29 +150,10 @@ pub struct MMUInternal<'a> {
     ram1: Mem,
     ram2: Mem,
     sound: Mixer,
-    interrupt_flag: Mem,
+    interrupt_flag: MemReg,
+    interrupt_enable: MemReg,
     time: cycles::CycleCount,
-    effectful_change: bool,
     last_sync: cycles::CycleCount,
-}
-
-pub fn side_effect_free<T, F: FnMut(&mut MMUInternal) -> T>(
-    mmu: &mut MMUInternal,
-    mut func: F,
-) -> T {
-    let temp = mmu.effectful_change;
-    mmu.effectful_change = false;
-    let t = func(mmu);
-    mmu.effectful_change = temp;
-    t
-}
-
-pub fn side_effect_free_mem<T, F: FnMut(&mut MMU) -> T>(mmu: &mut MMU, mut func: F) -> T {
-    let temp = mmu.bus.effectful_change;
-    mmu.bus.effectful_change = false;
-    let t = func(mmu);
-    mmu.bus.effectful_change = temp;
-    t
 }
 
 impl MMUInternal<'_> {
@@ -199,9 +183,10 @@ impl MMUInternal<'_> {
         let ram0 = (0..8)
             .map(|i| Mem::new(false, if i > 0 { 0xd000 } else { 0xc000 }, vec![0; 4 << 10]))
             .collect();
-        let ram1 = Mem::new(false, 0xff80, vec![0; 0xffff - 0xff80 + 1]);
+        let ram1 = Mem::new(false, 0xff80, vec![0; 0xfffe - 0xff80 + 1]);
         let ram2 = Mem::new(false, 0xfea0, vec![0; 0xff00 - 0xfea0 + 1]);
-        let interrupt_flag = Mem::new(false, 0xff0f, vec![0; 1]);
+        let interrupt_flag = MemReg::default();
+        let interrupt_enable = MemReg::default();
         let cart_mode = cart.cgb();
         MMUInternal {
             time: cycles::Cycles::new(0),
@@ -224,7 +209,7 @@ impl MMUInternal<'_> {
             dma: DMA::new(),
             hdma: HDMA::new(),
             interrupt_flag,
-            effectful_change: true,
+            interrupt_enable,
         }
     }
     fn lookup_peripheral(&mut self, addr: &mut u16) -> &mut dyn Peripheral {
@@ -281,27 +266,29 @@ impl MMUInternal<'_> {
             0xff4d => &mut self.key1 as &mut dyn Peripheral, //TODO: GBC
             0xff46 => &mut self.dma as &mut dyn Peripheral,
             0xff51..=0xff55 => &mut self.hdma as &mut dyn Peripheral,
-            0xFF80..=0xFFFF => &mut self.ram1 as &mut dyn Peripheral,
+            0xFF80..=0xFFFE => &mut self.ram1 as &mut dyn Peripheral,
+            0xFFFF => &mut self.interrupt_enable as &mut dyn Peripheral,
             _ => &mut self.fake_mem as &mut dyn Peripheral,
         }
     }
     pub fn sync_peripherals(&mut self, data: &mut PeripheralData) {
+        let time = self.time;
         if self.last_sync < self.time {
             let mut interrupt_flag = 0;
             let cycles = self.time - self.last_sync;
             if self.dma.is_active() {
                 self.dma.step(data, cycles);
                 for (s, d) in self.dma.copy_bytes() {
-                    let v = self.read_byte(s);
-                    self.write_byte(d, v);
+                    let v = self.read_byte_noeffect(s);
+                    self.write_byte_noeffect(d, v);
                 }
             }
             if self.hdma.is_active() {
                 /* TODO: This needs to hook into Vblanks in some cases */
                 self.hdma.step(data, cycles);
                 for (s, d) in self.hdma.copy_bytes() {
-                    let v = self.read_byte(s);
-                    self.write_byte(d, v);
+                    let v = self.read_byte_noeffect(s);
+                    self.write_byte_noeffect(d, v);
                 }
             }
             self.walk_peripherals(|p| {
@@ -309,7 +296,7 @@ impl MMUInternal<'_> {
                     interrupt_flag |= mask_u8!(i);
                 }
             });
-            let flags = side_effect_free(self, |mmu| mmu.read_byte(0xff0f));
+            let flags = self.interrupt_flag.reg();
             let mut rhs = flags | interrupt_flag;
             if !self.get_display().display_enabled() {
                 /* remove vblank from IF when display disabled.
@@ -317,13 +304,14 @@ impl MMUInternal<'_> {
                 rhs &= !mask_u8!(crate::cpu::InterruptFlag::VBlank);
             }
             if rhs != flags {
-                side_effect_free(self, |mmu| mmu.write_byte(0xff0f, rhs));
+                self.interrupt_flag.set_reg(rhs);
             }
             if interrupt_flag & mask_u8!(crate::cpu::InterruptFlag::VBlank) != 0 {
                 data.vblank = true
             }
             self.last_sync = self.time;
         }
+        assert_eq!(self.time, time);
     }
     pub fn time(&self) -> cycles::CycleCount {
         self.time
@@ -356,20 +344,15 @@ impl MMUInternal<'_> {
     pub fn get_display_mut(&mut self) -> &mut Display {
         &mut self.display
     }
-    pub fn set_time(&mut self, v: cycles::CycleCount) {
-        self.time = v;
-    }
     pub fn disable_bios(&mut self) {
         self.bios_exists = false;
     }
     pub fn cycles_passed(&mut self, time: u64) {
-        if self.effectful_change {
-            self.time += if self.double_speed() {
-                cycles::CGB
-            } else {
-                cycles::GB
-            } * time;
-        }
+        self.time += if self.double_speed() {
+            cycles::CGB
+        } else {
+            cycles::GB
+        } * time;
         #[cfg(feature = "vcd_dump")]
         {
             use crate::VCDDump::VCD;
@@ -419,15 +402,13 @@ impl<'a, 'b, 'c> MMU<'a, 'b, 'c> {
     pub fn seen_vblank(&self) -> bool {
         self.data.vblank
     }
-    pub fn read_byte_silent(&mut self, mut addr: u16) -> u8 {
-        side_effect_free(self.bus, |bus| {
-            bus.lookup_peripheral(&mut addr).read_byte(addr)
-        })
+    pub fn read_byte_noeffect(&mut self, addr: u16) -> u8 {
+        self.bus.sync_peripherals(&mut self.data);
+        self.bus.read_byte_noeffect(addr)
     }
-    pub fn write_byte_silent(&mut self, mut addr: u16, v: u8) {
-        side_effect_free(self.bus, |bus| {
-            bus.lookup_peripheral(&mut addr).write_byte(addr, v)
-        });
+    pub fn write_byte_noeffect(&mut self, addr: u16, v: u8) {
+        self.bus.sync_peripherals(&mut self.data);
+        self.bus.write_byte_noeffect(addr, v);
     }
 }
 
@@ -443,20 +424,26 @@ impl Addressable for MMU<'_, '_, '_> {
 }
 
 impl MMUInternal<'_> {
-    fn read_byte(&mut self, mut addr: u16) -> u8 {
-        self.cycles_passed(1);
+    fn read_byte_noeffect(&mut self, mut addr: u16) -> u8 {
         let v = self.lookup_peripheral(&mut addr).read_byte(addr);
         self.main_bus(false, addr, v);
         v
     }
-    fn write_byte(&mut self, mut addr: u16, v: u8) {
+    fn read_byte(&mut self, addr: u16) -> u8 {
         self.cycles_passed(1);
+        self.read_byte_noeffect(addr)
+    }
+    fn write_byte_noeffect(&mut self, mut addr: u16, v: u8) {
         self.main_bus(true, addr, v);
         if addr == 0xff50 {
             self.disable_bios();
         } else {
             self.lookup_peripheral(&mut addr).write_byte(addr, v);
         }
+    }
+    fn write_byte(&mut self, addr: u16, v: u8) {
+        self.cycles_passed(1);
+        self.write_byte_noeffect(addr, v);
     }
 }
 

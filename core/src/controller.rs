@@ -4,6 +4,18 @@ use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use enum_primitive::FromPrimitive;
 
+#[derive(Debug, Copy, Clone)]
+pub enum GBControl {
+    Right = 1 << 4,
+    Left = 1 << 5,
+    Up = 1 << 6,
+    Down = 1 << 7,
+    A = 1,
+    B = 1 << 1,
+    Select = 1 << 2,
+    Start = 1 << 3,
+}
+
 pub struct Controller {
     p1: u8,
     read: u8,

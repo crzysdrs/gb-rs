@@ -198,7 +198,7 @@ pub const KEY_PALETTES: [KeyPalette; 12] = [
     },
 ];
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 enum DisplayState {
     OAMSearch,     //20 Clocks
     PixelTransfer, //43 + Clocks
@@ -296,6 +296,7 @@ pub struct Display {
     cgb_mode: DisplayMode,
     bgpalette: [[Color; 4]; 8],
     objpalette: [[Color; 4]; 8],
+    time: cycles::CycleCount,
 }
 
 impl Display {
@@ -323,6 +324,7 @@ impl Display {
             CGBStatus::SupportsCGB | CGBStatus::CGBOnly => DisplayMode::CGB,
         };
         Display {
+            time: 0 * cycles::GB,
             cgb_mode,
             frame: 0,
             changed_state: false,
@@ -338,7 +340,7 @@ impl Display {
             scy: 0,
             lcdc: 0,
             stat: 0,
-            ly: 0,
+            ly: 144,
             lyc: 0,
             bgp: 0,
             obp0: 0,
@@ -353,7 +355,7 @@ impl Display {
             obps: 0,
             //END CGB
             ppu: PPU::new(),
-            state: DisplayState::OAMSearch,
+            state: DisplayState::VBlank,
             unused_cycles: cycles::Cycles::new(0),
             bgpalette: [[Color { high: 0, low: 0 }; 4]; 8],
             objpalette: [[Color { high: 0, low: 0 }; 4]; 8],
@@ -812,9 +814,9 @@ impl Display {
             let rgb = u16::from_be_bytes([color.high, color.low]);
             let bits = 0b11111;
             (
-                u8::try_from((rgb & (bits << 10)) >> 7).unwrap(), //b
-                u8::try_from((rgb & (bits << 5)) >> 2).unwrap(),  //g
                 u8::try_from((rgb & bits) << 3).unwrap(),         //r
+                u8::try_from((rgb & (bits << 5)) >> 2).unwrap(),  //g
+                u8::try_from((rgb & (bits << 10)) >> 7).unwrap(), //b
                 0xff,
             )
         }
@@ -1261,6 +1263,7 @@ impl Peripheral for Display {
     ) -> Option<InterruptFlag> {
         let mut new_ly = self.ly;
         self.unused_cycles += time;
+        self.time += time;
         let next_state = match self.state {
             DisplayState::OAMSearch => {
                 if self.unused_cycles >= 20 * cycles::GB {
@@ -1330,11 +1333,12 @@ impl Peripheral for Display {
             }
             DisplayState::VBlank => {
                 if self.unused_cycles >= (43 + 51 + 20) * cycles::GB {
-                    self.frame += 1;
                     /* do work */
                     self.unused_cycles -= (43 + 51 + 20) * cycles::GB;
                     new_ly += 1;
-                    if new_ly == 153 {
+                    if new_ly == 154 {
+                        self.frame += 1;
+                        self.time = 0 * cycles::GB;
                         new_ly = 0;
                         DisplayState::OAMSearch
                     } else {
@@ -1362,6 +1366,7 @@ impl Peripheral for Display {
                 StatFlag::HBlankInterrupt,
                 next_state == DisplayState::HBlank
             );
+            //println!("Transition from {:?} to {:?} ({})", self.state, next_state, self.time);
             self.state = next_state;
             triggers |= state_trig;
         };

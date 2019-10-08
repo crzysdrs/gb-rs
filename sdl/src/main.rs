@@ -4,6 +4,7 @@ extern crate sdl2;
 extern crate zip;
 
 use gb::cart::Cart;
+use gb::controller::GBControl;
 use gb::gb::{GBReason, GB};
 use gb::peripherals::{AudioSpec, PeripheralData};
 use sdl2::pixels::Color;
@@ -60,7 +61,12 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
 
     let tc = canvas.texture_creator();
     let mut texture = tc
-        .create_texture_streaming(tc.default_pixel_format(), 160, 144)
+        .create_texture_streaming(
+            /* wtf, I am writing in RGBA order, even WASM agrees */
+            sdl2::pixels::PixelFormatEnum::ABGR8888,
+            160,
+            144,
+        )
         .unwrap();
 
     let mut controls: u8 = 0xff;
@@ -73,16 +79,6 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                 ..
             }
         }
-    }
-    enum GBControl {
-        Right = 1 << 4,
-        Left = 1 << 5,
-        Up = 1 << 6,
-        Down = 1 << 7,
-        A = 1,
-        B = 1 << 1,
-        Select = 1 << 2,
-        Start = 1 << 3,
     }
 
     let mut last_ticks = timer_sub.performance_counter();
@@ -201,8 +197,17 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                     ),
                 )
             });
-
             let r = r.unwrap();
+            let end_cycles = gb.cpu_cycles();
+
+            let time: gb::dimensioned::si::Second<f64> = (end_cycles - cycles).into();
+            println!(
+                "Seconds: {} Cycles: {} Sounds: {}",
+                time,
+                end_cycles - cycles,
+                count
+            );
+            //assert_eq!(count, device.spec().freq as u32 / 60);
             match r {
                 GBReason::VSync => {
                     frames += 1;
@@ -220,7 +225,6 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
             let end_cycles = gb.cpu_cycles();
             let end_frame = timer_sub.performance_counter();
             let frame_time = (end_frame - start_frame) as f64 / freq as f64 * 1000.0;
-
             if frame_time > 10.0 || elapsed_ms > 0.017 {
                 println!("Elapsed: {}", elapsed_ms * 1000.0);
                 println!("Frame Time: {} Frames {}", frame_time, frames);

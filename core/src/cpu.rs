@@ -263,8 +263,8 @@ impl CPU {
         self.reg.dump();
     }
     fn manage_interrupt(&mut self, mem: &mut MMU) {
-        let iflag = mem.read_byte_silent(0xff0f);
-        let ienable = mem.read_byte_silent(0xffff);
+        let iflag = mem.read_byte_noeffect(MemRegister::IF as u16);
+        let ienable = mem.read_byte_noeffect(MemRegister::IE as u16);
         let interrupt = iflag & ienable;
         if interrupt == 0 {
             /* no change */
@@ -286,7 +286,7 @@ impl CPU {
 
             let shift = interrupt.trailing_zeros();
             //Clear highest interrupt
-            mem.write_byte_silent(0xff0f, iflag & !(0x1 << shift));
+            mem.write_byte_noeffect(0xff0f, iflag & !(0x1 << shift));
             self.push16(mem, Reg16::PC);
             self.move_pc(mem, addr);
             self.halted = false;
@@ -347,7 +347,7 @@ impl CPU {
             (MemRegister::OBP1, 0xff),
         ];
         for (addr, val) in mem_bytes.iter() {
-            mem.write_byte_silent(*addr as u16, *val);
+            mem.write_byte_noeffect(*addr as u16, *val);
         }
         match cgb {
             CGBStatus::GB => {
@@ -355,8 +355,8 @@ impl CPU {
             }
             CGBStatus::CGBOnly | CGBStatus::SupportsCGB => {
                 self.reg.write(Reg8::A, 0x11);
-                mem.write_byte_silent(0xff6c, 0xfe);
-                mem.write_byte_silent(0xff75, 0x8f);
+                mem.write_byte_noeffect(0xff6c, 0xfe);
+                mem.write_byte_noeffect(0xff75, 0x8f);
             }
         }
     }
@@ -503,13 +503,15 @@ impl CPU {
 
                 self.reg.write(Reg8::A, value as u8);
             }
-            Instr::DEC_ir16(x0) => alu_mem_mask!(
-                self,
-                mem,
-                self.reg.read(x0),
-                ALU::dec(mem.read_byte(self.reg.read(x0))),
-                mask_u8!(Flag::Z | Flag::N | Flag::H)
-            ),
+            Instr::DEC_ir16(x0) => {
+                alu_mem_mask!(
+                    self,
+                    mem,
+                    self.reg.read(x0),
+                    ALU::dec(mem.read_byte(self.reg.read(x0))),
+                    mask_u8!(Flag::Z | Flag::N | Flag::H)
+                );
+            }
             Instr::DEC_r16(x0) => {
                 alu_result_mask!(self, x0, ALU::dec(self.reg.read(x0)), 0);
                 mem.bus.cycles_passed(1);
@@ -556,7 +558,7 @@ impl CPU {
             }
             Instr::JP_a16(x0) => {
                 if u16::from(x0) == prev_pc
-                    && (self.reg.ime == 0 || mem.read_byte_silent(0xffff) == 0)
+                    && (self.reg.ime == 0 || mem.read_byte_noeffect(MemRegister::IE as u16) == 0)
                 {
                     /* infinite loop with no interrupts enabled */
                     self.dead = true;
@@ -577,7 +579,7 @@ impl CPU {
             }
             Instr::JR_r8(x0) => {
                 if x0 == RelAddr::from(-2i8)
-                    && (self.reg.ime == 0 || mem.read_byte_silent(0xffff) == 0)
+                    && (self.reg.ime == 0 || mem.read_byte_noeffect(MemRegister::IE as u16) == 0)
                 {
                     /* infinite loop with no interrupts enabled */
                     self.dead = true;
@@ -937,37 +939,33 @@ impl CPU {
         };
 
         if self.trace {
-            crate::mmu::side_effect_free_mem(mem, |mem| {
-                let reset_time = mem.bus.time();
-                let ienable = mem.read_byte_silent(0xffff);
-                let iflag = mem.read_byte_silent(0xff0f);
-                let addr = self.reg.read(Reg16::PC);
+            let ienable = mem.read_byte_noeffect(MemRegister::IE as u16);
+            let iflag = mem.read_byte_noeffect(MemRegister::IF as u16);
+            let addr = self.reg.read(Reg16::PC);
 
-                print!("A:{:02X} ", self.reg.read(Reg8::A));
-                print!(
-                    "F:{z}{n}{h}{c} ",
-                    z = if self.reg.get_flag(Flag::Z) { "Z" } else { "-" },
-                    n = if self.reg.get_flag(Flag::N) { "N" } else { "-" },
-                    h = if self.reg.get_flag(Flag::H) { "H" } else { "-" },
-                    c = if self.reg.get_flag(Flag::C) { "C" } else { "-" },
-                );
-                print!("BC:{:04X} ", self.reg.read(Reg16::BC));
-                print!("DE:{:04x} ", self.reg.read(Reg16::DE));
-                print!("HL:{:04x} ", self.reg.read(Reg16::HL));
-                print!("SP:{:04x} ", self.reg.read(Reg16::SP));
-                print!("PC:{:04x} ", self.reg.read(Reg16::PC));
-                if true {
-                    print!("IF:{:02x} ", iflag);
-                    print!("IE:{:02x} ", ienable);
-                    print!("IME:{:01x} ", self.reg.ime);
-                }
-                print!("(cy: {}) ", start);
-                //print!("ppu:+{} ", 0);
-                print!("|[??]");
-                crate::instr::disasm(addr, next_pc, mem, &mut std::io::stdout(), &|_| true)
-                    .unwrap();
-                mem.bus.set_time(reset_time);
-            });
+            print!("A:{:02X} ", self.reg.read(Reg8::A));
+            print!(
+                "F:{z}{n}{h}{c} ",
+                z = if self.reg.get_flag(Flag::Z) { "Z" } else { "-" },
+                n = if self.reg.get_flag(Flag::N) { "N" } else { "-" },
+                h = if self.reg.get_flag(Flag::H) { "H" } else { "-" },
+                c = if self.reg.get_flag(Flag::C) { "C" } else { "-" },
+            );
+            print!("BC:{:04X} ", self.reg.read(Reg16::BC));
+            print!("DE:{:04x} ", self.reg.read(Reg16::DE));
+            print!("HL:{:04x} ", self.reg.read(Reg16::HL));
+            print!("SP:{:04x} ", self.reg.read(Reg16::SP));
+            print!("PC:{:04x} ", self.reg.read(Reg16::PC));
+            if true {
+                print!("IF:{:02x} ", iflag);
+                print!("IE:{:02x} ", ienable);
+                print!("IME:{:01x} ", self.reg.ime);
+            }
+            print!("(cy: {}) ", start);
+            //print!("ppu:+{} ", 0);
+            print!("|[??]");
+            crate::instr::disasm(addr, next_pc, mem, &mut std::io::stdout(), &|_| true).unwrap();
+            println!();
         }
         self.reg.write(Reg16::PC, next_pc);
         self.execute_instr(mem, pc, i)

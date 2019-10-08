@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Hello wasm-pack!</title>
+  </head>
+  <body>
+    <noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
+    <script type="module">
+      // Use ES module import syntax to import functionality from the module
+      // that we have compiled.
+      //
+      // Note that the `default` import is an initialization function which
+      // will "boot" the module and make it ready to use. Currently browsers
+      // don't support natively imported WebAssembly as an ES module, but
+      // eventually the manual initialization won't be required!
+      import init, { start } from './pkg/wasm.js';
+      async function run() {
+          await init();
+          start();
+      }
+      run();
+    </script>
+    
+  <canvas id="canvas" height="144" width="160">
+  </canvas>
+  <table>
+    <tr><td>Start</td><td>Enter</td></tr>
+    <tr><td>Select</td><td>\</td></tr>
+    <tr><td>A</td><td>Z</td></tr>
+    <tr><td>B</td><td>X</td></tr>
+  </table>
+  </body>
+</html>
