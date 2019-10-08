@@ -34,6 +34,7 @@ features = [
   'Event',
   'MediaStreamAudioSourceNode',
   'MediaStreamAudioSourceOptions',
+  'Performance'
 ]
 
 [dev-dependencies]

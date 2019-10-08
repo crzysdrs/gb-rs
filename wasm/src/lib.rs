@@ -6,6 +6,12 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, ImageData};
 
+macro_rules! log {
+    ( $( $t:tt )* ) => {
+        web_sys::console::log_1(&format!( $( $t )* ).into());
+    }
+}
+
 #[wasm_bindgen]
 pub struct ClosureHandle(Closure<dyn FnMut()>);
 
@@ -19,6 +25,85 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>) {
 // fn set_onended(sound: &web_sys::AudioBufferSourceNode, f: &Closure<dyn FnMut(web_sys::Event)>) {
 //     sound.set_onended(Some(f.as_ref().unchecked_ref()));
 // }
+
+struct SoundBuffer {
+    buf_len: usize,
+    channels : usize,
+    bufs : Vec<web_sys::AudioBuffer>,
+    target_buf : usize,
+    audio_cxt : web_sys::AudioContext,
+    last_finish : Option<f64>,
+    sample_buf: Vec<Vec<f32>>,
+}
+
+impl SoundBuffer {
+    fn new(cxt: web_sys::AudioContext, channels: usize) -> SoundBuffer {
+        let sample_rate = cxt.sample_rate() as usize;
+        let buf_len = sample_rate / 120;
+        let bufs = (0..32).map(|_| {
+            cxt
+                .create_buffer(channels as u32, buf_len as u32, sample_rate as f32)
+                .expect("Create SoundBuffer AudioBufs")
+        }).collect();
+
+        SoundBuffer {
+            sample_buf: vec![Vec::new(); channels],
+            audio_cxt : cxt,
+            buf_len,
+            bufs,
+            channels,
+            target_buf :0,
+            last_finish : None,
+        }
+    }
+    fn commit(&mut self) {
+        //log!("Copy");
+        let num_bufs = self.sample_buf[0].len() / self.buf_len;
+        let ring_buf = self.bufs[self.target_buf..].iter().chain(self.bufs[..self.target_buf].iter()).take(num_bufs);
+        for c in 0..self.channels {
+            let chunks = self.sample_buf[c].chunks_exact_mut(self.buf_len);
+            for (mut chunk, buf) in chunks.zip(ring_buf.clone()) {
+                buf
+                    .copy_to_channel(
+                        &mut chunk,
+                            c as i32)
+                    .expect("Copy to SoundBuffer");
+            }
+            self.sample_buf[c].drain(..(num_bufs * self.buf_len));
+        }
+        for buf in ring_buf {
+            //log!("Filled Buf");
+            let source = self.audio_cxt.create_buffer_source().expect("Unable to create buffer source");
+            source
+                .connect_with_audio_node(&self.audio_cxt.destination())
+                .expect("Unable to connect to audio destination");
+            source.set_buffer(Some(&buf));
+            let new_finish = match self.last_finish {
+                None => {
+                    source.start().expect("Unwable to start source sound");
+                    self.audio_cxt.current_time() + buf.duration()
+                }
+                Some(finish) if finish < self.audio_cxt.current_time() => {
+                    source.start().expect("Unwable to start source sound");
+                    self.audio_cxt.current_time() + buf.duration()
+                },
+                Some(finish) => {
+                    source.start_with_when(finish).expect("Unable to start source sound");
+                    finish + buf.duration()
+                }
+            };
+            self.last_finish = Some(new_finish);
+        }
+        self.target_buf += num_bufs;
+        self.target_buf %= self.bufs.len();
+    }
+    fn sample<T: Clone+ Iterator<Item=f32>>(&mut self, samples: T) {
+        for c in 0..self.channels {
+            let samples = samples.clone();
+            self.sample_buf[c].extend(samples.skip(c).step_by(self.channels));
+        }
+    }
+}
 
 #[wasm_bindgen]
 pub fn start() {
@@ -45,7 +130,7 @@ pub fn start() {
     use gb::controller::GBControl;
     let keys = std::rc::Rc::new(std::cell::RefCell::new(0xff));
 
-    web_sys::console::log_1(&"Hello World".into());
+    log!("Hello World");
 
     use web_sys::KeyboardEvent;
     fn map_key_code(code: &str) -> Option<GBControl> {
@@ -95,28 +180,18 @@ pub fn start() {
 
     let f = std::rc::Rc::new(std::cell::RefCell::new(None));
     let g = f.clone();
-    //let track = web_sys::AudioStreamTrack::new();
-
-    let sample_rate = 4.0 * 16384.0;
-    let audio = web_sys::AudioContext::new_with_context_options(
-        &web_sys::AudioContextOptions::new().sample_rate(sample_rate as f32),
-    )
-    .unwrap();
 
     *g.borrow_mut() = Some(Closure::wrap(Box::new({
         let keys = keys.clone();
-        let mut chans = [Vec::new(), Vec::new()];
-        let mut prev_sound: Option<
-            std::rc::Rc<std::cell::RefCell<web_sys::AudioBufferSourceNode>>,
-        > = None;
-        let mut prev_sound_end = None;
-        let mut first_frame = None;
         let mut last_frame_time = std::collections::VecDeque::new();
-        //let mut last_sound = None;
+        let channels = 2;
+        let sample_rate = 4.0 * 16384.0;
+        let audio = web_sys::AudioContext::new_with_context_options(
+            &web_sys::AudioContextOptions::new().sample_rate(sample_rate as f32),
+        ).unwrap();
+        let perf = web_sys::window().unwrap().performance().unwrap();
+        let mut sound_buf = SoundBuffer::new(audio, channels);
         move || {
-            for c in chans.iter_mut() {
-                c.clear();
-            }
             let time = if last_frame_time.len() >= 2 {
                 let avg: f64 = last_frame_time
                     .iter()
@@ -127,7 +202,7 @@ pub fn start() {
                 if avg < std::f64::EPSILON {
                     gb::cycles::SECOND / 30
                 } else {
-                    gb::cycles::SECOND / ((1.0 / avg) as u64)
+                    gb::cycles::SECOND / ((1000.0 / avg) as u64)
                 }
             } else {
                 gb::cycles::SECOND / 60
@@ -135,18 +210,16 @@ pub fn start() {
             if last_frame_time.len() > 10 {
                 last_frame_time.pop_front();
             }
-            last_frame_time.push_back(audio.current_time());
+            last_frame_time.push_back(perf.now());
 
             let start = gb.cpu_cycles();
             loop {
                 let remain = time - (gb.cpu_cycles() - start);
                 let mut sampler = |samples: &[i16]| {
-                    let mut scaled = samples
+                    let scaled = samples
                         .iter()
                         .map(|x| f32::from(*x) / f32::from(std::i16::MAX));
-                    for c in chans.iter_mut() {
-                        c.push(scaled.next().unwrap());
-                    }
+                    sound_buf.sample(scaled);
                     true
                 };
 
@@ -160,11 +233,6 @@ pub fn start() {
                 );
                 gb.set_controls(*keys.borrow());
                 let r = gb.step(Some(remain), &mut data);
-
-                if let None = first_frame {
-                    first_frame = Some(audio.current_time());
-                }
-
                 match r {
                     GBReason::VSync => {
                         let lcd = ImageData::new_with_u8_clamped_array_and_sh(
@@ -185,56 +253,7 @@ pub fn start() {
                         frames += 1;
                     }
                     GBReason::Timeout => {
-                        let audio_buf = audio
-                            .create_buffer(2, chans[0].len() as u32, sample_rate)
-                            .unwrap();
-                        for (i, c) in chans.iter_mut().enumerate() {
-                            audio_buf.copy_to_channel(&mut c[..], i as i32).unwrap();
-                        }
-                        //audio_buf.copy_to_channel(&mut chan_r[..], 1).unwrap();
-                        //for (i, c) in [chan_l, chan_r].iter_mut().enumerate() {
-                        //audio_buf.copy_to_channel(&mut c[..], i as i32).unwrap();
-                        //}
-                        let source = audio.create_buffer_source().unwrap();
-                        source
-                            .connect_with_audio_node(&audio.destination())
-                            .unwrap();
-                        source.set_buffer(Some(&audio_buf));
-                        //source.playback_rate().set_value( (1.0 / 59.7) / audio_buf.duration() as f32);
-                        let source = std::rc::Rc::new(std::cell::RefCell::new(source));
-                        if let Some(p) = prev_sound_end.as_ref() {
-                            // let c = Closure::wrap(Box::new({
-                            //     let source = source.clone();
-                            //     move |_event| {
-                            //         source.borrow_mut().start();
-                            //     }
-                            // }) as Box<dyn FnMut(web_sys::Event)>);
-
-                            // set_onended(p.borrow_mut().as_ref(), &c);
-                            // c.forget();
-                            if *p < audio.current_time() {
-                                source.borrow_mut().start().unwrap();
-                            } else {
-                                source.borrow_mut().start_with_when(*p).unwrap();
-                            }
-                        } else {
-                            source.borrow_mut().start().unwrap();
-                            //source.borrow_mut().start_with_when(first_frame.unwrap() + frames as f64 / 60.0);
-                        }
-                        prev_sound = Some(source);
-                        prev_sound_end = Some(audio.current_time() + audio_buf.duration());
-
-                        // if frames % 60 == 0 {
-                        //     web_sys::console::log_1(
-                        //         &format!(
-                        //             "{} {} {}",
-                        //             audio_buf.duration(),
-                        //             audio_buf.length(),
-                        //             audio_buf.sample_rate()
-                        //         )
-                        //             .into(),
-                        //     );
-                        // }
+                        sound_buf.commit();
                         request_animation_frame(f.borrow().as_ref().unwrap());
                         break;
                     }
