@@ -350,7 +350,7 @@ mod tests {
                 );
                 let screen = {
                     let mut gb = crate::gb::GB::new(
-                        Cart::new(include_bytes!(concat!(env!("TESTDIR"), "/", $path)).to_vec()),
+                        Cart::new(include_bytes!(concat!("../../", $path)).to_vec()),
                         Some(&mut buf),
                         false,
                         None,
@@ -375,7 +375,7 @@ mod tests {
                 let mut buf = ::std::io::BufWriter::new(Vec::new());
                 let (finished, reg, screen) = {
                     let mut gb = crate::gb::GB::new(
-                        Cart::new(include_bytes!(concat!(env!("TESTDIR"), "/", $path)).to_vec()),
+                        Cart::new(include_bytes!(concat!("../../", $path)).to_vec()),
                         Some(&mut buf),
                         false,
                         None,

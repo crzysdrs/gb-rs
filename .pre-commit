@@ -5,7 +5,6 @@ set -euo pipefail
 IFS=$'\n\t'
 
 export RUSTFLAGS="-D warnings"
-export TESTDIR=`pwd`
 
 ln -s -f ../../.pre-commit ./.git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit

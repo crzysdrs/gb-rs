@@ -893,7 +893,7 @@ mod tests {
     #[test]
     fn dis_test() {
         let dir = TempDir::new("dis").unwrap();
-        let rom_dir = std::path::PathBuf::from(concat!(env!("TESTDIR"), "/blarg/roms/cpu_instrs/"));
+        let rom_dir = std::path::PathBuf::from("../blarg/roms/cpu_instrs/");
         let rom = rom_dir.join("01-special.gb");
         let syms = rom_dir.join("01-special.sym");
         let default_sym = dir.path().join("default.sym");
