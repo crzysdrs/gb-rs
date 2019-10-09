@@ -28,76 +28,103 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>) {
 
 struct SoundBuffer {
     buf_len: usize,
-    channels : usize,
-    bufs : Vec<web_sys::AudioBuffer>,
-    target_buf : usize,
-    audio_cxt : web_sys::AudioContext,
-    last_finish : Option<f64>,
+    channels: usize,
+    bufs: Vec<web_sys::AudioBuffer>,
+    target_buf: usize,
+    audio_cxt: web_sys::AudioContext,
+    last_finish: Option<f64>,
     sample_buf: Vec<Vec<f32>>,
 }
 
 impl SoundBuffer {
     fn new(cxt: web_sys::AudioContext, channels: usize) -> SoundBuffer {
+        let num_bufs = 240;
         let sample_rate = cxt.sample_rate() as usize;
-        let buf_len = sample_rate / 120;
-        let bufs = (0..32).map(|_| {
-            cxt
-                .create_buffer(channels as u32, buf_len as u32, sample_rate as f32)
-                .expect("Create SoundBuffer AudioBufs")
-        }).collect();
+        let buf_len = sample_rate / num_bufs;
+        let bufs = (0..num_bufs)
+            .map(|_| {
+                cxt.create_buffer(channels as u32, buf_len as u32, sample_rate as f32)
+                    .expect("Create SoundBuffer AudioBufs")
+            })
+            .collect();
 
         SoundBuffer {
             sample_buf: vec![Vec::new(); channels],
-            audio_cxt : cxt,
+            audio_cxt: cxt,
             buf_len,
             bufs,
             channels,
-            target_buf :0,
-            last_finish : None,
+            target_buf: 0,
+            last_finish: None,
         }
     }
     fn commit(&mut self) {
         //log!("Copy");
-        let num_bufs = self.sample_buf[0].len() / self.buf_len;
-        let ring_buf = self.bufs[self.target_buf..].iter().chain(self.bufs[..self.target_buf].iter()).take(num_bufs);
+        let ring_buf = self.bufs[self.target_buf..]
+            .iter()
+            .chain(self.bufs[..self.target_buf].iter());
+
+        let mut lens = None;
         for c in 0..self.channels {
             let chunks = self.sample_buf[c].chunks_exact_mut(self.buf_len);
-            for (mut chunk, buf) in chunks.zip(ring_buf.clone()) {
-                buf
-                    .copy_to_channel(
-                        &mut chunk,
-                            c as i32)
-                    .expect("Copy to SoundBuffer");
+            let tmp_lens = chunks
+                .zip(ring_buf.clone())
+                .map(|(mut chunk, buf)| {
+                    buf.copy_to_channel(&mut chunk, c as i32)
+                        .expect("Copy to SoundBuffer");
+                    chunk.len()
+                })
+                .collect::<Vec<usize>>();
+            //self.sample_buf[c].clear();
+            self.sample_buf[c].drain(0usize..(tmp_lens.iter().sum()));
+            lens = Some(tmp_lens);
+        }
+        if let Some(count) = lens {
+            //log!("lens {}", count.iter().sum::<usize>());
+            for (buf, len) in ring_buf.zip(count.iter()) {
+                //log!("Filled Buf");
+                let source = self
+                    .audio_cxt
+                    .create_buffer_source()
+                    .expect("Unable to create buffer source");
+                source
+                    .connect_with_audio_node(&self.audio_cxt.destination())
+                    .expect("Unable to connect to audio destination");
+                source.set_buffer(Some(&buf));
+                let duration = if *len != self.buf_len {
+                    Some((*len as f64 / self.buf_len as f64) * buf.duration())
+                } else {
+                    None
+                };
+                let new_start = match self.last_finish {
+                    None => None,
+                    Some(finish) if finish < self.audio_cxt.current_time() => None,
+                    Some(finish) => Some(finish),
+                };
+                let start = if let Some(start) = new_start {
+                    source
+                        .start_with_when(start)
+                        .expect("Unable to start source sound");
+                    start
+                } else {
+                    source.start().expect("Unable to start source sound");
+                    self.audio_cxt.current_time()
+                };
+                let new_finish = if let Some(d) = duration {
+                    let f = start + d;
+                    source.stop_with_when(f).unwrap();
+                    f
+                } else {
+                    start + buf.duration()
+                };
+                self.last_finish = Some(new_finish);
             }
-            self.sample_buf[c].drain(..(num_bufs * self.buf_len));
+
+            self.target_buf += count.len();
+            self.target_buf %= self.bufs.len();
         }
-        for buf in ring_buf {
-            //log!("Filled Buf");
-            let source = self.audio_cxt.create_buffer_source().expect("Unable to create buffer source");
-            source
-                .connect_with_audio_node(&self.audio_cxt.destination())
-                .expect("Unable to connect to audio destination");
-            source.set_buffer(Some(&buf));
-            let new_finish = match self.last_finish {
-                None => {
-                    source.start().expect("Unwable to start source sound");
-                    self.audio_cxt.current_time() + buf.duration()
-                }
-                Some(finish) if finish < self.audio_cxt.current_time() => {
-                    source.start().expect("Unwable to start source sound");
-                    self.audio_cxt.current_time() + buf.duration()
-                },
-                Some(finish) => {
-                    source.start_with_when(finish).expect("Unable to start source sound");
-                    finish + buf.duration()
-                }
-            };
-            self.last_finish = Some(new_finish);
-        }
-        self.target_buf += num_bufs;
-        self.target_buf %= self.bufs.len();
     }
-    fn sample<T: Clone+ Iterator<Item=f32>>(&mut self, samples: T) {
+    fn sample<T: Clone + Iterator<Item = f32>>(&mut self, samples: T) {
         for c in 0..self.channels {
             let samples = samples.clone();
             self.sample_buf[c].extend(samples.skip(c).step_by(self.channels));
@@ -188,17 +215,21 @@ pub fn start() {
         let sample_rate = 4.0 * 16384.0;
         let audio = web_sys::AudioContext::new_with_context_options(
             &web_sys::AudioContextOptions::new().sample_rate(sample_rate as f32),
-        ).unwrap();
+        )
+        .unwrap();
         let perf = web_sys::window().unwrap().performance().unwrap();
         let mut sound_buf = SoundBuffer::new(audio, channels);
         move || {
+            let now = perf.now();
+            last_frame_time.push_front(now);
             let time = if last_frame_time.len() >= 2 {
                 let avg: f64 = last_frame_time
                     .iter()
                     .zip(last_frame_time.iter().skip(1))
-                    .map(|(a, b)| b - a)
-                    .sum::<f64>()
-                    / (last_frame_time.len() - 1) as f64;
+                    .map(|(a, b)| a - b)
+                    .enumerate()
+                    .map(|(i, val)| val * (1.0 / (1 << (i + 1)) as f64))
+                    .sum::<f64>();
                 if avg < std::f64::EPSILON {
                     gb::cycles::SECOND / 30
                 } else {
@@ -208,9 +239,8 @@ pub fn start() {
                 gb::cycles::SECOND / 60
             };
             if last_frame_time.len() > 10 {
-                last_frame_time.pop_front();
+                last_frame_time.pop_back();
             }
-            last_frame_time.push_back(perf.now());
 
             let start = gb.cpu_cycles();
             loop {
