@@ -774,7 +774,7 @@ impl Display {
     fn lookup(&mut self, addr: u16) -> &mut u8 {
         match addr {
             0x8000..=0x9fff => {
-                &mut Display::bank_vram(&mut self.vram, self.vbk)[(addr - 0x8000) as usize]
+                &mut Display::bank_vram(&mut self.vram, self.vbk & 0b1)[(addr - 0x8000) as usize]
             }
             0xFE00..=0xFE9F => {
                 let idx = ((addr & 0xff) >> 2) as usize;
