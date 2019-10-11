@@ -24,20 +24,21 @@ pub enum GBReason {
 }
 
 impl<'a> GB<'a> {
-    pub fn new<'b>(
+    pub fn new(
         cart: Cart,
-        serial: Option<&'b mut dyn Write>,
+        serial: Option<&'a mut dyn Write>,
         trace: bool,
         boot_rom: Option<Vec<u8>>,
         palette: Option<usize>,
-    ) -> GB {
+        audio_sample_rate: Option<cycles::CycleCount>,
+    ) -> Self {
         let has_bootrom = boot_rom.is_some();
         let cgb = cart.cgb();
         let hash = cart.title_hash();
         let dis = *cart.title().as_bytes().iter().nth(3).unwrap();
         let mut gb = GB {
             cpu: CPU::new(trace),
-            mem: MMUInternal::new(cart, serial, boot_rom),
+            mem: MMUInternal::new(cart, serial, boot_rom, audio_sample_rate),
         };
         if !has_bootrom {
             let mut data = PeripheralData::empty();

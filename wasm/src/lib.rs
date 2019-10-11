@@ -146,7 +146,14 @@ pub fn start() {
             .to_vec(),
     );
 
-    let mut gb = GB::new(cart, None, false, None, None);
+    let mut gb = GB::new(
+        cart,
+        None,
+        false,
+        None,
+        None,
+        Some((gb::cycles::SECOND / 65536).into()),
+    );
 
     let width = 160;
     let height = 144;

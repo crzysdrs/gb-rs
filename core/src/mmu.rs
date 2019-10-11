@@ -156,7 +156,7 @@ pub struct MMUInternal<'a> {
     last_sync: cycles::CycleCount,
 }
 
-impl MMUInternal<'_> {
+impl<'a> MMUInternal<'a> {
     pub fn double_speed(&self) -> bool {
         (self.key1.reg & (1 << 7)) != 0
     }
@@ -169,9 +169,10 @@ impl MMUInternal<'_> {
     }
     pub fn new(
         cart: Cart,
-        serial: Option<&mut dyn Write>,
+        serial: Option<&'a mut dyn Write>,
         boot_rom: Option<Vec<u8>>,
-    ) -> MMUInternal {
+        audio_sample_rate: Option<cycles::CycleCount>,
+    ) -> Self {
         let bios = Mem::new(
             true,
             0,
@@ -201,7 +202,7 @@ impl MMUInternal<'_> {
             timer: Timer::new(),
             serial: Serial::new(serial),
             controller: Controller::new(),
-            sound: Mixer::new(), //Mem::new(false, 0xff10, vec![0u8; 0xff3f - 0xff10 + 1]),
+            sound: Mixer::new(audio_sample_rate), //Mem::new(false, 0xff10, vec![0u8; 0xff3f - 0xff10 + 1]),
             ram0,
             fake_mem: FakeMem::new(),
             ram1,
@@ -392,7 +393,7 @@ impl<'a, 'b, 'c> MMU<'a, 'b, 'c> {
     //     self.seek(SeekFrom::Start(0));
     //     disasm(0, self, &mut std::io::stdout(), &|i| match i {Instr::NOP => false, _ => true});
     // }
-    pub fn new(bus: &'b mut MMUInternal<'a>, data: &'b mut PeripheralData<'c>) -> MMU<'a, 'b, 'c> {
+    pub fn new(bus: &'b mut MMUInternal<'a>, data: &'b mut PeripheralData<'c>) -> Self {
         MMU { bus, data }
     }
 

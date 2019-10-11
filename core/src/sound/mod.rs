@@ -50,7 +50,7 @@ impl Addressable for MaskReg {
 }
 
 pub trait AudioChannel {
-    fn reset(&mut self, clks: &Clocks, enable: bool, trigger: bool);
+    fn reset(&mut self, enable: bool, trigger: bool);
     fn disable(&mut self);
     fn power(&mut self, powered: bool);
     fn enabled(&self) -> bool;
@@ -123,12 +123,12 @@ impl Clk {
             0
         }
     }
-    fn fall(&self) -> Clk {
-        match self {
-            Clk::Rising | Clk::High => Clk::Falling,
-            _ => Clk::Low,
-        }
-    }
+    // fn fall(&self) -> Clk {
+    //     match self {
+    //         Clk::Rising | Clk::High => Clk::Falling,
+    //         _ => Clk::Low,
+    //     }
+    // }
 }
 
 pub struct Clocks {
@@ -144,86 +144,152 @@ impl Clocks {
     }
 }
 
-struct FrameSequencer {
-    time: u64,
-    wait: WaitTimer,
-    clks: Clocks,
+#[derive(Copy, Clone, PartialOrd, PartialEq, Debug)]
+struct SoundEvent {
+    time: cycles::CycleCount,
+    typ: SoundEventType,
 }
 
-impl FrameSequencer {
-    fn new() -> FrameSequencer {
-        FrameSequencer {
-            time: 0,
-            wait: WaitTimer::new(),
-            clks: Clocks {
+impl SoundEvent {
+    fn get_clocks(&self) -> Clocks {
+        match self.typ {
+            SoundEventType::LengthClk => Clocks {
+                length: Clk::Rising,
+                vol: Clk::Falling,
+                sweep: Clk::Falling,
+            },
+            SoundEventType::VolumeClk => Clocks {
+                length: Clk::Falling,
+                vol: Clk::Rising,
+                sweep: Clk::Falling,
+            },
+            SoundEventType::SweepClk => Clocks {
+                length: Clk::Falling,
+                vol: Clk::Falling,
+                sweep: Clk::Rising,
+            },
+            SoundEventType::Sample | SoundEventType::Sync => Clocks {
                 length: Clk::Low,
                 vol: Clk::Low,
                 sweep: Clk::Low,
             },
         }
     }
-    fn clks(&self) -> &Clocks {
-        &self.clks
+}
+
+#[derive(Copy, Clone, PartialOrd, PartialEq, Debug)]
+enum SoundEventType {
+    VolumeClk,
+    LengthClk,
+    SweepClk,
+    Sample,
+    Sync,
+}
+
+// trait CloneIterator: Iterator {
+//     fn clone_iter(&self) -> Box<dyn CloneIterator<Item = Self::Item>>;
+// }
+
+// impl<T: Iterator + Clone + 'static> CloneIterator for T {
+//     fn clone_iter(&self) -> Box<dyn CloneIterator<Item = Self::Item>> {
+//         Box::new(self.clone())
+//     }
+// }
+
+pub trait PeekableIterator: std::iter::Iterator {
+    fn peek(&mut self) -> Option<&Self::Item>;
+}
+
+impl<I: std::iter::Iterator> PeekableIterator for std::iter::Peekable<I> {
+    fn peek(&mut self) -> Option<&Self::Item> {
+        std::iter::Peekable::peek(self)
     }
-    fn settle(&mut self) {
-        for c in [
-            &mut self.clks.length,
-            &mut self.clks.vol,
-            &mut self.clks.sweep,
-        ]
-        .iter_mut()
-        {
-            std::mem::replace(*c, c.settle());
+}
+
+// impl <T :PeekableIterator> itertools::PeekingNext for T {
+//     fn peeking_next<F>(&mut self, accept: F) -> Option<Self::Item>
+//     where
+//         F: FnOnce(&Self::Item) -> bool {
+//         if self.peek().map(accept).unwrap_or(false) {
+//             self.peek()
+//         } else {
+//             None
+//         }
+//     }
+// }
+struct FrameSequencer {
+    //seq: Box<dyn itertools::PeekingNext<Item = SoundEvent>>,
+    //seq: Box<dyn Iterator<Item=SoundEvent>>,
+    seq: std::iter::Peekable<Box<dyn Iterator<Item = SoundEvent>>>,
+    last: cycles::CycleCount,
+}
+
+impl FrameSequencer {
+    fn new(rate: Option<cycles::CycleCount>) -> FrameSequencer {
+        let hz512 = cycles::SECOND / 512;
+        let volume =
+            std::iter::once(SoundEventType::VolumeClk)
+                .cycle()
+                .scan(7 * hz512, move |time, typ| {
+                    let r = SoundEvent { typ, time: *time };
+                    *time += 8 * hz512;
+                    Some(r)
+                });
+        let sweep =
+            std::iter::once(SoundEventType::SweepClk)
+                .cycle()
+                .scan(2 * hz512, move |time, typ| {
+                    let r = SoundEvent { typ, time: *time };
+                    *time += 4 * hz512;
+                    Some(r)
+                });
+        let length =
+            std::iter::once(SoundEventType::LengthClk)
+                .cycle()
+                .scan(0 * hz512, move |time, typ| {
+                    let r = SoundEvent { typ, time: *time };
+                    *time += 2 * hz512;
+                    Some(r)
+                });
+
+        let sample =
+            std::iter::once(SoundEventType::Sample)
+                .cycle()
+                .scan(0 * hz512, move |time, typ| {
+                    rate.map(|rate| {
+                        let r = SoundEvent { typ, time: *time };
+                        *time += rate;
+                        r
+                    })
+                });
+
+        use itertools::Itertools;
+        FrameSequencer {
+            seq: (Box::new(volume.merge(sweep).merge(length).merge(sample))
+                as Box<dyn Iterator<Item = SoundEvent>>)
+                .peekable(),
+            last: 0 * hz512,
         }
     }
-    fn step(&mut self, cycles: cycles::CycleCount) {
-        /* 512 hz clock */
-        self.settle();
-        use dimensioned::si;
-        if let Some(count) = self.wait.ready(cycles, cycles::Cycles::from(si::S / 512.0)) {
-            for _ in 0..count {
-                if self.time % 2 == 0 {
-                    self.clks.length = Clk::Rising;
-                } else {
-                    self.clks.length = self.clks.length.fall();
+
+    fn step<'a>(
+        &'a mut self,
+        time: cycles::CycleCount,
+        relative: bool,
+    ) -> impl Iterator<Item = SoundEvent> + 'a {
+        let now = self.last + time;
+        let old = self.last;
+        self.last += time;
+        use itertools::Itertools;
+        self.seq
+            .by_ref()
+            .peeking_take_while(move |ev| ev.time <= now)
+            .map(move |mut ev| {
+                if relative {
+                    ev.time -= old;
                 }
-                if self.time == 7 {
-                    self.clks.vol = Clk::Rising;
-                } else {
-                    self.clks.vol = self.clks.vol.fall();
-                }
-                if self.time == 3 || self.time == 6 {
-                    self.clks.sweep = Clk::Rising;
-                } else {
-                    self.clks.sweep = self.clks.sweep.fall();
-                }
-                self.time = (self.time + 1) % 8;
-                #[cfg(feature = "vcd_dump")]
-                {
-                    use crate::VCDDump::VCD;
-                    VCD.as_ref().map(|m| {
-                        m.lock().unwrap().as_mut().map(|v| {
-                            for (name, val) in &[
-                                ("vol", &mut self.clks.vol),
-                                ("length", &mut self.clks.length),
-                                ("sweep", &mut self.clks.sweep),
-                            ] {
-                                let (mut writer, mem) = v.writer();
-                                let (wire, id) = mem.get(*name).unwrap();
-                                wire.write(
-                                    &mut writer,
-                                    *id,
-                                    match *val {
-                                        Clk::Rising | Clk::High => 1,
-                                        Clk::Falling | Clk::Low => 0,
-                                    },
-                                );
-                            }
-                        })
-                    });
-                }
-            }
-        }
+                ev
+            })
     }
 }
 
@@ -260,7 +326,7 @@ impl WaitTimer {
 }
 
 pub struct Mixer {
-    wait: WaitTimer,
+    last_event: SoundEvent,
     frame_seq: FrameSequencer,
     channel1: Channel1,
     channel2: Channel2,
@@ -277,18 +343,22 @@ impl<T> AddressableChannel for T
 where
     T: Addressable,
 {
-    fn read_channel_byte(&mut self, _clks: &Clocks, addr: u16) -> u8 {
+    fn read_channel_byte(&mut self, addr: u16) -> u8 {
         self.read_byte(addr)
     }
-    fn write_channel_byte(&mut self, _clks: &Clocks, addr: u16, val: u8) {
+    fn write_channel_byte(&mut self, addr: u16, val: u8) {
         self.write_byte(addr, val)
     }
 }
-impl std::default::Default for Mixer {
-    fn default() -> Self {
+
+impl Mixer {
+    pub fn new(rate: Option<cycles::CycleCount>) -> Self {
         Mixer {
-            wait: WaitTimer::new(),
-            frame_seq: FrameSequencer::new(),
+            last_event: SoundEvent {
+                typ: SoundEventType::Sync,
+                time: cycles::Cycles::new(0),
+            },
+            frame_seq: FrameSequencer::new(rate),
             channel1: Channel1::new(),
             channel2: Channel2::new(),
             channel3: Channel3::new(),
@@ -309,12 +379,7 @@ impl std::default::Default for Mixer {
             wave: Mem::new(false, 0xff30, vec![0u8; 16]),
         }
     }
-}
-impl Mixer {
-    pub fn new() -> Mixer {
-        Mixer::default()
-    }
-    fn lookup(&mut self, addr: u16) -> (&Clocks, Option<&mut dyn AddressableChannel>) {
+    fn lookup(&mut self, addr: u16) -> Option<&mut dyn AddressableChannel> {
         const CH1_START: u16 = MemRegister::NR10 as u16;
         const CH1_END: u16 = MemRegister::NR14 as u16;
         const CH2_START: u16 = MemRegister::NR20 as u16;
@@ -328,28 +393,25 @@ impl Mixer {
         const NR51: u16 = MemRegister::NR51 as u16;
         const NR52: u16 = MemRegister::NR52 as u16;
 
-        (
-            &self.frame_seq.clks,
-            match addr {
-                CH1_START..=CH1_END => Some(&mut self.channel1),
-                CH2_START..=CH2_END => Some(&mut self.channel2),
-                CH3_START..=CH3_END => Some(&mut self.channel3),
-                CH4_START..=CH4_END => Some(&mut self.channel4),
-                0xff27..=0xff2f => Some(&mut self.unused),
-                0xff30..=0xff3f => Some(&mut self.wave),
-                NR50 => Some(&mut self.nr50),
-                NR51 => Some(&mut self.nr51),
-                NR52 => Some(&mut self.nr52),
-                _ => None,
-            },
-        )
+        match addr {
+            CH1_START..=CH1_END => Some(&mut self.channel1),
+            CH2_START..=CH2_END => Some(&mut self.channel2),
+            CH3_START..=CH3_END => Some(&mut self.channel3),
+            CH4_START..=CH4_END => Some(&mut self.channel4),
+            0xff27..=0xff2f => Some(&mut self.unused),
+            0xff30..=0xff3f => Some(&mut self.wave),
+            NR50 => Some(&mut self.nr50),
+            NR51 => Some(&mut self.nr51),
+            NR52 => Some(&mut self.nr52),
+            _ => None,
+        }
     }
 }
 
 impl Addressable for Mixer {
     fn read_byte(&mut self, addr: u16) -> u8 {
-        if let (clks, Some(b)) = self.lookup(addr) {
-            b.read_channel_byte(&clks, addr)
+        if let Some(b) = self.lookup(addr) {
+            b.read_channel_byte(addr)
         } else {
             panic!("Unhandled Read in Mixer {:x}", addr);
         }
@@ -358,9 +420,9 @@ impl Addressable for Mixer {
     fn write_byte(&mut self, addr: u16, v: u8) {
         const NR52: u16 = MemRegister::NR52 as u16;
         let ignored = self.nr52.read_byte(0) & (1 << 7) == 0;
-        if let (clks, Some(b)) = self.lookup(addr) {
+        if let Some(b) = self.lookup(addr) {
             if !ignored || addr == NR52 {
-                b.write_channel_byte(&clks, addr, v);
+                b.write_channel_byte(addr, v);
             }
             if addr == NR52 {
                 if v & (1 << 7) == 0 {
@@ -404,35 +466,33 @@ impl Peripheral for Mixer {
             &mut self.channel4,
         ];
         if let Some(ref mut audio) = real.audio_spec {
-            {
-                self.frame_seq.step(cycles);
-                //if self.frame_seq.clks().ticked() {
+            for mut ev in self.frame_seq.step(cycles, false) {
+                //println!("Sound Event {:?}", ev);
+                let mut clks = ev.get_clocks();
+                let old_event = self.last_event;
+                self.last_event = ev;
+                ev.time -= old_event.time;
                 for (_i, channel) in channels.iter_mut().enumerate() {
                     if *self.nr52 & (1 << 7) != 0
-                        && channel
-                            .sample(&self.wave, cycles, &self.frame_seq.clks())
-                            .is_none()
+                        && channel.sample(&self.wave, ev.time, &clks).is_none()
                         && channel.enabled()
                     {
                         //println!("Disable Channel {}", i);
                         channel.disable();
                     }
                 }
-                //}
-            }
-            self.frame_seq.settle();
-            let wait_time = cycles::SECOND / u64::from(audio.freq);
-            if let Some(count) = self.wait.ready(cycles, wait_time) {
-                for _ in 0..count {
+
+                if let SoundEventType::Sample = ev.typ {
+                    clks.length = clks.length.settle();
+                    clks.vol = clks.vol.settle();
+                    clks.sweep = clks.sweep.settle();
                     let mut left: i16 = 0;
                     let mut right: i16 = 0;
                     for (i, channel) in channels.iter_mut().enumerate() {
                         if *self.nr52 & (1 << 7) != 0 {
-                            if let Some(val) = channel.sample(
-                                &self.wave,
-                                cycles::Cycles::new(0),
-                                &self.frame_seq.clks(),
-                            ) {
+                            if let Some(val) =
+                                channel.sample(&self.wave, cycles::Cycles::new(0), &clks)
+                            {
                                 if *self.nr51 & (1 << i) != 0 {
                                     left = left.saturating_add(val);
                                 }
@@ -446,10 +506,11 @@ impl Peripheral for Mixer {
                     let left_vol = *self.nr50 & 0b111;
                     let right_vol = (*self.nr50 & 0b0111_0000) >> 4;
 
-                    (audio.queue)(&[
-                        audio.silence + left.saturating_mul((1 << 7) * i16::from(left_vol)),
-                        audio.silence + right.saturating_mul((1 << 7) * i16::from(right_vol)),
-                    ]);
+                    let l_sound =
+                        audio.silence + left.saturating_mul((1 << 7) * i16::from(left_vol));
+                    let r_sound =
+                        audio.silence + right.saturating_mul((1 << 7) * i16::from(right_vol));
+                    (audio.queue)(&[l_sound, r_sound]);
                 }
             }
         }

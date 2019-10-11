@@ -36,6 +36,73 @@ impl Channel1 {
     }
 }
 
+// use cycles::{Cycles, CycleCount};
+
+// trait AudioModifier {
+//     fn sample(&mut self) -> Option<i16>;
+//     fn next_change(&self) -> CycleCount;
+// }
+
+// struct ConstantAudio {
+//     value: i16,
+// }
+
+// impl AudioModifier for ConstantAudio {
+//     fn sample(&mut self) -> Option<i16> {
+//         Some(self.value)
+//     }
+//     fn next_change(&self) -> CycleCount {
+//         Cycles::new(std::u64::MAX)
+//     }
+// }
+// impl ConstantAudio {
+//     fn new(audio: i16) -> ConstantAudio {
+//         ConstantAudio {
+//             value: audio,
+//         }
+//     }
+//     fn update(&mut self, audio: i16) {
+//         self.value = audio;
+//     }
+// }
+
+// struct SquareWave<T> {
+//     inner : T,
+//     toggle: CycleCount,
+//     pass_through: bool,
+//     period: CycleCount,
+// }
+
+// impl SquareWave<T>
+//     where T: AudioModifier
+// {
+//     fn new(freq: u32) -> SquareWave {
+//         SquareWave {
+//             period: SECOND / freq,
+//             pass_through : true,
+//             toggle: cycles::from(0),
+
+//         }
+//     }
+// }
+
+// impl <T> AudioModifier for SquareWave<T> {
+//     fn sample(&mut self) -> Option<i16> {
+//         if self.pass_through {
+//             Some(self.inner.sample())
+//         } else {
+//             None
+//         }
+//     }
+//     fn next_change(&self) -> CycleCount {
+//         if self.pass_through {
+//             self.inner.next_change()
+//         } else {
+//             self.period + self.last_toggle
+//         }
+//     }
+// }
+
 impl AudioChannel for Channel1 {
     fn regs(&mut self) -> &mut ChannelRegs {
         &mut self.regs
@@ -47,11 +114,11 @@ impl AudioChannel for Channel1 {
     fn power(&mut self, power: bool) {
         self.regs.power(power);
     }
-    fn reset(&mut self, clks: &Clocks, enable: bool, trigger: bool) {
+    fn reset(&mut self, enable: bool, trigger: bool) {
         self.sweep.reset();
         self.timer.reset();
         self.duty.reset();
-        self.length.update(clks, enable, trigger);
+        self.length.update(enable, trigger);
         self.vol.reset();
         self.enabled = true;
     }
@@ -77,10 +144,10 @@ impl AudioChannel for Channel1 {
 }
 
 impl AddressableChannel for Channel1 {
-    fn read_channel_byte(&mut self, _clks: &Clocks, addr: u16) -> u8 {
+    fn read_channel_byte(&mut self, addr: u16) -> u8 {
         self.regs().read_byte(addr)
     }
-    fn write_channel_byte(&mut self, clks: &Clocks, addr: u16, v: u8) {
+    fn write_channel_byte(&mut self, addr: u16, v: u8) {
         self.regs().write_byte(addr, v);
         //println!("Write to Channel1 {:x} {:x}", addr, v);
         match addr {
@@ -94,10 +161,10 @@ impl AddressableChannel for Channel1 {
             }
             0xff14 => {
                 match v & 0xc0 {
-                    0xC0 => self.reset(clks, true, true),
-                    0x80 => self.reset(clks, false, true),
-                    0x40 => self.length.update(clks, true, false),
-                    _ => self.length.update(clks, false, false),
+                    0xC0 => self.reset(true, true),
+                    0x80 => self.reset(false, true),
+                    0x40 => self.length.update(true, false),
+                    _ => self.length.update(false, false),
                 }
                 if v & 0x80 != 0 {
                     self.enabled = self.regs.dac_enabled(false);

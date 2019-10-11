@@ -982,7 +982,7 @@ mod tests {
     macro_rules! test_state {
         ($instr:expr, $reg:expr, $val:expr) => {
             let cart = Cart::fake();
-            let mut internal = MMUInternal::new(cart, None, None);
+            let mut internal = MMUInternal::new(cart, None, None, None);
             let mut data = PeripheralData::empty();
             let mut mem = MMU::new(&mut internal, &mut data);
             let mut cpu = CPU::new(false);

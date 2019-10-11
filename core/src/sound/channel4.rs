@@ -38,9 +38,9 @@ impl AudioChannel for Channel4 {
     fn regs(&mut self) -> &mut ChannelRegs {
         &mut self.regs
     }
-    fn reset(&mut self, clks: &Clocks, enable: bool, trigger: bool) {
+    fn reset(&mut self, enable: bool, trigger: bool) {
         self.timer.reset();
-        self.length.update(clks, enable, trigger);
+        self.length.update(enable, trigger);
         self.lfsr.reset();
         self.vol.reset();
         self.enabled = true;
@@ -75,10 +75,10 @@ impl AudioChannel for Channel4 {
 }
 
 impl AddressableChannel for Channel4 {
-    fn read_channel_byte(&mut self, _clks: &Clocks, addr: u16) -> u8 {
+    fn read_channel_byte(&mut self, addr: u16) -> u8 {
         self.regs().read_byte(addr)
     }
-    fn write_channel_byte(&mut self, clks: &Clocks, addr: u16, v: u8) {
+    fn write_channel_byte(&mut self, addr: u16, v: u8) {
         //println!("Write to Channel4 {:x} {:x}", addr, v);
         self.regs().write_byte(addr, v);
         match addr {
@@ -90,10 +90,10 @@ impl AddressableChannel for Channel4 {
             }
             0xff23 => {
                 match v & 0xc0 {
-                    0xC0 => self.reset(clks, true, true),
-                    0x80 => self.reset(clks, false, true),
-                    0x40 => self.length.update(clks, true, false),
-                    _ => self.length.update(clks, false, false),
+                    0xC0 => self.reset(true, true),
+                    0x80 => self.reset(false, true),
+                    0x40 => self.length.update(true, false),
+                    _ => self.length.update(false, false),
                 }
                 if v & 0x80 != 0 {
                     self.enabled = self.regs.dac_enabled(false);

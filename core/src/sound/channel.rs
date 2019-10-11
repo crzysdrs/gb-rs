@@ -418,18 +418,9 @@ impl Length {
         //println!("Reloading {}", val);
         self.count = CountDown::new(val);
     }
-    pub fn update(&mut self, clks: &Clocks, enable: bool, trigger: bool) {
-        let next_length_frame = if let Clk::High = clks.length {
-            false
-        } else {
-            true
-        };
-        if !self.enabled && !next_length_frame && enable && self.count.update(&clks.length) > 0 {
-            ////println!("Auto decrement On Enable");
-            self.count.update(&Clk::Rising);
-        }
-        if trigger && self.count.update(&clks.length) == 0 {
-            let new_val = if enable && !next_length_frame {
+    pub fn update(&mut self, enable: bool, trigger: bool) {
+        if trigger {
+            let new_val = if enable {
                 self.max_len - 1
             } else {
                 self.max_len
@@ -454,6 +445,6 @@ impl Length {
 }
 
 pub trait AddressableChannel {
-    fn read_channel_byte(&mut self, clks: &Clocks, addr: u16) -> u8;
-    fn write_channel_byte(&mut self, clks: &Clocks, addr: u16, val: u8);
+    fn read_channel_byte(&mut self, addr: u16) -> u8;
+    fn write_channel_byte(&mut self, addr: u16, val: u8);
 }

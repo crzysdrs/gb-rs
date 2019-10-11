@@ -1255,12 +1255,46 @@ impl Addressable for Display {
         }
     }
 }
+
+// struct StateData {
+//     ly: u32
+// }
+
+// use cycles::CycleCount as Cycles;
+
+// enum ObservableChange {
+//     Change(Cycles),
+//     NoChange,
+// }
+// struct Transition<D> {
+//     cond : Box<dyn Fn(Cycles, D) -> Option<Cycles>>,
+//     action: Box<dyn FnMut(Cycles, D) -> ObservableChange>,
+// }
+
+// trait State<D>
+// {
+//     fn entry(&mut self, D) -> ObservableChange;
+//     fn action(&mut self, Cycles, D) -> ObservableChange;
+//     fn exit(&mut self, D) -> ObservableChange;
+//     fn next_exit(&mut self, D) -> Transition<D>;
+// }
+
+// struct StateMachine<D> {
+//     states : Vec<dyn State<D>>
+// }
+
 impl Peripheral for Display {
     fn step(
         &mut self,
         real: &mut PeripheralData,
         time: cycles::CycleCount,
     ) -> Option<InterruptFlag> {
+        // let s = StateMachine::<StateData> {
+        //     states: vec![
+
+        //     ]
+        // };
+
         let mut new_ly = self.ly;
         self.unused_cycles += time;
         self.time += time;

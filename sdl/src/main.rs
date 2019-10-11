@@ -383,6 +383,7 @@ fn main() -> Result<(), std::io::Error> {
         matches.occurrences_of("trace") > 0,
         boot_rom,
         palette,
+        Some((gb::cycles::SECOND / 65536).into()),
     );
 
     if matches.occurrences_of("no-display") > 0 {
