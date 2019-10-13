@@ -179,7 +179,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
             let mut count = 0;
             let r = texture.with_lock(sdl2::rect::Rect::new(0, 0, 160, 144), |mut slice, _size| {
                 gb.step(
-                    None,
+                    Some(gb::cycles::SECOND / 60),
                     &mut PeripheralData::new(
                         Some(&mut slice),
                         //None
@@ -211,12 +211,14 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
             match r {
                 GBReason::VSync => {
                     frames += 1;
-                    break 'frame;
+                    //break 'frame;
                 }
                 GBReason::Dead => {
                     break 'running;
                 }
-                GBReason::Timeout => {} //{break 'frame},
+                GBReason::Timeout => {
+                    break 'frame
+                },
             }
         }
 

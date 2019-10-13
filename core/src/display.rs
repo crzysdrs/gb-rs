@@ -231,6 +231,7 @@ enum LCDCFlag {
 
 enum OAMFlag {
     ColorPaletteMask = 0b111,
+    VRAMBank = 1 << 3, //CGB Only
     PaletteNumber = 1 << 4,
     FlipX = 1 << 5,
     FlipY = 1 << 6,
@@ -1067,7 +1068,11 @@ impl Tile {
                     start as usize,
                     y as usize,
                     oam.flags & mask_u8!(OAMFlag::FlipX) != 0,
-                    0,
+                    if (oam.flags & mask_u8!(OAMFlag::VRAMBank)) == 0 {
+                        0
+                    } else {
+                        1
+                    },
                 )
             }
         };
