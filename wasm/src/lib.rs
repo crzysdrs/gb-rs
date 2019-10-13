@@ -232,14 +232,19 @@ pub fn start() {
                 let first = last_frame_time[0];
                 let last = last_frame_time[last_frame_time.len() - 1];
                 let prev = last_frame_time[last_frame_time.len() - 2];
-                
+
                 let cycle_delta = first.0 - last.0;
                 let time_delta = first.1 - last.1;
                 let next_time = prev.1 - last.1;
-                let total_time : gb::cycles::CycleCount = ((time_delta + next_time) / 1000.0 * gb::dimensioned::si::S).into();
+                let total_time: gb::cycles::CycleCount =
+                    ((time_delta + next_time) / 1000.0 * gb::dimensioned::si::S).into();
                 //log!("Cycle {}, Time {}, Next {}, Total: {}", cycle_delta, time_delta, next_time, total_time);
-                let r = gb::cycles::SECOND / gb::cycles::SECOND  * total_time - cycle_delta;
-                //log!("Result {}", r);
+                let r = if (gb::cycles::SECOND / gb::cycles::SECOND * total_time) >= cycle_delta {
+                    (gb::cycles::SECOND / gb::cycles::SECOND * total_time) - cycle_delta
+                } else {
+                    gb::cycles::CycleCount::new(0)
+                };
+                log!("Next Cycle Estimate {}", r);
                 r
             } else {
                 gb::cycles::SECOND / 60
@@ -249,6 +254,7 @@ pub fn start() {
             }
 
             let start = gb.cpu_cycles();
+            let vsync_time = gb::cycles::CycleCount::new(35112);
             loop {
                 let remain = time - (gb.cpu_cycles() - start);
                 let mut sampler = |samples: &[i16]| {
@@ -260,7 +266,7 @@ pub fn start() {
                 };
 
                 let mut data = PeripheralData::new(
-                    Some(&mut raw),
+                    if remain < 2 * vsync_time {Some(&mut raw)} else {None},
                     Some(AudioSpec {
                         silence: 0,
                         freq: sample_rate as u32,
@@ -270,25 +276,27 @@ pub fn start() {
                 gb.set_controls(*keys.borrow());
                 let r = gb.step(Some(remain), &mut data);
                 match r {
-                    GBReason::VSync => {
-                        let lcd = ImageData::new_with_u8_clamped_array_and_sh(
-                            Clamped(&mut raw),
-                            width as u32,
-                            height as u32,
-                        )
-                        .unwrap();
-                        let context = canvas
-                            .get_context("2d")
-                            .unwrap()
-                            .unwrap()
-                            .dyn_into::<CanvasRenderingContext2d>()
-                            .unwrap();
-
-                        context.scale(2.0, 2.0).unwrap();
-                        context.put_image_data(&lcd, 0.0, 0.0).unwrap();
+                    GBReason::VSync => {                        
+                        if remain < 2 * gb::cycles::CycleCount::new(35112) {
+                            let lcd = ImageData::new_with_u8_clamped_array_and_sh(
+                                Clamped(&mut raw),
+                                width as u32,
+                                height as u32,
+                            )
+                                .unwrap();
+                            let context = canvas
+                                .get_context("2d")
+                                .unwrap()
+                                .unwrap()
+                                .dyn_into::<CanvasRenderingContext2d>()
+                                .unwrap();
+                            
+                            context.scale(2.0, 2.0).unwrap();
+                            context.put_image_data(&lcd, 0.0, 0.0).unwrap();
+                        }
                         frames += 1;
                     }
-                    GBReason::Timeout => {                      
+                    GBReason::Timeout => {
                         sound_buf.commit();
                         request_animation_frame(f.borrow().as_ref().unwrap());
                         break;
