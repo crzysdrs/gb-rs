@@ -226,24 +226,17 @@ pub fn start() {
         let perf = web_sys::window().unwrap().performance().unwrap();
         let mut sound_buf = SoundBuffer::new(audio, channels);
         move || {
-            let now = perf.now();
+            let now = perf.now() / 1000.0 * gb::dimensioned::si::S;            
             last_frame_time.push_front((gb.cpu_cycles(), now));
             let time = if last_frame_time.len() >= 2 {
                 let first = last_frame_time[0];
                 let last = last_frame_time[last_frame_time.len() - 1];
-                let prev = last_frame_time[last_frame_time.len() - 2];
-
-                let cycle_delta = first.0 - last.0;
+                let cycle_delta : gb::dimensioned::si::Second<f64> = (first.0 - last.0).into();
                 let time_delta = first.1 - last.1;
-                let next_time = prev.1 - last.1;
-                let total_time: gb::cycles::CycleCount =
-                    ((time_delta + next_time) / 1000.0 * gb::dimensioned::si::S).into();
-                //log!("Cycle {}, Time {}, Next {}, Total: {}", cycle_delta, time_delta, next_time, total_time);
-                let r = if (gb::cycles::SECOND / gb::cycles::SECOND * total_time) >= cycle_delta {
-                    (gb::cycles::SECOND / gb::cycles::SECOND * total_time) - cycle_delta
-                } else {
-                    gb::cycles::CycleCount::new(0)
-                };
+                let next_time = (first.1 - last.1) / (last_frame_time.len() - 1) as f64;
+                //log!("Cycle {}, Time {}, Next {}", cycle_delta, time_delta, next_time);
+                let r = next_time * time_delta / cycle_delta;
+                let r : gb::cycles::CycleCount = r.into();
                 log!("Next Cycle Estimate {}", r);
                 r
             } else {
@@ -266,7 +259,11 @@ pub fn start() {
                 };
 
                 let mut data = PeripheralData::new(
-                    if remain < 2 * vsync_time {Some(&mut raw)} else {None},
+                    if remain < 2 * vsync_time {
+                        Some(&mut raw)
+                    } else {
+                        None
+                    },
                     Some(AudioSpec {
                         silence: 0,
                         freq: sample_rate as u32,
@@ -276,21 +273,21 @@ pub fn start() {
                 gb.set_controls(*keys.borrow());
                 let r = gb.step(Some(remain), &mut data);
                 match r {
-                    GBReason::VSync => {                        
+                    GBReason::VSync => {
                         if remain < 2 * gb::cycles::CycleCount::new(35112) {
                             let lcd = ImageData::new_with_u8_clamped_array_and_sh(
                                 Clamped(&mut raw),
                                 width as u32,
                                 height as u32,
                             )
-                                .unwrap();
+                            .unwrap();
                             let context = canvas
                                 .get_context("2d")
                                 .unwrap()
                                 .unwrap()
                                 .dyn_into::<CanvasRenderingContext2d>()
                                 .unwrap();
-                            
+
                             context.scale(2.0, 2.0).unwrap();
                             context.put_image_data(&lcd, 0.0, 0.0).unwrap();
                         }
