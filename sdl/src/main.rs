@@ -216,9 +216,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                 GBReason::Dead => {
                     break 'running;
                 }
-                GBReason::Timeout => {
-                    break 'frame
-                },
+                GBReason::Timeout => break 'frame,
             }
         }
 

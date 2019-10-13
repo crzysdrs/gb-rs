@@ -59,7 +59,6 @@ impl SoundBuffer {
         }
     }
     fn commit(&mut self) {
-        //log!("Copy");
         let ring_buf = self.bufs[self.target_buf..]
             .iter()
             .chain(self.bufs[..self.target_buf].iter());
@@ -228,24 +227,24 @@ pub fn start() {
         let mut sound_buf = SoundBuffer::new(audio, channels);
         move || {
             let now = perf.now();
-            last_frame_time.push_front(now);
+            last_frame_time.push_front((gb.cpu_cycles(), now));
             let time = if last_frame_time.len() >= 2 {
-                let avg: f64 = last_frame_time
-                    .iter()
-                    .zip(last_frame_time.iter().skip(1))
-                    .map(|(a, b)| a - b)
-                    .enumerate()
-                    .map(|(i, val)| val * (1.0 / (1 << (i + 1)) as f64))
-                    .sum::<f64>();
-                if avg < std::f64::EPSILON {
-                    gb::cycles::SECOND / 30
-                } else {
-                    gb::cycles::SECOND / ((1000.0 / avg) as u64)
-                }
+                let first = last_frame_time[0];
+                let last = last_frame_time[last_frame_time.len() - 1];
+                let prev = last_frame_time[last_frame_time.len() - 2];
+                
+                let cycle_delta = first.0 - last.0;
+                let time_delta = first.1 - last.1;
+                let next_time = prev.1 - last.1;
+                let total_time : gb::cycles::CycleCount = ((time_delta + next_time) / 1000.0 * gb::dimensioned::si::S).into();
+                //log!("Cycle {}, Time {}, Next {}, Total: {}", cycle_delta, time_delta, next_time, total_time);
+                let r = gb::cycles::SECOND / gb::cycles::SECOND  * total_time - cycle_delta;
+                //log!("Result {}", r);
+                r
             } else {
                 gb::cycles::SECOND / 60
             };
-            if last_frame_time.len() > 10 {
+            if last_frame_time.len() > 60 {
                 last_frame_time.pop_back();
             }
 
@@ -289,7 +288,7 @@ pub fn start() {
                         context.put_image_data(&lcd, 0.0, 0.0).unwrap();
                         frames += 1;
                     }
-                    GBReason::Timeout => {
+                    GBReason::Timeout => {                      
                         sound_buf.commit();
                         request_animation_frame(f.borrow().as_ref().unwrap());
                         break;
