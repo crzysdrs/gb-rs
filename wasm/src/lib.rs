@@ -234,10 +234,13 @@ pub fn start() {
                 let cycle_delta : gb::dimensioned::si::Second<f64> = (first.0 - last.0).into();
                 let time_delta = first.1 - last.1;
                 let next_time = (first.1 - last.1) / (last_frame_time.len() - 1) as f64;
-                //log!("Cycle {}, Time {}, Next {}", cycle_delta, time_delta, next_time);
-                let r = next_time * time_delta / cycle_delta;
+
+                //This seems like the wrong equation but the results in terms of cycles seem right on the nose.
+                // The sound doesn't come out right, though.
+                //let r = next_time * (cycle_delta / time_delta);
+                let r = next_time * (time_delta / cycle_delta);
                 let r : gb::cycles::CycleCount = r.into();
-                log!("Next Cycle Estimate {}", r);
+                log!("Next Cycle Estimate {} {} (Avg Cycles {})", r, next_time , gb::cycles::CycleCount::from(cycle_delta / time_delta * gb::dimensioned::si::S ));
                 r
             } else {
                 gb::cycles::SECOND / 60
