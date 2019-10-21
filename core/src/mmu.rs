@@ -310,7 +310,9 @@ impl<'a> MMUInternal<'a> {
                 self.interrupt_flag.set_reg(rhs.to_bytes()[0]);
             }
 
-            data.vblank = interrupt_flag.get_vblank();
+            if interrupt_flag.get_vblank() {
+                data.vblank = true;
+            }
             self.last_sync = self.time;
         }
         assert_eq!(self.time, time);
@@ -401,8 +403,10 @@ impl<'a, 'b, 'c> MMU<'a, 'b, 'c> {
     pub fn sync_peripherals(&mut self) {
         self.bus.sync_peripherals(&mut self.data);
     }
-    pub fn seen_vblank(&self) -> bool {
-        self.data.vblank
+    pub fn ack_vblank(&mut self) -> bool {
+        let r = self.data.vblank;
+        self.data.vblank = false;
+        r
     }
     pub fn read_byte_noeffect(&mut self, addr: u16) -> u8 {
         self.bus.sync_peripherals(&mut self.data);

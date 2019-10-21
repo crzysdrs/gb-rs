@@ -107,7 +107,7 @@ impl<'a> GB<'a> {
             if self.cpu.is_dead(&mmu) {
                 /* cpu permanently halted */
                 return GBReason::Dead;
-            } else if mmu.seen_vblank() {
+            } else if mmu.ack_vblank() {
                 return GBReason::VSync;
             }
         }

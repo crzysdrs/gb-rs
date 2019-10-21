@@ -279,7 +279,7 @@ pub fn start() {
                     }),
                 );
                 gb.set_controls(*keys.borrow());
-                let r = gb.step(Some(remain), &mut data);
+                let r = gb.step(Some(remain), &mut data);                
                 match r {
                     GBReason::VSync => {
                         if remain < 2 * gb::cycles::CycleCount::new(35112) {
