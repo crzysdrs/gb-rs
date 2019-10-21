@@ -10,6 +10,7 @@ edition = "2018"
 zip = "0.5"
 clap = "2.31"
 gb = { path = "../core" }
+modular-bitfield = "0.6.0"
 
 [dependencies.sdl2]
 default-features = false

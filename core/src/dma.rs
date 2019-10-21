@@ -1,5 +1,5 @@
 use super::mmu::MemRegister;
-use crate::cpu::InterruptFlag;
+use crate::cpu::Interrupt;
 use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use crate::sound::WaitTimer;
@@ -32,11 +32,7 @@ impl DMA {
 }
 
 impl Peripheral for DMA {
-    fn step(
-        &mut self,
-        _real: &mut PeripheralData,
-        time: cycles::CycleCount,
-    ) -> Option<InterruptFlag> {
+    fn step(&mut self, _real: &mut PeripheralData, time: cycles::CycleCount) -> Option<Interrupt> {
         if !self.is_active() {
             /* do nothing */
         } else if let (Some(c), Some(q)) = (

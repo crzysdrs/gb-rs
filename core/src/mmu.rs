@@ -275,7 +275,9 @@ impl<'a> MMUInternal<'a> {
     pub fn sync_peripherals(&mut self, data: &mut PeripheralData) {
         let time = self.time;
         if self.last_sync < self.time {
-            let mut interrupt_flag = 0;
+            use crate::cpu::Interrupt;
+            use std::convert::TryFrom;
+            let mut interrupt_flag = Interrupt::new();
             let cycles = self.time - self.last_sync;
             if self.dma.is_active() {
                 self.dma.step(data, cycles);
@@ -285,7 +287,7 @@ impl<'a> MMUInternal<'a> {
                 }
             }
             if self.hdma.is_active() {
-                /* TODO: This needs to hook into Vblanks in some cases */
+                /* TODO: This needs to hook into Hblanks in some cases */
                 self.hdma.step(data, cycles);
                 for (s, d) in self.hdma.copy_bytes() {
                     let v = self.read_byte_noeffect(s);
@@ -294,22 +296,21 @@ impl<'a> MMUInternal<'a> {
             }
             self.walk_peripherals(|p| {
                 if let Some(i) = p.step(data, cycles) {
-                    interrupt_flag |= mask_u8!(i);
+                    interrupt_flag |= i;
                 }
             });
-            let flags = self.interrupt_flag.reg();
+            let flags = Interrupt::try_from(&[self.interrupt_flag.reg()][..]).unwrap();
             let mut rhs = flags | interrupt_flag;
             if !self.get_display().display_enabled() {
                 /* remove vblank from IF when display disabled.
                 We still want it to synchronize speed with display */
-                rhs &= !mask_u8!(crate::cpu::InterruptFlag::VBlank);
+                rhs.set_vblank(false);
             }
             if rhs != flags {
-                self.interrupt_flag.set_reg(rhs);
+                self.interrupt_flag.set_reg(rhs.to_bytes()[0]);
             }
-            if interrupt_flag & mask_u8!(crate::cpu::InterruptFlag::VBlank) != 0 {
-                data.vblank = true
-            }
+
+            data.vblank = interrupt_flag.get_vblank();
             self.last_sync = self.time;
         }
         assert_eq!(self.time, time);

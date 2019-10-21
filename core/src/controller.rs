@@ -1,5 +1,5 @@
 use super::mmu::MemRegister;
-use crate::cpu::InterruptFlag;
+use crate::cpu::Interrupt;
 use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use enum_primitive::FromPrimitive;
@@ -58,13 +58,11 @@ impl Addressable for Controller {
     }
 }
 impl Peripheral for Controller {
-    fn step(
-        &mut self,
-        _real: &mut PeripheralData,
-        _time: cycles::CycleCount,
-    ) -> Option<InterruptFlag> {
+    fn step(&mut self, _real: &mut PeripheralData, _time: cycles::CycleCount) -> Option<Interrupt> {
         let res = if (self.old ^ self.read) & !self.read != 0 {
-            Some(InterruptFlag::HiLo)
+            let mut i = Interrupt::new();
+            i.set_hi_lo(true);
+            Some(i)
         } else {
             None
         };

@@ -1,4 +1,4 @@
-use crate::cpu::InterruptFlag;
+use crate::cpu::Interrupt;
 use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 
@@ -364,11 +364,7 @@ impl CartMBC3 {
 }
 
 impl Peripheral for CartMBC3 {
-    fn step(
-        &mut self,
-        _real: &mut PeripheralData,
-        time: cycles::CycleCount,
-    ) -> Option<InterruptFlag> {
+    fn step(&mut self, _real: &mut PeripheralData, time: cycles::CycleCount) -> Option<Interrupt> {
         self.rtc.step(time);
         None
     }

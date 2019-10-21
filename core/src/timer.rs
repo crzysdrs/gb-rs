@@ -1,5 +1,5 @@
 use super::mmu::MemRegister;
-use crate::cpu::InterruptFlag;
+use crate::cpu::Interrupt;
 use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use enum_primitive::FromPrimitive;
@@ -33,11 +33,7 @@ impl Addressable for Timer {
     }
 }
 impl Peripheral for Timer {
-    fn step(
-        &mut self,
-        _real: &mut PeripheralData,
-        time: cycles::CycleCount,
-    ) -> Option<InterruptFlag> {
+    fn step(&mut self, _real: &mut PeripheralData, time: cycles::CycleCount) -> Option<Interrupt> {
         //use dimensioned::Dimensionless;
         self.DIV = self.DIV.wrapping_add(Timer::compute_time(
             time,
@@ -52,7 +48,9 @@ impl Peripheral for Timer {
             self.TIMA = new_tima;
             if overflow {
                 self.TIMA = self.TMA;
-                return Some(InterruptFlag::Timer);
+                let mut interrupt = Interrupt::new();
+                interrupt.set_timer(true);
+                return Some(interrupt);
             }
         }
         None

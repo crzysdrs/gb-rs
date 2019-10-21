@@ -1,4 +1,4 @@
-use crate::cpu::InterruptFlag;
+use crate::cpu::Interrupt;
 use crate::cycles;
 #[cfg(feature = "vcd_dump")]
 use crate::VCDDump::VCD;
@@ -54,11 +54,7 @@ impl<'a> PeripheralData<'a> {
 }
 
 pub trait Peripheral: Addressable {
-    fn step(
-        &mut self,
-        _real: &mut PeripheralData,
-        _time: cycles::CycleCount,
-    ) -> Option<InterruptFlag> {
+    fn step(&mut self, _real: &mut PeripheralData, _time: cycles::CycleCount) -> Option<Interrupt> {
         None
     }
 }

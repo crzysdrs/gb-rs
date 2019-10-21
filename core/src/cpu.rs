@@ -4,6 +4,8 @@ use super::mmu::MMU;
 use crate::cart::CGBStatus;
 use crate::mmu::MemRegister;
 use crate::peripherals::Addressable;
+use modular_bitfield::prelude::*;
+use std::convert::TryFrom;
 use std::io::{Read, Seek, SeekFrom, Write};
 
 macro_rules! alu_mem {
@@ -81,13 +83,36 @@ pub struct CPU {
     magic_bp: bool,
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum InterruptFlag {
-    HiLo = 1 << 4,
-    Serial = 1 << 3,
-    Timer = 1 << 2,
-    LCDC = 1 << 1,
-    VBlank = 1,
+#[bitfield]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub struct Interrupt {
+    vblank: bool,
+    lcdc: bool,
+    timer: bool,
+    serial: bool,
+    hi_lo: bool,
+    unused: B3,
+}
+
+impl std::ops::BitOr for Interrupt {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        Interrupt::try_from(
+            self.to_bytes()
+                .iter()
+                .zip(rhs.to_bytes().iter())
+                .map(|(l, r)| l | r)
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .unwrap()
+    }
+}
+
+impl std::ops::BitOrAssign for Interrupt {
+    fn bitor_assign(&mut self, rhs: Self) {
+        *self = *self | rhs;
+    }
 }
 
 pub trait RegType<Register>
@@ -265,28 +290,31 @@ impl CPU {
     fn manage_interrupt(&mut self, mem: &mut MMU) {
         let iflag = mem.read_byte_noeffect(MemRegister::IF as u16);
         let ienable = mem.read_byte_noeffect(MemRegister::IE as u16);
-        let interrupt = iflag & ienable;
-        if interrupt == 0 {
+        let mut interrupt = Interrupt::try_from(&[iflag & ienable][..]).unwrap();
+        if interrupt == Interrupt::try_from(&[0][..]).unwrap() {
             /* no change */
         } else if self.reg.ime != 0 {
             self.reg.ime = 0;
-            let addr = if interrupt & mask_u8!(InterruptFlag::VBlank) != 0 {
+            let addr = if interrupt.get_vblank() {
+                interrupt.set_vblank(false);
                 0x0040
-            } else if interrupt & mask_u8!(InterruptFlag::LCDC) != 0 {
+            } else if interrupt.get_lcdc() {
+                interrupt.set_lcdc(false);
                 0x0048
-            } else if interrupt & mask_u8!(InterruptFlag::Timer) != 0 {
+            } else if interrupt.get_timer() {
+                interrupt.set_timer(false);
                 0x0050
-            } else if interrupt & mask_u8!(InterruptFlag::Serial) != 0 {
+            } else if interrupt.get_serial() {
+                interrupt.set_serial(false);
                 0x0058
-            } else if interrupt & mask_u8!(InterruptFlag::HiLo) != 0 {
+            } else if interrupt.get_hi_lo() {
+                interrupt.set_hi_lo(false);
                 0x0060
             } else {
-                panic!("Unknown interrupt {:b}", interrupt);
+                panic!("Unknown interrupt {:?}", interrupt);
             };
-
-            let shift = interrupt.trailing_zeros();
             //Clear highest interrupt
-            mem.write_byte_noeffect(0xff0f, iflag & !(0x1 << shift));
+            mem.write_byte_noeffect(0xff0f, interrupt.to_bytes()[0]);
             self.push16(mem, Reg16::PC);
             self.move_pc(mem, addr);
             self.halted = false;

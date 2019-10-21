@@ -1,10 +1,11 @@
 use crate::cart::CGBStatus;
-use crate::cpu::InterruptFlag;
+use crate::cpu::Interrupt;
 use crate::cycles;
 use crate::mmu::MemRegister;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use itertools::Itertools;
 use std::collections::VecDeque;
+use std::convert::TryFrom;
 
 pub const SCREEN_X: usize = 160;
 pub const SCREEN_Y: usize = 144;
@@ -206,16 +207,25 @@ enum DisplayState {
     VBlank,        //(20 + 43 + 51) * 10
 }
 
-enum StatFlag {
-    CoincidenceInterrupt = 1 << 6,
-    OAMInterrupt = 1 << 5,
-    VBlankInterrupt = 1 << 4,
-    HBlankInterrupt = 1 << 3,
-    Coincidence = 1 << 2,
+use modular_bitfield::prelude::*;
+#[derive(BitfieldSpecifier, Debug, PartialEq, Copy, Clone)]
+pub enum StatMode {
     HBlank = 0b00,
     VBlank = 0b01,
     OAM = 0b10,
     PixelTransfer = 0b11,
+}
+
+#[bitfield]
+pub struct StatFlag {
+    #[bits = 2]
+    mode: StatMode,
+    coincidence_flag: bool,
+    hblank: bool,
+    vblank: bool,
+    oam: bool,
+    coincidence: bool,
+    unused: B1,
 }
 
 enum LCDCFlag {
@@ -270,11 +280,11 @@ enum DisplayMode {
 pub struct Display {
     vram: [u8; (2 * 8) << 10],
     oam: [SpriteAttribute; 40],
-    oam_searched: Vec<SpriteAttribute>,
+    oam_searched: Vec<(usize, SpriteAttribute)>,
     scx: u8,
     scy: u8,
     lcdc: u8,
-    stat: u8,
+    stat: StatFlag,
     ly: u8,
     lyc: u8,
     bgp: u8,
@@ -292,7 +302,6 @@ pub struct Display {
     ppu: PPU,
     unused_cycles: cycles::CycleCount,
     state: DisplayState,
-    changed_state: bool,
     frame: u64,
     cgb_mode: DisplayMode,
     bgpalette: [[Color; 4]; 8],
@@ -328,7 +337,6 @@ impl Display {
             time: 0 * cycles::GB,
             cgb_mode,
             frame: 0,
-            changed_state: false,
             vram: [0; (2 * 8) << 10],
             oam: [SpriteAttribute {
                 x: 0,
@@ -340,7 +348,7 @@ impl Display {
             scx: 0,
             scy: 0,
             lcdc: 0,
-            stat: 0,
+            stat: StatFlag::try_from(&[0u8][..]).unwrap(),
             ly: 144,
             lyc: 0,
             bgp: 0,
@@ -669,16 +677,23 @@ impl Display {
             self.oam_searched.extend(
                 self.oam
                     .iter()
+                    .enumerate()
                     .filter(
                         /* ignored invisible sprites */
-                        |oam| oam.x != 0 && oam.x < 168 && oam.y != 0 && oam.y < 144 + 16,
+                        |(_, oam)| oam.x != 0 && oam.x < 168 && oam.y != 0 && oam.y < 144 + 16,
                     )
-                    .filter(/* filter only items in this row */ |oam| {
+                    .filter(/* filter only items in this row */ |(_, oam)| {
                         self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size()
                     })
-                    .sorted_by_key(|oam| oam.x)
+                    .sorted_by_key(|(i, oam)| {
+                        if let DisplayMode::CGBCompat = self.cgb_mode {
+                            *i
+                        } else {
+                            usize::try_from(oam.x).unwrap()
+                        }
+                    })
                     .take(10)
-                    .copied(),
+                    .map(|(i, oam)| (i, *oam)),
             );
         }
     }
@@ -789,7 +804,7 @@ impl Display {
                 }
             }
             0xff40 => &mut self.lcdc,
-            0xff41 => &mut self.stat,
+            0xff41 => unimplemented!("STAT should be accessed elsewhere"),
             0xff42 => &mut self.scy,
             0xff43 => &mut self.scx,
             0xff44 => &mut self.ly,
@@ -810,7 +825,6 @@ impl Display {
     }
 
     fn bgp_shade(&self, p: Pixel) -> (u8, u8, u8, u8) {
-        use std::convert::TryFrom;
         fn rgb_from_palette_color(color: Color) -> (u8, u8, u8, u8) {
             let rgb = u16::from_be_bytes([color.high, color.low]);
             let bits = 0b11111;
@@ -885,14 +899,14 @@ impl Display {
         }
     }
 
-    fn add_oams<'sprite, T: Iterator<Item = &'sprite SpriteAttribute>>(
+    fn add_oams<'sprite, T: Iterator<Item = &'sprite (usize, SpriteAttribute)>>(
         &mut self,
         oams: &mut std::iter::Peekable<T>,
         x: u8,
         y: u8,
     ) {
         'oams_done: while oams.peek().is_some() {
-            let use_oam = if let Some(cur) = oams.peek() {
+            let use_oam = if let Some((_priority, cur)) = oams.peek() {
                 cur.x <= x
             } else {
                 false
@@ -900,16 +914,16 @@ impl Display {
             if !use_oam {
                 break 'oams_done;
             }
-            let oam = oams.next().unwrap();
+            let (priority, oam) = oams.next().unwrap();
             if oam.x == x {
-                let t = Tile::Sprite(*oam, Coord(0, y + 16 - oam.y));
+                let t = Tile::Sprite(*priority, *oam, Coord(0, y + 16 - oam.y));
                 let l = t.fetch(self);
                 self.ppu.load(&t, l);
             }
         }
     }
 
-    fn draw_window<'sprite, T: Iterator<Item = &'sprite SpriteAttribute>>(
+    fn draw_window<'sprite, T: Iterator<Item = &'sprite (usize, SpriteAttribute)>>(
         &mut self,
         lcd_line: &mut [u8],
         oams: &mut std::iter::Peekable<T>,
@@ -982,7 +996,7 @@ impl Coord {
 enum Tile {
     BG(BGIdx, Coord),
     Window(BGIdx, Coord),
-    Sprite(SpriteAttribute, Coord),
+    Sprite(usize, SpriteAttribute, Coord),
 }
 
 impl Tile {
@@ -993,7 +1007,7 @@ impl Tile {
             let c: &mut Coord = match tmp {
                 Tile::BG(_, ref mut c) => c,
                 Tile::Window(_, ref mut c) => c,
-                Tile::Sprite(_, ref mut c) => c,
+                Tile::Sprite(_, _, ref mut c) => c,
             };
             *c = Coord(0, i);
             let (_, _, line) = tmp.fetch(display);
@@ -1051,7 +1065,7 @@ impl Tile {
                     },
                 )
             }
-            Tile::Sprite(oam, coord) => {
+            Tile::Sprite(_, oam, coord) => {
                 let bytes_per_line = 2;
                 let idx = if display.sprite_size() == 16 {
                     oam.pattern.0 >> 1
@@ -1090,12 +1104,13 @@ impl Tile {
             DisplayMode::CGB => true,
             DisplayMode::StrictGB | DisplayMode::CGBCompat => false,
         };
+        let low_priority = std::usize::MAX;
         let (priority, palette) = match *self {
-            Tile::Sprite(oam, _) => {
+            Tile::Sprite(p, oam, _) => {
                 let priority = if oam.flags & mask_u8!(OAMFlag::Priority) != 0 {
                     Priority::BG
                 } else {
-                    Priority::Obj
+                    Priority::Obj(p)
                 };
                 let palette = if gbc {
                     Palette::OBPColor(oam.flags & mask_u8!(OAMFlag::ColorPaletteMask))
@@ -1114,12 +1129,12 @@ impl Tile {
                         if bgmap & mask_u8!(BGMapFlag::BGPriority) != 0 {
                             Priority::BG
                         } else {
-                            Priority::Obj
+                            Priority::Obj(low_priority)
                         },
                         Palette::BGColor(palette_number),
                     )
                 } else {
-                    (Priority::Obj, Palette::BG)
+                    (Priority::Obj(low_priority), Palette::BG)
                 }
             }
         };
@@ -1151,7 +1166,7 @@ struct PPU {
 
 #[derive(Copy, Clone)]
 enum Priority {
-    Obj,
+    Obj(usize),
     BG,
 }
 
@@ -1169,19 +1184,28 @@ impl PPU {
                 Palette::OBPColor(_) | Palette::OBP1 | Palette::OBP0 => {
                     if p != PaletteShade::Empty {
                         match (&mut self.shift[x], priority, p) {
-                            (Pixel(_, Palette::OBP0, _), _, _)
-                            | (Pixel(_, Palette::OBP1, _), _, _)
-                            | (Pixel(_, Palette::OBPColor(_), _), _, _) => {
-                                /* preserve old object */
+                            (old @ Pixel(_, Palette::OBP0, _), _, _)
+                            | (old @ Pixel(_, Palette::OBP1, _), _, _)
+                            | (old @ Pixel(_, Palette::OBPColor(_), _), _, _) => {
+                                match (old.0, priority) {
+                                    (Priority::Obj(old_pri), Priority::Obj(new_pri))
+                                        if old_pri < new_pri =>
+                                    { /* preserve old object */ }
+                                    _ => *old = Pixel(priority, palette, p),
+                                }
                             }
                             (
                                 old @ Pixel(Priority::BG, _, PaletteShade::Empty),
                                 priority,
                                 shade,
                             )
-                            | (old @ Pixel(Priority::Obj, _, _), priority @ Priority::Obj, shade)
                             | (
-                                old @ Pixel(Priority::Obj, _, PaletteShade::Empty),
+                                old @ Pixel(Priority::Obj(_), _, _),
+                                priority @ Priority::Obj(_),
+                                shade,
+                            )
+                            | (
+                                old @ Pixel(Priority::Obj(_), _, PaletteShade::Empty),
                                 priority @ Priority::BG,
                                 shade,
                             ) => *old = Pixel(priority, palette, shade),
@@ -1215,7 +1239,10 @@ enum ColorPaletteMask {
 
 impl Addressable for Display {
     fn read_byte(&mut self, addr: u16) -> u8 {
-        *self.lookup(addr)
+        match addr {
+            0xff41 => self.stat.to_bytes()[0],
+            _ => *self.lookup(addr),
+        }
     }
     fn write_byte(&mut self, addr: u16, v: u8) {
         fn update_color_palette(palette: &mut [[Color; 4]; 8], mut control: u8, data: u8) -> u8 {
@@ -1256,6 +1283,9 @@ impl Addressable for Display {
                 self.obps = update_color_palette(&mut self.objpalette, self.obps, self.obpd);
             }
             0xff44 => { /* read only */ }
+            0xff41 => {
+                self.stat = StatFlag::try_from(&[v][..]).unwrap();
+            }
             _ => *self.lookup(addr) = v,
         }
     }
@@ -1289,11 +1319,7 @@ impl Addressable for Display {
 // }
 
 impl Peripheral for Display {
-    fn step(
-        &mut self,
-        real: &mut PeripheralData,
-        time: cycles::CycleCount,
-    ) -> Option<InterruptFlag> {
+    fn step(&mut self, real: &mut PeripheralData, time: cycles::CycleCount) -> Option<Interrupt> {
         // let s = StateMachine::<StateData> {
         //     states: vec![
 
@@ -1389,56 +1415,43 @@ impl Peripheral for Display {
             }
         };
 
-        let mut triggers = 0;
-
         //TODO: Determine which interrupts actually fire during Display Off
         // At the very least, VBLANK does not.
-        self.changed_state = next_state != self.state;
-        if next_state != self.state {
-            let state_trig = flag_u8!(
-                StatFlag::OAMInterrupt,
-                next_state == DisplayState::OAMSearch
-            ) | flag_u8!(
-                StatFlag::VBlankInterrupt,
-                next_state == DisplayState::VBlank
-            ) | flag_u8!(
-                StatFlag::HBlankInterrupt,
-                next_state == DisplayState::HBlank
-            );
-            //println!("Transition from {:?} to {:?} ({})", self.state, next_state, self.time);
+        let changed_state = next_state != self.state;
+        if changed_state {
+            let new_mode = match next_state {
+                DisplayState::OAMSearch => StatMode::OAM,
+                DisplayState::VBlank => StatMode::VBlank,
+                DisplayState::HBlank => StatMode::HBlank,
+                DisplayState::PixelTransfer => StatMode::PixelTransfer,
+            };
+            self.stat.set_mode(new_mode);
+            assert_eq!(new_mode, self.stat.get_mode());
             self.state = next_state;
-            triggers |= state_trig;
-        };
+        }
 
+        let mut new_interrupt = Interrupt::new();
         if new_ly != self.ly {
             self.ly = new_ly;
-            triggers |= flag_u8!(StatFlag::CoincidenceInterrupt, self.ly == self.lyc);
+            self.stat.set_coincidence_flag(self.ly == self.lyc);
+            if self.stat.get_coincidence() {
+                new_interrupt.set_lcdc(self.stat.get_coincidence_flag());
+            }
         }
 
-        // always let vblank through
-        triggers &= self.stat | mask_u8!(StatFlag::VBlankInterrupt);
-
-        self.stat &= !0b111;
-        self.stat |= match self.state {
-            DisplayState::OAMSearch => StatFlag::OAM,
-            DisplayState::VBlank => StatFlag::VBlank,
-            DisplayState::HBlank => StatFlag::HBlank,
-            DisplayState::PixelTransfer => StatFlag::PixelTransfer,
-        } as u8
-            & 0b11;
-        self.stat |= if self.ly == self.lyc {
-            mask_u8!(StatFlag::Coincidence)
-        } else {
-            0
-        };
-
-        if triggers & mask_u8!(StatFlag::VBlankInterrupt) != 0 {
-            /* TODO: The LCDC interrupt may also need to be triggered here */
-            Some(InterruptFlag::VBlank)
-        } else if triggers != 0 {
-            Some(InterruptFlag::LCDC)
-        } else {
-            None
+        if changed_state {
+            if self.stat.get_mode() == StatMode::VBlank {
+                new_interrupt.set_vblank(true);
+            }
+            let lcdc = new_interrupt.get_lcdc()
+                || match self.stat.get_mode() {
+                    StatMode::OAM => self.stat.get_oam(),
+                    StatMode::VBlank => self.stat.get_vblank(),
+                    StatMode::HBlank => self.stat.get_hblank(),
+                    StatMode::PixelTransfer => false,
+                };
+            new_interrupt.set_lcdc(lcdc);
         }
+        Some(new_interrupt)
     }
 }

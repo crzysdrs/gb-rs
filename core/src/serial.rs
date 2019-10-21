@@ -1,5 +1,5 @@
 use super::mmu::MemRegister;
-use crate::cpu::InterruptFlag;
+use crate::cpu::Interrupt;
 use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use enum_primitive::FromPrimitive;
@@ -33,11 +33,7 @@ impl<'a> Addressable for Serial<'a> {
     }
 }
 impl<'a> Peripheral for Serial<'a> {
-    fn step(
-        &mut self,
-        _real: &mut PeripheralData,
-        _time: cycles::CycleCount,
-    ) -> Option<InterruptFlag> {
+    fn step(&mut self, _real: &mut PeripheralData, _time: cycles::CycleCount) -> Option<Interrupt> {
         if (self.sc & 0x80) != 0 {
             //TODO: Wait appropriate amount of time to send serial data.
             if let Some(ref mut o) = self.out {
@@ -46,7 +42,7 @@ impl<'a> Peripheral for Serial<'a> {
             }
             self.sc &= !0x80;
             self.sb = 0;
-            //Some(InterruptFlag::Serial)
+            //Some(Interrupt::Serial)
             None
         } else {
             None

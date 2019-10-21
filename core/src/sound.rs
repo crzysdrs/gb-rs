@@ -1,4 +1,4 @@
-use crate::cpu::InterruptFlag;
+use crate::cpu::Interrupt;
 use crate::cycles;
 use crate::emptymem::EmptyMem;
 use crate::mem::Mem;
@@ -452,11 +452,7 @@ impl Addressable for Mixer {
 }
 
 impl Peripheral for Mixer {
-    fn step(
-        &mut self,
-        real: &mut PeripheralData,
-        cycles: cycles::CycleCount,
-    ) -> Option<InterruptFlag> {
+    fn step(&mut self, real: &mut PeripheralData, cycles: cycles::CycleCount) -> Option<Interrupt> {
         let orig_status = *self.nr52;
         let mut status = *self.nr52;
         let channels: &mut [&mut dyn AudioChannel] = &mut [

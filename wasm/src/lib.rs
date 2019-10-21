@@ -226,12 +226,12 @@ pub fn start() {
         let perf = web_sys::window().unwrap().performance().unwrap();
         let mut sound_buf = SoundBuffer::new(audio, channels);
         move || {
-            let now = perf.now() / 1000.0 * gb::dimensioned::si::S;            
+            let now = perf.now() / 1000.0 * gb::dimensioned::si::S;
             last_frame_time.push_front((gb.cpu_cycles(), now));
             let time = if last_frame_time.len() >= 2 {
                 let first = last_frame_time[0];
                 let last = last_frame_time[last_frame_time.len() - 1];
-                let cycle_delta : gb::dimensioned::si::Second<f64> = (first.0 - last.0).into();
+                let cycle_delta: gb::dimensioned::si::Second<f64> = (first.0 - last.0).into();
                 let time_delta = first.1 - last.1;
                 let next_time = (first.1 - last.1) / (last_frame_time.len() - 1) as f64;
 
@@ -239,8 +239,13 @@ pub fn start() {
                 // The sound doesn't come out right, though.
                 //let r = next_time * (cycle_delta / time_delta);
                 let r = next_time * (time_delta / cycle_delta);
-                let r : gb::cycles::CycleCount = r.into();
-                log!("Next Cycle Estimate {} {} (Avg Cycles {})", r, next_time , gb::cycles::CycleCount::from(cycle_delta / time_delta * gb::dimensioned::si::S ));
+                let r: gb::cycles::CycleCount = r.into();
+                log!(
+                    "Next Cycle Estimate {} {} (Avg Cycles {})",
+                    r,
+                    next_time,
+                    gb::cycles::CycleCount::from(cycle_delta / time_delta * gb::dimensioned::si::S)
+                );
                 r
             } else {
                 gb::cycles::SECOND / 60
