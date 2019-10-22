@@ -208,6 +208,14 @@ enum DisplayState {
     VBlank,        //(20 + 43 + 51) * 10
 }
 
+#[bitfield]
+pub struct ColorEntry {    
+    r : B5,    
+    g : B5,
+    b : B5,
+    unused: B1,
+}
+
 #[derive(BitfieldSpecifier, Debug, PartialEq, Copy, Clone)]
 pub enum StatMode {
     HBlank = 0b00,
@@ -243,23 +251,23 @@ pub struct LCDCControl {
 #[bitfield]
 #[derive(Copy, Clone)]
 pub struct OAMFlag {
-    color_palette : B3,
-    vram_bank : B1,
+    color_palette: B3,
+    vram_bank: B1,
     palette_number: B1,
-    flip_x : bool,
-    flip_y : bool,
+    flip_x: bool,
+    flip_y: bool,
     priority: bool,
 }
 
 #[bitfield]
 #[derive(Copy, Clone)]
 pub struct BGMapFlag {
-    color_palette : B3, 
-    vram_bank : B1, 
-    unused : B1,
-    flip_x : bool, 
-    flip_y : bool, 
-    priority : B1,
+    color_palette: B3,
+    vram_bank: B1,
+    unused: B1,
+    flip_x: bool,
+    flip_y: bool,
+    priority: B1,
 }
 
 #[derive(Copy, Clone)]
@@ -380,11 +388,13 @@ impl Display {
             p.iter()
                 .map(|m| {
                     let c = PALETTE_COLORS[usize::from(*m)];
-                    (c[2] as u16 & 0xf8) << 7
-                        | (c[1] as u16 & 0xf8) << 2
-                        | (c[0] as u16 & 0xf8) >> 3
+                    let mut entry = ColorEntry::new();                    
+                    entry.set_b(c[2] >> 3);
+                    entry.set_g(c[1] >> 3);
+                    entry.set_r(c[0] >> 3);                                        
+                    entry
                 })
-                .flat_map(|d| u16::to_le_bytes(d).to_vec().into_iter())
+                .flat_map(|d| d.to_bytes().iter().copied().collect::<Vec<_>>().into_iter())
                 .for_each(|d| display.write_byte(reg as u16, d))
         }
 
@@ -723,14 +733,11 @@ impl Display {
         };
         let idx = bg_map + u16::from(true_y) * 32 + u16::from(true_x);
         let flags = match self.cgb_mode {
-                DisplayMode::StrictGB | DisplayMode::CGBCompat => 0,
-                DisplayMode::CGB => Display::bank_vram_ro(&self.vram, 1)[idx as usize],
+            DisplayMode::StrictGB | DisplayMode::CGBCompat => 0,
+            DisplayMode::CGB => Display::bank_vram_ro(&self.vram, 1)[idx as usize],
         };
         let flags = BGMapFlag::try_from(&[flags][..]).unwrap();
-        BGIdx(
-            Display::bank_vram_ro(&self.vram, 0)[idx as usize],
-            flags,
-        )
+        BGIdx(Display::bank_vram_ro(&self.vram, 0)[idx as usize], flags)
     }
     fn get_win_tile(&self, x: u8) -> Tile {
         let x = x.wrapping_sub(self.wx.wrapping_sub(7));
@@ -742,15 +749,12 @@ impl Display {
         };
         let idx = win_map + (u16::from(y) / 8) * 32 + (u16::from(x) / 8);
         let flags = match self.cgb_mode {
-                    DisplayMode::StrictGB | DisplayMode::CGBCompat => 0,
-                    DisplayMode::CGB => Display::bank_vram_ro(&self.vram, 1)[idx as usize],
+            DisplayMode::StrictGB | DisplayMode::CGBCompat => 0,
+            DisplayMode::CGB => Display::bank_vram_ro(&self.vram, 1)[idx as usize],
         };
         let flags = BGMapFlag::try_from(&[flags][..]).unwrap();
         Tile::Window(
-            BGIdx(
-                Display::bank_vram_ro(&self.vram, 0)[idx as usize],
-                flags,
-            ),
+            BGIdx(Display::bank_vram_ro(&self.vram, 0)[idx as usize], flags),
             Coord(0, y % 8),
         )
     }
@@ -1087,7 +1091,7 @@ impl Tile {
                     start as usize,
                     y as usize,
                     oam.flags.get_flip_x(),
-                    oam.flags.get_vram_bank(),                        
+                    oam.flags.get_vram_bank(),
                 )
             }
         };
@@ -1241,7 +1245,7 @@ enum ColorPaletteMask {
 impl Addressable for Display {
     fn read_byte(&mut self, addr: u16) -> u8 {
         match addr {
-             0xFE00..=0xFE9F => {
+            0xFE00..=0xFE9F => {
                 let idx = ((addr & 0xff) >> 2) as usize;
                 let oam = &mut self.oam[idx];
                 match addr & 0b11 {
