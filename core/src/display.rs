@@ -6,6 +6,7 @@ use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::convert::TryFrom;
+use modular_bitfield::prelude::*;
 
 pub const SCREEN_X: usize = 160;
 pub const SCREEN_Y: usize = 144;
@@ -207,7 +208,7 @@ enum DisplayState {
     VBlank,        //(20 + 43 + 51) * 10
 }
 
-use modular_bitfield::prelude::*;
+
 #[derive(BitfieldSpecifier, Debug, PartialEq, Copy, Clone)]
 pub enum StatMode {
     HBlank = 0b00,
@@ -228,15 +229,16 @@ pub struct StatFlag {
     unused: B1,
 }
 
-enum LCDCFlag {
-    BGDisplayPriority = 1,
-    SpriteDisplayEnable = 1 << 1,
-    SpriteSize = 1 << 2,
-    BGTileMapSelect = 1 << 3,
-    BGWinTileDataSelect = 1 << 4,
-    WindowEnable = 1 << 5,
-    WindowTileMapDisplaySelect = 1 << 6,
-    LCDDisplayEnable = 1 << 7,
+#[bitfield]
+pub struct LCDCControl {
+    bg_display_priority: bool,
+    sprite_display_enable: bool,
+    sprite_size: bool,
+    bg_tile_map_select: bool,
+    bg_win_tile_data_select: bool,
+    window_enable : bool,
+    window_tile_map_display_select: bool,
+    lcd_display_enable: bool,
 }
 
 enum OAMFlag {
@@ -283,7 +285,7 @@ pub struct Display {
     oam_searched: Vec<(usize, SpriteAttribute)>,
     scx: u8,
     scy: u8,
-    lcdc: u8,
+    lcdc: LCDCControl,
     stat: StatFlag,
     ly: u8,
     lyc: u8,
@@ -347,7 +349,7 @@ impl Display {
             oam_searched: Vec::with_capacity(10),
             scx: 0,
             scy: 0,
-            lcdc: 0,
+            lcdc: LCDCControl::try_from(&[0][..]).unwrap(),
             stat: StatFlag::try_from(&[0u8][..]).unwrap(),
             ly: 144,
             lyc: 0,
@@ -646,7 +648,7 @@ impl Display {
         }
     }
     pub fn display_enabled(&self) -> bool {
-        self.lcdc & mask_u8!(LCDCFlag::LCDDisplayEnable) != 0
+        self.lcdc.get_lcd_display_enable()
     }
     // pub fn render<C: From<(u8, u8, u8, u8)>, P: From<(i32, i32)>>(
     //     &mut self,
@@ -664,16 +666,16 @@ impl Display {
     //     self.rendered.clear();
     // }
     fn sprite_size(&self) -> u8 {
-        if self.lcdc & mask_u8!(LCDCFlag::SpriteSize) == 0 {
-            8
-        } else {
+        if self.lcdc.get_sprite_size() {
             16
+        } else {
+            8
         }
     }
     fn oam_search(&mut self) {
         assert_eq!(self.oam_searched.capacity(), 10);
         self.oam_searched.clear();
-        if self.lcdc & mask_u8!(LCDCFlag::SpriteDisplayEnable) != 0 {
+        if self.lcdc.get_sprite_display_enable() {
             self.oam_searched.extend(
                 self.oam
                     .iter()
@@ -711,7 +713,7 @@ impl Display {
     }
 
     fn get_bg_tile(&self, true_x: u8, true_y: u8) -> BGIdx {
-        let bg_map = if self.lcdc & mask_u8!(LCDCFlag::BGTileMapSelect) == 0 {
+        let bg_map = if !self.lcdc.get_bg_tile_map_select() {
             0x1800
         } else {
             0x1C00
@@ -728,7 +730,7 @@ impl Display {
     fn get_win_tile(&self, x: u8) -> Tile {
         let x = x.wrapping_sub(self.wx.wrapping_sub(7));
         let y = self.ly.wrapping_sub(self.wy);
-        let win_map = if self.lcdc & mask_u8!(LCDCFlag::WindowTileMapDisplaySelect) == 0 {
+        let win_map = if !self.lcdc.get_window_tile_map_display_select() {
             0x1800u16
         } else {
             0x1c00u16
@@ -803,7 +805,7 @@ impl Display {
                     _ => panic!("invalid oam access"),
                 }
             }
-            0xff40 => &mut self.lcdc,
+            0xff40 => unimplemented!("LCDC should be accessed elsewhere"),
             0xff41 => unimplemented!("STAT should be accessed elsewhere"),
             0xff42 => &mut self.scy,
             0xff43 => &mut self.scx,
@@ -851,7 +853,7 @@ impl Display {
                     let pal = match palette {
                         Palette::BG => {
                             /* turns off all background/windowing */
-                            if self.lcdc & mask_u8!(LCDCFlag::BGDisplayPriority) == 0 {
+                            if !self.lcdc.get_bg_display_priority() {
                                 0
                             } else {
                                 self.bgp
@@ -1040,7 +1042,7 @@ impl Tile {
         let (start, line_offset, flip_x, vbank) = match *self {
             Tile::Window(idx, coord) | Tile::BG(idx, coord) => {
                 let bytes_per_tile: u16 = 16;
-                let start = if display.lcdc & mask_u8!(LCDCFlag::BGWinTileDataSelect) == 0 {
+                let start = if !display.lcdc.get_bg_win_tile_data_select() {
                     /* signed tile idx */
                     let signed_idx = i16::from(idx.0 as i8);
                     (0x1000 + signed_idx * bytes_per_tile as i16) as u16
@@ -1240,7 +1242,8 @@ enum ColorPaletteMask {
 impl Addressable for Display {
     fn read_byte(&mut self, addr: u16) -> u8 {
         match addr {
-            0xff41 => self.stat.to_bytes()[0],
+            0xff40 => self.lcdc.to_bytes()[0],
+            0xff41 => self.stat.to_bytes()[0],            
             _ => *self.lookup(addr),
         }
     }
@@ -1283,6 +1286,9 @@ impl Addressable for Display {
                 self.obps = update_color_palette(&mut self.objpalette, self.obps, self.obpd);
             }
             0xff44 => { /* read only */ }
+            0xff40 => {                
+                self.lcdc = LCDCControl::try_from(&[v][..]).unwrap();
+            }
             0xff41 => {
                 self.stat = StatFlag::try_from(&[v][..]).unwrap();
             }
@@ -1348,7 +1354,7 @@ impl Peripheral for Display {
                     {
                         let (true_x, _true_y) = self.get_bg_true(0, self.ly);
                         let has_window =
-                            self.lcdc & mask_u8!(LCDCFlag::WindowEnable) != 0 && self.ly >= self.wy;
+                            self.lcdc.get_window_enable() && self.ly >= self.wy;
                         let bg_split = if has_window {
                             std::cmp::min(std::cmp::max(7, self.wx) - 7, SCREEN_X as u8)
                         } else {
