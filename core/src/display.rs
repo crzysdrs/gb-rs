@@ -251,13 +251,15 @@ pub struct OAMFlag {
     priority: bool,
 }
 
-enum BGMapFlag {
-    ColorPaletteMask = 0b111,
-    VramBank = 1 << 3,
-    //Unused = 1 << 4,
-    FlipX = 1 << 5,
-    FlipY = 1 << 6,
-    BGPriority = 1 << 7,
+#[bitfield]
+#[derive(Copy, Clone)]
+pub struct BGMapFlag {
+    color_palette : B3, 
+    vram_bank : B1, 
+    unused : B1,
+    flip_x : bool, 
+    flip_y : bool, 
+    priority : B1,
 }
 
 #[derive(Copy, Clone)]
@@ -720,12 +722,14 @@ impl Display {
             0x1C00
         };
         let idx = bg_map + u16::from(true_y) * 32 + u16::from(true_x);
-        BGIdx(
-            Display::bank_vram_ro(&self.vram, 0)[idx as usize],
-            match self.cgb_mode {
+        let flags = match self.cgb_mode {
                 DisplayMode::StrictGB | DisplayMode::CGBCompat => 0,
                 DisplayMode::CGB => Display::bank_vram_ro(&self.vram, 1)[idx as usize],
-            },
+        };
+        let flags = BGMapFlag::try_from(&[flags][..]).unwrap();
+        BGIdx(
+            Display::bank_vram_ro(&self.vram, 0)[idx as usize],
+            flags,
         )
     }
     fn get_win_tile(&self, x: u8) -> Tile {
@@ -737,13 +741,15 @@ impl Display {
             0x1c00u16
         };
         let idx = win_map + (u16::from(y) / 8) * 32 + (u16::from(x) / 8);
+        let flags = match self.cgb_mode {
+                    DisplayMode::StrictGB | DisplayMode::CGBCompat => 0,
+                    DisplayMode::CGB => Display::bank_vram_ro(&self.vram, 1)[idx as usize],
+        };
+        let flags = BGMapFlag::try_from(&[flags][..]).unwrap();
         Tile::Window(
             BGIdx(
                 Display::bank_vram_ro(&self.vram, 0)[idx as usize],
-                match self.cgb_mode {
-                    DisplayMode::StrictGB | DisplayMode::CGBCompat => 0,
-                    DisplayMode::CGB => Display::bank_vram_ro(&self.vram, 1)[idx as usize],
-                },
+                flags,
             ),
             Coord(0, y % 8),
         )
@@ -765,13 +771,13 @@ impl Display {
         for y in 0..32 {
             for x in 0..32 {
                 let bgidx = self.get_bg_tile(x, y);
-                print!("{:02x}:{:02x} ", bgidx.0, bgidx.1);
+                print!("{:02x}:{:02x} ", bgidx.0, bgidx.1.to_bytes()[0]);
             }
             println!();
         }
 
         for t in 0..=0x20 {
-            let idx = BGIdx(t, 0);
+            let idx = BGIdx(t, BGMapFlag::new());
             println!("BG Tile {}", t);
             let mut ppu = PPU::new();
             for y in 0..8 {
@@ -938,7 +944,7 @@ impl Display {
         // if std::ops::Range::is_empty(range) {
         //     return;
         // }
-        let fake = Tile::BG(BGIdx(0, 0), Coord(0, 0));
+        let fake = Tile::BG(BGIdx(0, BGMapFlag::new()), Coord(0, 0));
         let l = fake.fetch(self);
         const IGNORED_OFFSET: usize = 8;
         self.ppu.load(&fake, l);
@@ -978,7 +984,7 @@ impl Display {
 #[derive(Copy, Clone)]
 struct SpriteIdx(u8);
 #[derive(Copy, Clone)]
-struct BGIdx(u8, u8);
+struct BGIdx(u8, BGMapFlag);
 #[derive(Copy, Clone)]
 struct TileIdx(u8);
 #[derive(Copy, Clone)]
@@ -1052,7 +1058,7 @@ impl Tile {
                     u16::from(idx.0) * bytes_per_tile
                 };
                 let bgmap = idx.1;
-                let y = if bgmap & mask_u8!(BGMapFlag::FlipY) != 0 {
+                let y = if bgmap.get_flip_y() {
                     bytes_per_tile as i16 - 1 - i16::from(coord.y())
                 } else {
                     i16::from(coord.y())
@@ -1060,12 +1066,8 @@ impl Tile {
                 (
                     start as usize,
                     (y % 8) as usize,
-                    bgmap & mask_u8!(BGMapFlag::FlipX) != 0,
-                    if bgmap & mask_u8!(BGMapFlag::VramBank) != 0 {
-                        1
-                    } else {
-                        0
-                    },
+                    bgmap.get_flip_x(),
+                    bgmap.get_vram_bank(),
                 )
             }
             Tile::Sprite(_, oam, coord) => {
@@ -1123,9 +1125,9 @@ impl Tile {
             Tile::BG(idx, _) | Tile::Window(idx, _) => {
                 if gbc {
                     let bgmap = idx.1;
-                    let palette_number = bgmap & mask_u8!(BGMapFlag::ColorPaletteMask);
+                    let palette_number = bgmap.get_color_palette();
                     (
-                        if bgmap & mask_u8!(BGMapFlag::BGPriority) != 0 {
+                        if bgmap.get_priority() != 0 {
                             Priority::BG
                         } else {
                             Priority::Obj(low_priority)
