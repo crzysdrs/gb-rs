@@ -209,10 +209,10 @@ enum DisplayState {
 }
 
 #[bitfield]
-pub struct ColorEntry {    
-    r : B5,    
-    g : B5,
-    b : B5,
+pub struct ColorEntry {
+    r: B5,
+    g: B5,
+    b: B5,
     unused: B1,
 }
 
@@ -388,10 +388,10 @@ impl Display {
             p.iter()
                 .map(|m| {
                     let c = PALETTE_COLORS[usize::from(*m)];
-                    let mut entry = ColorEntry::new();                    
+                    let mut entry = ColorEntry::new();
                     entry.set_b(c[2] >> 3);
                     entry.set_g(c[1] >> 3);
-                    entry.set_r(c[0] >> 3);                                        
+                    entry.set_r(c[0] >> 3);
                     entry
                 })
                 .flat_map(|d| d.to_bytes().iter().copied().collect::<Vec<_>>().into_iter())
@@ -839,12 +839,11 @@ impl Display {
 
     fn bgp_shade(&self, p: Pixel) -> (u8, u8, u8, u8) {
         fn rgb_from_palette_color(color: Color) -> (u8, u8, u8, u8) {
-            let rgb = u16::from_be_bytes([color.high, color.low]);
-            let bits = 0b11111;
+            let rgb = ColorEntry::try_from(&[color.low, color.high][..]).unwrap();
             (
-                u8::try_from((rgb & bits) << 3).unwrap(),         //r
-                u8::try_from((rgb & (bits << 5)) >> 2).unwrap(),  //g
-                u8::try_from((rgb & (bits << 10)) >> 7).unwrap(), //b
+                rgb.get_r() << 3, //r
+                rgb.get_g() << 3, //g
+                rgb.get_b() << 3, //b
                 0xff,
             )
         }
