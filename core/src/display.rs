@@ -307,9 +307,9 @@ pub struct Display {
     wx: u8,
     //TODO CGB
     vbk: u8,
-    bgps: u8,
+    bgps: ColorPaletteControl,
     bgpd: u8,
-    obps: u8,
+    obps: ColorPaletteControl,
     obpd: u8,
     //END TODO CGB
     ppu: PPU,
@@ -372,9 +372,9 @@ impl Display {
             //TODO: CGB
             vbk: 0,
             bgpd: 0,
-            bgps: 0,
+            bgps: ColorPaletteControl::new(),
             obpd: 0,
-            obps: 0,
+            obps: ColorPaletteControl::new(),
             //END CGB
             ppu: PPU::new(),
             state: DisplayState::VBlank,
@@ -829,9 +829,9 @@ impl Display {
             0xff4b => &mut self.wx,
             //TODO: CGB
             0xff4f => &mut self.vbk,
-            0xff68 => &mut self.bgps,
+            0xff68 => unimplemented!("BGPS should be accessed elsewhere"),
             0xff69 => &mut self.bgpd,
-            0xff6a => &mut self.obps,
+            0xff6a => unimplemented!("OBPS should be accessed elsewhere"),
             0xff6b => &mut self.obpd,
             _ => panic!("unhandled address in display {:x}", addr),
         }
@@ -1234,11 +1234,20 @@ impl PPU {
     }
 }
 
-enum ColorPaletteMask {
-    HighLow = 0b0000_0001,
-    PaletteDataMask = 0b0000_0110,
-    PaletteNumMask = 0b0011_1000,
-    NextWrite = 0b1000_0000,
+#[bitfield]
+#[derive(Copy, Clone)]
+pub struct ColorPaletteControl {
+    high_low : bool,
+    data : B2,
+    num: B3,
+    unused: B1,
+    next_write: bool,
+}
+
+#[bitfield]
+pub struct ColorPaletteControlCount {
+    count: B6,
+    preserve: B2,
 }
 
 impl Addressable for Display {
@@ -1254,35 +1263,28 @@ impl Addressable for Display {
             }
             0xff40 => self.lcdc.to_bytes()[0],
             0xff41 => self.stat.to_bytes()[0],
+            0xff68 => self.bgps.to_bytes()[0],
+            0xff6a => self.obps.to_bytes()[0],
             _ => *self.lookup(addr),
         }
     }
     fn write_byte(&mut self, addr: u16, v: u8) {
-        fn update_color_palette(palette: &mut [[Color; 4]; 8], mut control: u8, data: u8) -> u8 {
-            let high = (control & mask_u8!(ColorPaletteMask::HighLow)) != 0;
-            let palette_data =
-                usize::from((control & mask_u8!(ColorPaletteMask::PaletteDataMask)) >> 1);
-            let palette_num =
-                usize::from((control & mask_u8!(ColorPaletteMask::PaletteNumMask)) >> 3);
-            let next_palette = (control & mask_u8!(ColorPaletteMask::NextWrite)) != 0;
-
-            let color = &mut palette[palette_num][palette_data];
-            if high {
+        fn update_color_palette(palette: &mut [[Color; 4]; 8], control: ColorPaletteControl, data: u8) -> ColorPaletteControl {
+            let num = usize::try_from(control.get_num()).unwrap();
+            let idx = usize::try_from(control.get_data()).unwrap();
+            let color = &mut palette[num][idx];
+            if control.get_high_low() {
                 color.high = data;
             } else {
                 color.low = data;
             }
-            if next_palette {
-                let mask = mask_u8!(
-                    ColorPaletteMask::PaletteDataMask
-                        | ColorPaletteMask::PaletteNumMask
-                        | ColorPaletteMask::HighLow
-                );
-                let prev = control & mask;
-                control &= !mask;
-                control |= (prev + 1) & mask;
+            if control.get_next_write() {
+                let mut count = ColorPaletteControlCount::try_from(control.to_bytes()).unwrap();
+                count.set_count((count.get_count() + 1) & ((1 << B6::BITS) - 1));
+                ColorPaletteControl::try_from(count.to_bytes()).unwrap()
+            } else {
+                control
             }
-            control
         }
         match addr {
             0xFE00..=0xFE9F => {
@@ -1293,12 +1295,12 @@ impl Addressable for Display {
                     _ => *self.lookup(addr) = v,
                 }
             }
-            0xff68 => self.bgps = v,
+            0xff68 => self.bgps = ColorPaletteControl::try_from(&[v][..]).unwrap(),
             0xff69 => {
                 self.bgpd = v;
                 self.bgps = update_color_palette(&mut self.bgpalette, self.bgps, self.bgpd);
             }
-            0xff6a => self.obps = v,
+            0xff6a => self.obps = ColorPaletteControl::try_from(&[v][..]).unwrap(),
             0xff6b => {
                 self.obpd = v;
                 self.obps = update_color_palette(&mut self.objpalette, self.obps, self.obpd);
