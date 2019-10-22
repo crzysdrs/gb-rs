@@ -4,9 +4,9 @@ use crate::cycles;
 use crate::mmu::MemRegister;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use itertools::Itertools;
+use modular_bitfield::prelude::*;
 use std::collections::VecDeque;
 use std::convert::TryFrom;
-use modular_bitfield::prelude::*;
 
 pub const SCREEN_X: usize = 160;
 pub const SCREEN_Y: usize = 144;
@@ -208,7 +208,6 @@ enum DisplayState {
     VBlank,        //(20 + 43 + 51) * 10
 }
 
-
 #[derive(BitfieldSpecifier, Debug, PartialEq, Copy, Clone)]
 pub enum StatMode {
     HBlank = 0b00,
@@ -236,18 +235,20 @@ pub struct LCDCControl {
     sprite_size: bool,
     bg_tile_map_select: bool,
     bg_win_tile_data_select: bool,
-    window_enable : bool,
+    window_enable: bool,
     window_tile_map_display_select: bool,
     lcd_display_enable: bool,
 }
 
-enum OAMFlag {
-    ColorPaletteMask = 0b111,
-    VRAMBank = 1 << 3, //CGB Only
-    PaletteNumber = 1 << 4,
-    FlipX = 1 << 5,
-    FlipY = 1 << 6,
-    Priority = 1 << 7,
+#[bitfield]
+#[derive(Copy, Clone)]
+pub struct OAMFlag {
+    color_palette : B3,
+    vram_bank : B1,
+    palette_number: B1,
+    flip_x : bool,
+    flip_y : bool,
+    priority: bool,
 }
 
 enum BGMapFlag {
@@ -264,7 +265,7 @@ pub struct SpriteAttribute {
     y: u8,
     x: u8,
     pattern: SpriteIdx,
-    flags: u8,
+    flags: OAMFlag,
 }
 
 #[derive(Copy, Clone)]
@@ -343,14 +344,14 @@ impl Display {
             oam: [SpriteAttribute {
                 x: 0,
                 y: 0,
-                flags: 0,
+                flags: OAMFlag::new(),
                 pattern: SpriteIdx(0),
             }; 40],
             oam_searched: Vec::with_capacity(10),
             scx: 0,
             scy: 0,
-            lcdc: LCDCControl::try_from(&[0][..]).unwrap(),
-            stat: StatFlag::try_from(&[0u8][..]).unwrap(),
+            lcdc: LCDCControl::new(),
+            stat: StatFlag::new(),
             ly: 144,
             lyc: 0,
             bgp: 0,
@@ -801,7 +802,7 @@ impl Display {
                     0b00 => &mut oam.y,
                     0b01 => &mut oam.x,
                     0b10 => &mut oam.pattern.0,
-                    0b11 => &mut oam.flags,
+                    0b11 => unimplemented!("OAM Flags should be accessed elsewhere"),
                     _ => panic!("invalid oam access"),
                 }
             }
@@ -1075,7 +1076,7 @@ impl Tile {
                     oam.pattern.0
                 };
                 let start = u16::from(idx) * bytes_per_line * u16::from(display.sprite_size());
-                let y = if oam.flags & mask_u8!(OAMFlag::FlipY) != 0 {
+                let y = if oam.flags.get_flip_y() {
                     display.sprite_size() - 1 - coord.y()
                 } else {
                     coord.y()
@@ -1083,12 +1084,8 @@ impl Tile {
                 (
                     start as usize,
                     y as usize,
-                    oam.flags & mask_u8!(OAMFlag::FlipX) != 0,
-                    if (oam.flags & mask_u8!(OAMFlag::VRAMBank)) == 0 {
-                        0
-                    } else {
-                        1
-                    },
+                    oam.flags.get_flip_x(),
+                    oam.flags.get_vram_bank(),                        
                 )
             }
         };
@@ -1109,14 +1106,14 @@ impl Tile {
         let low_priority = std::usize::MAX;
         let (priority, palette) = match *self {
             Tile::Sprite(p, oam, _) => {
-                let priority = if oam.flags & mask_u8!(OAMFlag::Priority) != 0 {
+                let priority = if oam.flags.get_priority() {
                     Priority::BG
                 } else {
                     Priority::Obj(p)
                 };
                 let palette = if gbc {
-                    Palette::OBPColor(oam.flags & mask_u8!(OAMFlag::ColorPaletteMask))
-                } else if oam.flags & mask_u8!(OAMFlag::PaletteNumber) == 0 {
+                    Palette::OBPColor(oam.flags.get_color_palette())
+                } else if oam.flags.get_palette_number() == 0 {
                     Palette::OBP0
                 } else {
                     Palette::OBP1
@@ -1242,8 +1239,16 @@ enum ColorPaletteMask {
 impl Addressable for Display {
     fn read_byte(&mut self, addr: u16) -> u8 {
         match addr {
+             0xFE00..=0xFE9F => {
+                let idx = ((addr & 0xff) >> 2) as usize;
+                let oam = &mut self.oam[idx];
+                match addr & 0b11 {
+                    0b11 => oam.flags.to_bytes()[0],
+                    _ => *self.lookup(addr),
+                }
+            }
             0xff40 => self.lcdc.to_bytes()[0],
-            0xff41 => self.stat.to_bytes()[0],            
+            0xff41 => self.stat.to_bytes()[0],
             _ => *self.lookup(addr),
         }
     }
@@ -1275,6 +1280,14 @@ impl Addressable for Display {
             control
         }
         match addr {
+            0xFE00..=0xFE9F => {
+                let idx = ((addr & 0xff) >> 2) as usize;
+                let oam = &mut self.oam[idx];
+                match addr & 0b11 {
+                    0b11 => oam.flags = OAMFlag::try_from(&[v][..]).unwrap(),
+                    _ => *self.lookup(addr) = v,
+                }
+            }
             0xff68 => self.bgps = v,
             0xff69 => {
                 self.bgpd = v;
@@ -1286,7 +1299,7 @@ impl Addressable for Display {
                 self.obps = update_color_palette(&mut self.objpalette, self.obps, self.obpd);
             }
             0xff44 => { /* read only */ }
-            0xff40 => {                
+            0xff40 => {
                 self.lcdc = LCDCControl::try_from(&[v][..]).unwrap();
             }
             0xff41 => {
@@ -1353,8 +1366,7 @@ impl Peripheral for Display {
                         std::mem::replace(&mut self.oam_searched, Vec::with_capacity(0));
                     {
                         let (true_x, _true_y) = self.get_bg_true(0, self.ly);
-                        let has_window =
-                            self.lcdc.get_window_enable() && self.ly >= self.wy;
+                        let has_window = self.lcdc.get_window_enable() && self.ly >= self.wy;
                         let bg_split = if has_window {
                             std::cmp::min(std::cmp::max(7, self.wx) - 7, SCREEN_X as u8)
                         } else {
