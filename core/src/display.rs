@@ -1237,8 +1237,8 @@ impl PPU {
 #[bitfield]
 #[derive(Copy, Clone)]
 pub struct ColorPaletteControl {
-    high_low : bool,
-    data : B2,
+    high_low: bool,
+    data: B2,
     num: B3,
     unused: B1,
     next_write: bool,
@@ -1269,7 +1269,11 @@ impl Addressable for Display {
         }
     }
     fn write_byte(&mut self, addr: u16, v: u8) {
-        fn update_color_palette(palette: &mut [[Color; 4]; 8], control: ColorPaletteControl, data: u8) -> ColorPaletteControl {
+        fn update_color_palette(
+            palette: &mut [[Color; 4]; 8],
+            control: ColorPaletteControl,
+            data: u8,
+        ) -> ColorPaletteControl {
             let num = usize::try_from(control.get_num()).unwrap();
             let idx = usize::try_from(control.get_data()).unwrap();
             let color = &mut palette[num][idx];

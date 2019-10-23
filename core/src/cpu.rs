@@ -97,15 +97,14 @@ pub struct Interrupt {
 impl std::ops::BitOr for Interrupt {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self {
-        Interrupt::try_from(
-            self.to_bytes()
-                .iter()
-                .zip(rhs.to_bytes().iter())
-                .map(|(l, r)| l | r)
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )
-        .unwrap()
+        let mut bytes = [0];
+        self.to_bytes()
+            .iter()
+            .zip(rhs.to_bytes().iter())
+            .enumerate()
+            .for_each(|(i, (l, r))| bytes[i] = l | r)
+            ;
+        Interrupt::try_from(&bytes[..]).unwrap()
     }
 }
 

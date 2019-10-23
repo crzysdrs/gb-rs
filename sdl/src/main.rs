@@ -198,15 +198,15 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                 )
             });
             let r = r.unwrap();
-            let end_cycles = gb.cpu_cycles();
+            //let end_cycles = gb.cpu_cycles();
 
-            let time: gb::dimensioned::si::Second<f64> = (end_cycles - cycles).into();
-            println!(
-                "Seconds: {} Cycles: {} Sounds: {}",
-                time,
-                end_cycles - cycles,
-                count
-            );
+            //let time: gb::dimensioned::si::Second<f64> = (end_cycles - cycles).into();
+            // println!(
+            //     "Seconds: {} Cycles: {} Sounds: {}",
+            //     time,
+            //     end_cycles - cycles,
+            //     count
+            // );
             //assert_eq!(count, device.spec().freq as u32 / 60);
             match r {
                 GBReason::VSync => {
@@ -332,7 +332,7 @@ fn main() -> Result<(), std::io::Error> {
     let maybe_rom: std::io::Result<Vec<u8>> = match rom.extension() {
         None => Err(std::io::Error::new(
             std::io::ErrorKind::Other,
-            "Missing file extension",
+            format!("Missing file extension {}", rom.display()),
         )),
         Some(ext) => match ext.to_str() {
             Some("zip") => {
@@ -358,10 +358,16 @@ fn main() -> Result<(), std::io::Error> {
                 }
             }
             Some("gb") => Ok(std::fs::read(rom)?),
-            _ => Err(std::io::Error::new(
+            Some(e) => Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                "Unknown Extension",
+                format!("Unknown Extension {}", e),
             )),
+            None => {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Invalid Extension"),
+            ))
+            }
         },
     };
 
