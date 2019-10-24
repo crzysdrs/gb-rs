@@ -291,6 +291,7 @@ enum DisplayMode {
 }
 
 pub struct Display {
+    needs_clear: bool,
     ppu: PPU,
     oam_searched: Vec<(usize, SpriteAttribute)>,
     mem: DispMem,
@@ -351,7 +352,8 @@ impl Display {
             CGBStatus::SupportsCGB | CGBStatus::CGBOnly => DisplayMode::CGB,
         };
         Display {
-            state: DisplayState::VBlank,
+            needs_clear: true,
+            state: DisplayState::OAMSearch,
             unused_cycles: cycles::Cycles::new(0),
             frame: 0,
             time: 0 * cycles::GB,
@@ -368,7 +370,7 @@ impl Display {
                 scy: 0,
                 lcdc: LCDCControl::new(),
                 stat: StatFlag::new(),
-                ly: 144,
+                ly: 0,
                 lyc: 0,
                 bgp: 0,
                 obp0: 0,
@@ -1382,15 +1384,24 @@ impl Addressable for DispMem {
 
 impl Peripheral for Display {
     fn step(&mut self, real: &mut PeripheralData, time: cycles::CycleCount) -> Option<Interrupt> {
-        // let s = StateMachine::<StateData> {
-        //     states: vec![
-
-        //     ]
-        // };
-
+        self.time += time;
+        if !self.mem.lcdc.get_lcd_display_enable() {
+            if self.needs_clear {
+                if let Some(lcd) = real.lcd.as_mut() {
+                    for b in lcd.iter_mut() {
+                        *b = 0xff;
+                    }
+                }
+            }
+            self.needs_clear = false;
+            self.state = DisplayState::OAMSearch;
+            self.mem.ly = 0;
+            self.unused_cycles = cycles::Cycles::new(0);
+            return None;
+        }
+        self.needs_clear = true;
         let mut new_ly = self.mem.ly;
         self.unused_cycles += time;
-        self.time += time;
         let next_state = match self.state {
             DisplayState::OAMSearch => {
                 if self.unused_cycles >= 20 * cycles::GB {
