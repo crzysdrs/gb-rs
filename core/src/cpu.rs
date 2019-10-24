@@ -102,8 +102,7 @@ impl std::ops::BitOr for Interrupt {
             .iter()
             .zip(rhs.to_bytes().iter())
             .enumerate()
-            .for_each(|(i, (l, r))| bytes[i] = l | r)
-            ;
+            .for_each(|(i, (l, r))| bytes[i] = l | r);
         Interrupt::try_from(&bytes[..]).unwrap()
     }
 }

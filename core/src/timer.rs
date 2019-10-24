@@ -2,10 +2,10 @@ use super::mmu::MemRegister;
 use crate::cpu::Interrupt;
 use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
+use crate::sound::WaitTimer;
 use enum_primitive::FromPrimitive;
 use modular_bitfield::prelude::*;
 use std::convert::TryFrom;
-use crate::sound::WaitTimer;
 
 #[derive(BitfieldSpecifier)]
 #[allow(non_camel_case_types)]
@@ -20,7 +20,7 @@ pub enum TimerSpeed {
 #[derive(Copy, Clone)]
 pub struct TimerControl {
     #[bits = 2]
-    speed : TimerSpeed,
+    speed: TimerSpeed,
     start: bool,
     unused: B5,
 }
@@ -39,28 +39,34 @@ impl Addressable for Timer {
     fn read_byte(&mut self, addr: u16) -> u8 {
         match MemRegister::from_u64(addr.into()).expect("Valid Register") {
             MemRegister::TAC => self.TAC.to_bytes()[0],
-            _ => *self.lookup(addr)
+            _ => *self.lookup(addr),
         }
     }
     fn write_byte(&mut self, addr: u16, v: u8) {
         match MemRegister::from_u64(addr.into()).expect("Valid Register") {
             MemRegister::DIV => {
                 self.DIV = 0;
-            },
+            }
             MemRegister::TAC => {
-                self.TAC = TimerControl::try_from(&[v][..]).unwrap();},
-            _ => {*self.lookup(addr) = v;},
-        }       
+                self.TAC = TimerControl::try_from(&[v][..]).unwrap();
+            }
+            _ => {
+                *self.lookup(addr) = v;
+            }
+        }
     }
 }
 impl Peripheral for Timer {
     fn step(&mut self, _real: &mut PeripheralData, time: cycles::CycleCount) -> Option<Interrupt> {
         use std::convert::TryInto;
-        if let Some(c) = self.div_timer.ready(time, Timer::divider(TimerSpeed::ICS_65536hz)) {
+        if let Some(c) = self
+            .div_timer
+            .ready(time, Timer::divider(TimerSpeed::ICS_65536hz))
+        {
             self.DIV = self.DIV.wrapping_add(c.try_into().unwrap());
         }
         if self.TAC.get_start() {
-            if let Some(add) =  self.timer.ready(time, Timer::divider(self.freq())) {               
+            if let Some(add) = self.timer.ready(time, Timer::divider(self.freq())) {
                 let (new_tima, overflow) = self.TIMA.overflowing_add(add.try_into().unwrap());
                 self.TIMA = new_tima;
                 if overflow {
@@ -101,7 +107,8 @@ impl Timer {
                     TimerSpeed::ICS_262144hz => 262_144,
                     TimerSpeed::ICS_65536hz => 65_536,
                     TimerSpeed::ICS_16384hz => 16_384,
-                }))
+                }),
+        )
     }
     fn lookup(&mut self, addr: u16) -> &mut u8 {
         match MemRegister::from_u64(addr.into()).expect("Valid Register") {

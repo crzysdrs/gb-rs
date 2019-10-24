@@ -3,7 +3,6 @@ use crate::cpu::Interrupt;
 use crate::cycles;
 use crate::mmu::MemRegister;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
-use itertools::Itertools;
 use modular_bitfield::prelude::*;
 use std::collections::VecDeque;
 use std::convert::TryFrom;
@@ -284,6 +283,7 @@ struct Color {
     low: u8,
 }
 
+#[derive(Copy, Clone)]
 enum DisplayMode {
     StrictGB,
     CGBCompat,
@@ -291,9 +291,18 @@ enum DisplayMode {
 }
 
 pub struct Display {
+    ppu: PPU,
+    oam_searched: Vec<(usize, SpriteAttribute)>,
+    mem: DispMem,
+    unused_cycles: cycles::CycleCount,
+    state: DisplayState,
+    frame: u64,
+    time: cycles::CycleCount,
+}
+
+struct DispMem {
     vram: [u8; (2 * 8) << 10],
     oam: [SpriteAttribute; 40],
-    oam_searched: Vec<(usize, SpriteAttribute)>,
     scx: u8,
     scy: u8,
     lcdc: LCDCControl,
@@ -312,28 +321,23 @@ pub struct Display {
     obps: ColorPaletteControl,
     obpd: u8,
     //END TODO CGB
-    ppu: PPU,
-    unused_cycles: cycles::CycleCount,
-    state: DisplayState,
-    frame: u64,
     cgb_mode: DisplayMode,
     bgpalette: [[Color; 4]; 8],
     objpalette: [[Color; 4]; 8],
-    time: cycles::CycleCount,
+}
+
+fn bank_vram(vram: &mut [u8], bank: u8) -> &mut [u8] {
+    let start = usize::from(bank) * (8 << 10);
+    let len = 8 << 10;
+    &mut vram[start..start + len]
+}
+fn bank_vram_ro(vram: &[u8], bank: u8) -> &[u8] {
+    let start = usize::from(bank) * (8 << 10);
+    let len = 8 << 10;
+    &vram[start..start + len]
 }
 
 impl Display {
-    fn bank_vram(vram: &mut [u8], bank: u8) -> &mut [u8] {
-        let start = usize::from(bank) * (8 << 10);
-        let len = 8 << 10;
-        &mut vram[start..start + len]
-    }
-    fn bank_vram_ro(vram: &[u8], bank: u8) -> &[u8] {
-        let start = usize::from(bank) * (8 << 10);
-        let len = 8 << 10;
-        &vram[start..start + len]
-    }
-
     pub fn new(cgb: CGBStatus) -> Display {
         let cgb_mode = match cgb {
             CGBStatus::GB => {
@@ -347,44 +351,80 @@ impl Display {
             CGBStatus::SupportsCGB | CGBStatus::CGBOnly => DisplayMode::CGB,
         };
         Display {
-            time: 0 * cycles::GB,
-            cgb_mode,
-            frame: 0,
-            vram: [0; (2 * 8) << 10],
-            oam: [SpriteAttribute {
-                x: 0,
-                y: 0,
-                flags: OAMFlag::new(),
-                pattern: SpriteIdx(0),
-            }; 40],
-            oam_searched: Vec::with_capacity(10),
-            scx: 0,
-            scy: 0,
-            lcdc: LCDCControl::new(),
-            stat: StatFlag::new(),
-            ly: 144,
-            lyc: 0,
-            bgp: 0,
-            obp0: 0,
-            obp1: 0,
-            wy: 0,
-            wx: 0,
-            //TODO: CGB
-            vbk: 0,
-            bgpd: 0,
-            bgps: ColorPaletteControl::new(),
-            obpd: 0,
-            obps: ColorPaletteControl::new(),
-            //END CGB
-            ppu: PPU::new(),
             state: DisplayState::VBlank,
             unused_cycles: cycles::Cycles::new(0),
-            bgpalette: [[Color { high: 0, low: 0 }; 4]; 8],
-            objpalette: [[Color { high: 0, low: 0 }; 4]; 8],
+            frame: 0,
+            time: 0 * cycles::GB,
+            mem: DispMem {
+                cgb_mode,
+                vram: [0; (2 * 8) << 10],
+                oam: [SpriteAttribute {
+                    x: 0,
+                    y: 0,
+                    flags: OAMFlag::new(),
+                    pattern: SpriteIdx(0),
+                }; 40],
+                scx: 0,
+                scy: 0,
+                lcdc: LCDCControl::new(),
+                stat: StatFlag::new(),
+                ly: 144,
+                lyc: 0,
+                bgp: 0,
+                obp0: 0,
+                obp1: 0,
+                wy: 0,
+                wx: 0,
+                //TODO: CGB
+                vbk: 0,
+                bgpd: 0,
+                bgps: ColorPaletteControl::new(),
+                obpd: 0,
+                obps: ColorPaletteControl::new(),
+                //END CGB
+                bgpalette: [[Color { high: 0, low: 0 }; 4]; 8],
+                objpalette: [[Color { high: 0, low: 0 }; 4]; 8],
+            },
+            oam_searched: Vec::with_capacity(10),
+            ppu: PPU::new(),
+        }
+    }
+    fn oam_search(&mut self) {
+        assert_eq!(self.oam_searched.capacity(), 10);
+        self.oam_searched.clear();
+        if self.mem.lcdc.get_sprite_display_enable() {
+            self.oam_searched.extend(
+                self.mem
+                    .oam
+                    .iter()
+                    .enumerate()
+                    .filter(
+                        /* ignored invisible sprites */
+                        |(_, oam)| oam.x != 0 && oam.x < 168 && oam.y != 0 && oam.y < 144 + 16,
+                    )
+                    .filter(/* filter only items in this row */ {
+                        let ly = self.mem.ly;
+                        let size = self.mem.sprite_size();
+                        move |(_, oam)| ly + 16 >= oam.y && ly + 16 - oam.y < size
+                    })
+                    .map({
+                        let mode = self.mem.cgb_mode;
+                        move |(i, oam)| {
+                            let priority = if let DisplayMode::CGBCompat = mode {
+                                i
+                            } else {
+                                usize::try_from(oam.x).unwrap()
+                            };
+                            (priority, *oam)
+                        }
+                    })
+                    .take(10),
+            );
+            self.oam_searched.sort_by_key(|(_, oam)| oam.x);
         }
     }
     pub fn init(&mut self, checksum: u8, dis: u8, key_palette: Option<usize>) {
-        fn convert_palette(display: &mut Display, p: &[u8; 4], reg: MemRegister) {
+        fn convert_palette(display: &mut DispMem, p: &[u8; 4], reg: MemRegister) {
             p.iter()
                 .map(|m| {
                     let c = PALETTE_COLORS[usize::from(*m)];
@@ -646,23 +686,43 @@ impl Display {
 
         if let Some(p) = chosen.or(Some(builtin)) {
             self.write_byte(MemRegister::BGPS as u16, 0x80);
-            convert_palette(self, &p.bg, MemRegister::BGPD);
+            convert_palette(&mut self.mem, &p.bg, MemRegister::BGPD);
             self.write_byte(MemRegister::OBPS as u16, 0x80);
-            convert_palette(self, &p.obj0, MemRegister::OBPD);
-            convert_palette(self, &p.obj1, MemRegister::OBPD);
-        }
-    }
-    pub fn oam_lookup(&self, idx: OAMIdx) -> Option<&SpriteAttribute> {
-        let idx = idx.0 as usize;
-        if idx > self.oam.len() {
-            None
-        } else {
-            Some(&self.oam[idx])
+            convert_palette(&mut self.mem, &p.obj0, MemRegister::OBPD);
+            convert_palette(&mut self.mem, &p.obj1, MemRegister::OBPD);
         }
     }
     pub fn display_enabled(&self) -> bool {
+        self.mem.display_enabled()
+    }
+
+    #[cfg(test)]
+    pub fn all_bgs(&self) -> [u8; 1024] {
+        let mut bgs = [0u8; 1024];
+
+        for y in 0..32 {
+            for x in 0..32 {
+                bgs[y as usize * 32 + x as usize] = self.mem.get_bg_tile(x, y).0;
+            }
+        }
+        bgs
+    }
+}
+
+impl DispMem {
+    pub fn display_enabled(&self) -> bool {
         self.lcdc.get_lcd_display_enable()
     }
+
+    // pub fn oam_lookup(&self, idx: OAMIdx) -> Option<&SpriteAttribute> {
+    //     let idx = idx.0 as usize;
+    //     if idx > self.oam.len() {
+    //         None
+    //     } else {
+    //         Some(&self.oam[idx])
+    //     }
+    // }
+
     // pub fn render<C: From<(u8, u8, u8, u8)>, P: From<(i32, i32)>>(
     //     &mut self,
     //     lcd: &mut Option<&mut LCD<C, P>>,
@@ -683,33 +743,6 @@ impl Display {
             16
         } else {
             8
-        }
-    }
-    fn oam_search(&mut self) {
-        assert_eq!(self.oam_searched.capacity(), 10);
-        self.oam_searched.clear();
-        if self.lcdc.get_sprite_display_enable() {
-            self.oam_searched.extend(
-                self.oam
-                    .iter()
-                    .enumerate()
-                    .filter(
-                        /* ignored invisible sprites */
-                        |(_, oam)| oam.x != 0 && oam.x < 168 && oam.y != 0 && oam.y < 144 + 16,
-                    )
-                    .filter(/* filter only items in this row */ |(_, oam)| {
-                        self.ly + 16 >= oam.y && self.ly + 16 - oam.y < self.sprite_size()
-                    })
-                    .sorted_by_key(|(i, oam)| {
-                        if let DisplayMode::CGBCompat = self.cgb_mode {
-                            *i
-                        } else {
-                            usize::try_from(oam.x).unwrap()
-                        }
-                    })
-                    .take(10)
-                    .map(|(i, oam)| (i, *oam)),
-            );
         }
     }
 
@@ -734,10 +767,10 @@ impl Display {
         let idx = bg_map + u16::from(true_y) * 32 + u16::from(true_x);
         let flags = match self.cgb_mode {
             DisplayMode::StrictGB | DisplayMode::CGBCompat => 0,
-            DisplayMode::CGB => Display::bank_vram_ro(&self.vram, 1)[idx as usize],
+            DisplayMode::CGB => bank_vram_ro(&self.vram, 1)[idx as usize],
         };
         let flags = BGMapFlag::try_from(&[flags][..]).unwrap();
-        BGIdx(Display::bank_vram_ro(&self.vram, 0)[idx as usize], flags)
+        BGIdx(bank_vram_ro(&self.vram, 0)[idx as usize], flags)
     }
     fn get_win_tile(&self, x: u8) -> Tile {
         let x = x.wrapping_sub(self.wx.wrapping_sub(7));
@@ -750,60 +783,48 @@ impl Display {
         let idx = win_map + (u16::from(y) / 8) * 32 + (u16::from(x) / 8);
         let flags = match self.cgb_mode {
             DisplayMode::StrictGB | DisplayMode::CGBCompat => 0,
-            DisplayMode::CGB => Display::bank_vram_ro(&self.vram, 1)[idx as usize],
+            DisplayMode::CGB => bank_vram_ro(&self.vram, 1)[idx as usize],
         };
         let flags = BGMapFlag::try_from(&[flags][..]).unwrap();
         Tile::Window(
-            BGIdx(Display::bank_vram_ro(&self.vram, 0)[idx as usize], flags),
+            BGIdx(bank_vram_ro(&self.vram, 0)[idx as usize], flags),
             Coord(0, y % 8),
         )
     }
+    // pub fn dump(&mut self) {
+    //     println!("BG Tile Map");
+    //     for y in 0..32 {
+    //         for x in 0..32 {
+    //             let bgidx = self.get_bg_tile(x, y);
+    //             print!("{:02x}:{:02x} ", bgidx.0, bgidx.1.to_bytes()[0]);
+    //         }
+    //         println!();
+    //     }
 
-    #[cfg(test)]
-    pub fn all_bgs(&self) -> [u8; 1024] {
-        let mut bgs = [0u8; 1024];
-
-        for y in 0..32 {
-            for x in 0..32 {
-                bgs[y as usize * 32 + x as usize] = self.get_bg_tile(x, y).0;
-            }
-        }
-        bgs
-    }
-    pub fn dump(&mut self) {
-        println!("BG Tile Map");
-        for y in 0..32 {
-            for x in 0..32 {
-                let bgidx = self.get_bg_tile(x, y);
-                print!("{:02x}:{:02x} ", bgidx.0, bgidx.1.to_bytes()[0]);
-            }
-            println!();
-        }
-
-        for t in 0..=0x20 {
-            let idx = BGIdx(t, BGMapFlag::new());
-            println!("BG Tile {}", t);
-            let mut ppu = PPU::new();
-            for y in 0..8 {
-                let t = Tile::BG(idx, Coord(0, y));
-                ppu.load(&t, t.fetch(self));
-                for _x in 0..8 {
-                    let c = match ppu.shift() {
-                        Pixel(_, _, PaletteShade::Empty) => 0,
-                        Pixel(_, _, PaletteShade::Low) => 1,
-                        Pixel(_, _, PaletteShade::Mid) => 2,
-                        Pixel(_, _, PaletteShade::High) => 3,
-                    };
-                    print!("{} ", c)
-                }
-                println!();
-            }
-        }
-    }
+    //     for t in 0..=0x20 {
+    //         let idx = BGIdx(t, BGMapFlag::new());
+    //         println!("BG Tile {}", t);
+    //         let mut ppu = PPU::new();
+    //         for y in 0..8 {
+    //             let t = Tile::BG(idx, Coord(0, y));
+    //             ppu.load(&t, t.fetch(self));
+    //             for _x in 0..8 {
+    //                 let c = match ppu.shift() {
+    //                     Pixel(_, _, PaletteShade::Empty) => 0,
+    //                     Pixel(_, _, PaletteShade::Low) => 1,
+    //                     Pixel(_, _, PaletteShade::Mid) => 2,
+    //                     Pixel(_, _, PaletteShade::High) => 3,
+    //                 };
+    //                 print!("{} ", c)
+    //             }
+    //             println!();
+    //         }
+    //     }
+    // }
     fn lookup(&mut self, addr: u16) -> &mut u8 {
         match addr {
             0x8000..=0x9fff => {
-                &mut Display::bank_vram(&mut self.vram, self.vbk & 0b1)[(addr - 0x8000) as usize]
+                &mut bank_vram(&mut self.vram, self.vbk & 0b1)[(addr - 0x8000) as usize]
             }
             0xFE00..=0xFE9F => {
                 let idx = ((addr & 0xff) >> 2) as usize;
@@ -910,78 +931,80 @@ impl Display {
             white
         }
     }
+}
 
-    fn add_oams<'sprite, T: Iterator<Item = &'sprite (usize, SpriteAttribute)>>(
-        &mut self,
-        oams: &mut std::iter::Peekable<T>,
-        x: u8,
-        y: u8,
-    ) {
-        'oams_done: while oams.peek().is_some() {
-            let use_oam = if let Some((_priority, cur)) = oams.peek() {
-                cur.x <= x
+fn add_oams<'sprite, T: Iterator<Item = &'sprite (usize, SpriteAttribute)>>(
+    ppu: &mut PPU,
+    mem: &DispMem,
+    oams: &mut std::iter::Peekable<T>,
+    x: u8,
+    y: u8,
+) {
+    'oams_done: while oams.peek().is_some() {
+        let use_oam = if let Some((_priority, cur)) = oams.peek() {
+            cur.x <= x
+        } else {
+            false
+        };
+        if !use_oam {
+            break 'oams_done;
+        }
+        let (priority, oam) = oams.next().unwrap();
+        if oam.x == x {
+            let t = Tile::Sprite(*priority, *oam, Coord(0, y + 16 - oam.y));
+            let l = t.fetch(mem);
+            ppu.load(&t, l);
+        }
+    }
+}
+
+fn draw_window<'sprite, T: Iterator<Item = &'sprite (usize, SpriteAttribute)>>(
+    ppu: &mut PPU,
+    mem: &DispMem,
+    lcd_line: &mut [u8],
+    oams: &mut std::iter::Peekable<T>,
+    window: bool,
+    bg_offset: u8,
+    range: &mut std::ops::Range<u8>,
+) {
+    /* offscreen pixels */
+    // if std::ops::Range::is_empty(range) {
+    //     return;
+    // }
+    let fake = Tile::BG(BGIdx(0, BGMapFlag::new()), Coord(0, 0));
+    let l = fake.fetch(mem);
+    const IGNORED_OFFSET: usize = 8;
+    ppu.load(&fake, l);
+    for _x in 0..bg_offset {
+        ppu.shift();
+    }
+    let mut target_pixel = 0;
+    for x in range.start..range.end + IGNORED_OFFSET as u8 {
+        if ppu.need_data() {
+            let t = if window {
+                mem.get_win_tile(x)
             } else {
-                false
+                mem.get_screen_bg_tile(x, mem.ly)
             };
-            if !use_oam {
-                break 'oams_done;
-            }
-            let (priority, oam) = oams.next().unwrap();
-            if oam.x == x {
-                let t = Tile::Sprite(*priority, *oam, Coord(0, y + 16 - oam.y));
-                let l = t.fetch(self);
-                self.ppu.load(&t, l);
-            }
+            let l = t.fetch(mem);
+            ppu.load(&t, l);
+        }
+        assert_eq!(ppu.need_data(), false);
+        add_oams(ppu, mem, oams, x, mem.ly);
+
+        if x >= range.start + IGNORED_OFFSET as u8 {
+            let c: (u8, u8, u8, u8) = {
+                let p = ppu.shift();
+                mem.bgp_shade(p)
+            };
+            let start = target_pixel * BYTES_PER_PIXEL;
+            lcd_line[start..start + BYTES_PER_PIXEL].copy_from_slice(&[c.0, c.1, c.2, c.3]);
+            target_pixel += 1;
+        } else {
+            ppu.shift();
         }
     }
-
-    fn draw_window<'sprite, T: Iterator<Item = &'sprite (usize, SpriteAttribute)>>(
-        &mut self,
-        lcd_line: &mut [u8],
-        oams: &mut std::iter::Peekable<T>,
-        window: bool,
-        bg_offset: u8,
-        range: &mut std::ops::Range<u8>,
-    ) {
-        /* offscreen pixels */
-        // if std::ops::Range::is_empty(range) {
-        //     return;
-        // }
-        let fake = Tile::BG(BGIdx(0, BGMapFlag::new()), Coord(0, 0));
-        let l = fake.fetch(self);
-        const IGNORED_OFFSET: usize = 8;
-        self.ppu.load(&fake, l);
-        for _x in 0..bg_offset {
-            self.ppu.shift();
-        }
-        let mut target_pixel = 0;
-        for x in range.start..range.end + IGNORED_OFFSET as u8 {
-            if self.ppu.need_data() {
-                let t = if window {
-                    self.get_win_tile(x)
-                } else {
-                    self.get_screen_bg_tile(x, self.ly)
-                };
-                let l = t.fetch(self);
-                self.ppu.load(&t, l);
-            }
-            assert_eq!(self.ppu.need_data(), false);
-            self.add_oams(oams, x, self.ly);
-
-            if x >= range.start + IGNORED_OFFSET as u8 {
-                let c: (u8, u8, u8, u8) = {
-                    let p = self.ppu.shift();
-                    self.bgp_shade(p)
-                };
-                let start = target_pixel * BYTES_PER_PIXEL;
-                lcd_line[start..start + BYTES_PER_PIXEL].copy_from_slice(&[c.0, c.1, c.2, c.3]);
-                target_pixel += 1;
-            } else {
-                self.ppu.shift();
-            }
-        }
-        self.ppu.clear();
-    }
+    ppu.clear();
 }
 
 #[derive(Copy, Clone)]
@@ -1013,7 +1036,7 @@ enum Tile {
 
 impl Tile {
     #[allow(dead_code)]
-    pub fn show(&self, display: &mut Display) {
+    pub fn show(&self, display: &DispMem) {
         let mut tmp: Tile = self.to_owned();
         for i in 0..display.sprite_size() {
             let c: &mut Coord = match tmp {
@@ -1048,7 +1071,7 @@ impl Tile {
             _ => unreachable!(),
         }
     }
-    pub fn fetch(&self, display: &mut Display) -> (Priority, Palette, u16) {
+    pub fn fetch(&self, display: &DispMem) -> (Priority, Palette, u16) {
         let (start, line_offset, flip_x, vbank) = match *self {
             Tile::Window(idx, coord) | Tile::BG(idx, coord) => {
                 let bytes_per_tile: u16 = 16;
@@ -1095,8 +1118,8 @@ impl Tile {
             }
         };
 
-        let b1 = Display::bank_vram(&mut display.vram, vbank)[start + (line_offset * 2)];
-        let b2 = Display::bank_vram(&mut display.vram, vbank)[start + (line_offset * 2) + 1];
+        let b1 = bank_vram_ro(&display.vram, vbank)[start + (line_offset * 2)];
+        let b2 = bank_vram_ro(&display.vram, vbank)[start + (line_offset * 2) + 1];
 
         let line = if flip_x {
             u16::from_le_bytes([b1.reverse_bits(), b2.reverse_bits()])
@@ -1252,6 +1275,15 @@ pub struct ColorPaletteControlCount {
 
 impl Addressable for Display {
     fn read_byte(&mut self, addr: u16) -> u8 {
+        self.mem.read_byte(addr)
+    }
+    fn write_byte(&mut self, addr: u16, v: u8) {
+        self.mem.write_byte(addr, v)
+    }
+}
+
+impl Addressable for DispMem {
+    fn read_byte(&mut self, addr: u16) -> u8 {
         match addr {
             0xFE00..=0xFE9F => {
                 let idx = ((addr & 0xff) >> 2) as usize;
@@ -1356,7 +1388,7 @@ impl Peripheral for Display {
         //     ]
         // };
 
-        let mut new_ly = self.ly;
+        let mut new_ly = self.mem.ly;
         self.unused_cycles += time;
         self.time += time;
         let next_state = match self.state {
@@ -1373,39 +1405,48 @@ impl Peripheral for Display {
                 if self.unused_cycles >= 43 * cycles::GB {
                     /* do work */
                     self.ppu.clear();
-                    let orig_oams =
-                        std::mem::replace(&mut self.oam_searched, Vec::with_capacity(0));
-                    {
-                        let (true_x, _true_y) = self.get_bg_true(0, self.ly);
-                        let has_window = self.lcdc.get_window_enable() && self.ly >= self.wy;
-                        let bg_split = if has_window {
-                            std::cmp::min(std::cmp::max(7, self.wx) - 7, SCREEN_X as u8)
-                        } else {
-                            SCREEN_X as u8
-                        };
-                        let mut split_line = real.lcd.as_mut().map(|lcd| {
-                            let y = self.ly as usize;
-                            let line_start = SCREEN_X * y * BYTES_PER_PIXEL;
-                            let line_end = SCREEN_X * (y + 1) * BYTES_PER_PIXEL;
-                            let (l, r) = lcd[line_start..line_end]
-                                .split_at_mut(bg_split as usize * BYTES_PER_PIXEL);
-                            [
-                                (l, true_x % 8, 0..bg_split, false),
-                                (r, 0, bg_split..SCREEN_X as u8, true),
-                            ]
-                        });
-                        if let Some(windows) = split_line.as_mut() {
-                            for w in windows {
-                                let (line, offset, range, is_win) = w;
-                                let mut oams = orig_oams.iter().peekable();
-                                self.draw_window(line, &mut oams, *is_win, *offset, range);
-                            }
-                        };
+                    // let orig_oams =
+                    //std::mem::replace(&mut self.oam_searched, Vec::with_capacity(0));
+                    //{
+                    let (true_x, _true_y) = self.mem.get_bg_true(0, self.mem.ly);
+                    let has_window =
+                        self.mem.lcdc.get_window_enable() && self.mem.ly >= self.mem.wy;
+                    let bg_split = if has_window {
+                        std::cmp::min(std::cmp::max(7, self.mem.wx) - 7, SCREEN_X as u8)
+                    } else {
+                        SCREEN_X as u8
+                    };
+                    let mut split_line = real.lcd.as_mut().map(|lcd| {
+                        let y = self.mem.ly as usize;
+                        let line_start = SCREEN_X * y * BYTES_PER_PIXEL;
+                        let line_end = SCREEN_X * (y + 1) * BYTES_PER_PIXEL;
+                        let (l, r) = lcd[line_start..line_end]
+                            .split_at_mut(bg_split as usize * BYTES_PER_PIXEL);
+                        [
+                            (l, true_x % 8, 0..bg_split, false),
+                            (r, 0, bg_split..SCREEN_X as u8, true),
+                        ]
+                    });
+                    if let Some(windows) = split_line.as_mut() {
+                        for w in windows {
+                            let (line, offset, range, is_win) = w;
+                            let mut oams = self.oam_searched.iter().peekable();
+                            draw_window(
+                                &mut self.ppu,
+                                &self.mem,
+                                line,
+                                &mut oams,
+                                *is_win,
+                                *offset,
+                                range,
+                            );
+                        }
+                    };
 
-                        self.ppu.clear();
-                        self.unused_cycles -= 43 * cycles::GB;
-                    }
-                    std::mem::replace(&mut self.oam_searched, orig_oams);
+                    self.ppu.clear();
+                    self.unused_cycles -= 43 * cycles::GB;
+                    //  }
+                    //std::mem::replace(&mut self.oam_searched, orig_oams);
                     DisplayState::HBlank
                 } else {
                     self.state
@@ -1454,29 +1495,31 @@ impl Peripheral for Display {
                 DisplayState::HBlank => StatMode::HBlank,
                 DisplayState::PixelTransfer => StatMode::PixelTransfer,
             };
-            self.stat.set_mode(new_mode);
-            assert_eq!(new_mode, self.stat.get_mode());
+            self.mem.stat.set_mode(new_mode);
+            assert_eq!(new_mode, self.mem.stat.get_mode());
             self.state = next_state;
         }
 
         let mut new_interrupt = Interrupt::new();
-        if new_ly != self.ly {
-            self.ly = new_ly;
-            self.stat.set_coincidence_flag(self.ly == self.lyc);
-            if self.stat.get_coincidence() {
-                new_interrupt.set_lcdc(self.stat.get_coincidence_flag());
+        if new_ly != self.mem.ly {
+            self.mem.ly = new_ly;
+            self.mem
+                .stat
+                .set_coincidence_flag(self.mem.ly == self.mem.lyc);
+            if self.mem.stat.get_coincidence() {
+                new_interrupt.set_lcdc(self.mem.stat.get_coincidence_flag());
             }
         }
 
         if changed_state {
-            if self.stat.get_mode() == StatMode::VBlank {
+            if self.mem.stat.get_mode() == StatMode::VBlank {
                 new_interrupt.set_vblank(true);
             }
             let lcdc = new_interrupt.get_lcdc()
-                || match self.stat.get_mode() {
-                    StatMode::OAM => self.stat.get_oam(),
-                    StatMode::VBlank => self.stat.get_vblank(),
-                    StatMode::HBlank => self.stat.get_hblank(),
+                || match self.mem.stat.get_mode() {
+                    StatMode::OAM => self.mem.stat.get_oam(),
+                    StatMode::VBlank => self.mem.stat.get_vblank(),
+                    StatMode::HBlank => self.mem.stat.get_hblank(),
                     StatMode::PixelTransfer => false,
                 };
             new_interrupt.set_lcdc(lcdc);

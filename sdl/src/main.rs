@@ -362,12 +362,10 @@ fn main() -> Result<(), std::io::Error> {
                 std::io::ErrorKind::Other,
                 format!("Unknown Extension {}", e),
             )),
-            None => {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Invalid Extension"),
-            ))
-            }
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Invalid Extension"),
+            )),
         },
     };
 
