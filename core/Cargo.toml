@@ -12,8 +12,8 @@ vcd = "0.4.0"
 lazy_static = "1.1.0"
 dimensioned = "0.7.0"
 num-traits = "0.2.8"
-#modular-bitfield = "0.6.1"
-modular-bitfield = {path = "../../modular-bitfield"}
+modular-bitfield = { git = "https://github.com/Robbepop/modular-bitfield", rev="d99ca742"}
+#modular-bitfield = {path = "../../modular-bitfield"}
 
 [features]
 vcd_dump = []
