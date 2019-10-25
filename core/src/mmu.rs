@@ -13,7 +13,7 @@ use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use crate::sound::Mixer;
 
 use std::io;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Seek, SeekFrom, Write};
 enum_from_primitive! {
     #[derive(Debug, PartialEq, Clone, Copy)]
     pub enum MemRegister {
@@ -352,16 +352,16 @@ impl<'a> MMUInternal<'a> {
             if self.dma.inner_mut().is_active() {
                 self.dma.force_step(data, cycles);
                 for (s, d) in self.dma.inner_mut().copy_bytes() {
-                    let v = self.read_byte_noeffect(s);
-                    self.write_byte_noeffect(d, v);
+                    let v = self.read_byte_noeffect(data, s);
+                    self.write_byte_noeffect(data, d, v);
                 }
             }
             if self.hdma.inner_mut().is_active() {
                 /* TODO: This needs to hook into Hblanks in some cases */
                 self.hdma.force_step(data, cycles);
                 for (s, d) in self.hdma.inner_mut().copy_bytes() {
-                    let v = self.read_byte_noeffect(s);
-                    self.write_byte_noeffect(d, v);
+                    let v = self.read_byte_noeffect(data, s);
+                    self.write_byte_noeffect(data, d, v);
                 }
             }
             self.walk_peripherals(|p| {
@@ -486,120 +486,98 @@ impl<'a, 'b, 'c> MMU<'a, 'b, 'c> {
         r
     }
     pub fn read_byte_noeffect(&mut self, addr: u16) -> u8 {
-        self.bus.sync_peripherals(&mut self.data, false);
-        self.bus
-            .lookup_peripheral(&mut addr.clone())
-            .force_step(&mut self.data, cycles::Cycles::new(0));
-        let byte = self.bus.read_byte_noeffect(addr);
-        self.bus
-            .lookup_peripheral(&mut addr.clone())
-            .force_step(&mut self.data, cycles::Cycles::new(0));
-        byte
+        self.bus.read_byte_noeffect(&mut self.data, addr)
     }
     pub fn write_byte_noeffect(&mut self, addr: u16, v: u8) {
-        self.bus.sync_peripherals(&mut self.data, false);
-        self.bus
-            .lookup_peripheral(&mut addr.clone())
-            .force_step(&mut self.data, cycles::Cycles::new(0));
-        self.bus.write_byte_noeffect(addr, v);
-        self.bus
-            .lookup_peripheral(&mut addr.clone())
-            .force_step(&mut self.data, cycles::Cycles::new(0));
+        self.bus.write_byte_noeffect(&mut self.data, addr, v);
     }
 }
 
 impl Addressable for MMU<'_, '_, '_> {
     fn read_byte(&mut self, addr: u16) -> u8 {
-        self.bus.sync_peripherals(&mut self.data, false);
-        self.bus
-            .lookup_peripheral(&mut addr.clone())
-            .force_step(&mut self.data, cycles::Cycles::new(0));
-        let byte = self.bus.read_byte(addr);
-        self.bus
-            .lookup_peripheral(&mut addr.clone())
-            .force_step(&mut self.data, cycles::Cycles::new(0));
-        byte
+        self.bus.read_byte(&mut self.data, addr)
     }
     fn write_byte(&mut self, addr: u16, v: u8) {
-        self.bus.sync_peripherals(&mut self.data, false);
-        self.bus
-            .lookup_peripheral(&mut addr.clone())
-            .force_step(&mut self.data, cycles::Cycles::new(0));
-        self.bus.write_byte(addr, v);
-        self.bus
-            .lookup_peripheral(&mut addr.clone())
-            .force_step(&mut self.data, cycles::Cycles::new(0));
+        self.bus.write_byte(&mut self.data, addr, v);
     }
 }
 
 impl MMUInternal<'_> {
-    fn read_byte_noeffect(&mut self, mut addr: u16) -> u8 {
-        let v = self.lookup_peripheral(&mut addr).read_byte(addr);
+    fn read_byte_noeffect(&mut self, data: &mut PeripheralData, mut addr: u16) -> u8 {
+        self.sync_peripherals(data, false);
+        let p = self.lookup_peripheral(&mut addr);
+        p.force_step(data, cycles::Cycles::new(0));
+        let v = p.read_byte(addr);
+        p.force_step(data, cycles::Cycles::new(0));
         self.main_bus(false, addr, v);
         v
     }
-    fn read_byte(&mut self, addr: u16) -> u8 {
+    fn read_byte(&mut self, data: &mut PeripheralData, addr: u16) -> u8 {
         self.cycles_passed(1);
-        self.read_byte_noeffect(addr)
+        self.read_byte_noeffect(data, addr)
     }
-    fn write_byte_noeffect(&mut self, mut addr: u16, v: u8) {
+    fn write_byte_noeffect(&mut self, data: &mut PeripheralData, mut addr: u16, v: u8) {
         self.main_bus(true, addr, v);
+        self.sync_peripherals(data, false);
         if addr == 0xff50 {
             self.disable_bios();
         } else {
-            self.lookup_peripheral(&mut addr).write_byte(addr, v);
+            let p = self.lookup_peripheral(&mut addr);
+            p.force_step(data, cycles::Cycles::new(0));
+            p.write_byte(addr, v);
+            p.force_step(data, cycles::Cycles::new(0));
         }
     }
-    fn write_byte(&mut self, addr: u16, v: u8) {
+    fn write_byte(&mut self, data: &mut PeripheralData, addr: u16, v: u8) {
         self.cycles_passed(1);
-        self.write_byte_noeffect(addr, v);
+        self.write_byte_noeffect(data, addr, v);
     }
 }
 
-impl Read for MMUInternal<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        for (i, b) in buf.iter_mut().enumerate() {
-            *b = self.read_byte(self.seek_pos);
-            if self.seek_pos == std::u16::MAX {
-                return Ok(i);
-            }
-            self.seek_pos = self.seek_pos.saturating_add(1);
-        }
-        Ok(buf.len())
-    }
-}
+// impl Read for MMUInternal<'_> {
+//     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+//         for (i, b) in buf.iter_mut().enumerate() {
+//             *b = self.read_byte(self.seek_pos);
+//             if self.seek_pos == std::u16::MAX {
+//                 return Ok(i);
+//             }
+//             self.seek_pos = self.seek_pos.saturating_add(1);
+//         }
+//         Ok(buf.len())
+//     }
+// }
 
-impl Read for MMU<'_, '_, '_> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.bus.read(buf)
-    }
-}
+// impl Read for MMU<'_, '_, '_> {
+//     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+//         self.bus.read(buf)
+//     }
+// }
 
-impl Write for MMUInternal<'_> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        for (i, w) in buf.iter().enumerate() {
-            self.write_byte(self.seek_pos, *w);
-            if self.seek_pos == std::u16::MAX {
-                return Ok(i);
-            }
-            self.seek_pos = self.seek_pos.saturating_add(1);
-        }
-        Ok(buf.len())
-    }
+// impl Write for MMUInternal<'_> {
+//     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+//         for (i, w) in buf.iter().enumerate() {
+//             self.write_byte(self.seek_pos, *w);
+//             if self.seek_pos == std::u16::MAX {
+//                 return Ok(i);
+//             }
+//             self.seek_pos = self.seek_pos.saturating_add(1);
+//         }
+//         Ok(buf.len())
+//     }
 
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-impl Write for MMU<'_, '_, '_> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.bus.write(buf)
-    }
+//     fn flush(&mut self) -> io::Result<()> {
+//         Ok(())
+//     }
+// }
+// impl Write for MMU<'_, '_, '_> {
+//     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+//         self.bus.write(buf)
+//     }
 
-    fn flush(&mut self) -> io::Result<()> {
-        self.bus.flush()
-    }
-}
+//     fn flush(&mut self) -> io::Result<()> {
+//         self.bus.flush()
+//     }
+// }
 
 fn apply_offset(mut pos: u16, seek: i64) -> io::Result<u64> {
     let seek = if seek > i64::from(std::i16::MAX) {

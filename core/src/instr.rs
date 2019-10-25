@@ -722,7 +722,7 @@ impl FormatCode for RelAddr {
     fn to_code(&self, instr: std::ops::Range<u16>, remap: &NameAddressFn) -> String {
         use std::convert::TryFrom;
         let rel = u16::try_from(self.0.abs()).unwrap();
-        let pc = instr.end - 1; /* jr computes from 1 byte back */
+        let pc = instr.end.wrapping_sub(1); /* jr computes from 1 byte back */
         let addr = if self.0 > 0 {
             pc.wrapping_add(rel)
         } else {
@@ -924,7 +924,7 @@ pub fn disasm<R: Addressable, W: Write, F: Fn(&Instr) -> bool>(
             for _ in next_addr.wrapping_sub(start)..3 {
                 write!(buf, "   ")?;
             }
-            writeln!(buf, "{}", op)?;
+            write!(buf, "{}", op)?;
         }
         start = next_addr;
     }

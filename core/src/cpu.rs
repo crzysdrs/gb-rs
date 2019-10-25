@@ -6,7 +6,6 @@ use crate::mmu::MemRegister;
 use crate::peripherals::Addressable;
 use modular_bitfield::prelude::*;
 use std::convert::TryFrom;
-use std::io::{Read, Seek, SeekFrom, Write};
 
 macro_rules! alu_mem {
     ($s:expr, $mem:expr, $addr:expr, $v:expr) => {
@@ -325,11 +324,10 @@ impl CPU {
         self.trace = !self.trace;
     }
     fn pop16(&mut self, mem: &mut MMU, t: Reg16) {
-        mem.bus
-            .seek(SeekFrom::Start(u64::from(self.reg.read(Reg16::SP))))
-            .expect("Can't request outside of memory");
         let mut buf = [0u8; 2];
-        mem.read_exact(&mut buf).expect("Memory wraps");
+        let addr = self.reg.read(Reg16::SP);
+        buf[0] = mem.read_byte(addr);
+        buf[1] = mem.read_byte(addr.wrapping_add(1));
         let res = u16::from_le_bytes(buf);
         self.reg.write(t, res);
         self.reg
@@ -342,10 +340,10 @@ impl CPU {
         let item = self.reg.read(v);
         self.reg
             .write(Reg16::SP, self.reg.read(Reg16::SP).wrapping_sub(2));
-        mem.bus
-            .seek(SeekFrom::Start(u64::from(self.reg.read(Reg16::SP))))
-            .expect("Can't request outside of memory");
-        mem.write_all(&item.to_le_bytes()).expect("Memory wraps");
+        let addr = self.reg.read(Reg16::SP);
+        let bytes = item.to_le_bytes();
+        mem.write_byte(addr, bytes[0]);
+        mem.write_byte(addr.wrapping_add(1), bytes[1]);
     }
 
     pub fn initialize(&mut self, cgb: CGBStatus, mem: &mut MMU) {
@@ -622,11 +620,10 @@ impl CPU {
                 self.reg.write(x0, mem.read_byte(0xff00 + u16::from(x1)));
             }
             Instr::LD_ia16_r16(x0, x1) => {
-                mem.bus
-                    .seek(SeekFrom::Start(u64::from(u16::from(x0))))
-                    .expect("All addresses valid");
-                mem.write_all(&u16::to_le_bytes(self.reg.read(x1)))
-                    .expect("Memory wraps");
+                let bytes = u16::to_le_bytes(self.reg.read(x1));
+                let addr = u16::from(x0);
+                mem.write_byte(addr, bytes[0]);
+                mem.write_byte(addr.wrapping_add(1), bytes[1]);
             }
             Instr::LD_ia16_r8(x0, x1) => {
                 mem.write_byte(x0.into(), self.reg.read(x1));

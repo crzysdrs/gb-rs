@@ -174,12 +174,14 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         last_ticks = ticks;
         let start_frame = timer_sub.performance_counter();
         let cycles = gb.cpu_cycles();
-
+        let start = gb.cpu_cycles();
+        let time = gb::cycles::SECOND / 60;
         'frame: loop {
             let mut count = 0;
+            let remain = time - (gb.cpu_cycles() - start);
             let r = texture.with_lock(sdl2::rect::Rect::new(0, 0, 160, 144), |mut slice, _size| {
                 gb.step(
-                    Some(gb::cycles::SECOND / 60),
+                    Some(remain),
                     &mut PeripheralData::new(
                         Some(&mut slice),
                         //None
@@ -216,7 +218,9 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                 GBReason::Dead => {
                     break 'running;
                 }
-                GBReason::Timeout => break 'frame,
+                GBReason::Timeout => {
+                    break 'frame;
+                }
             }
         }
 
