@@ -57,13 +57,29 @@ impl Addressable for Timer {
     }
 }
 impl Peripheral for Timer {
+    fn next_step(&self) -> Option<cycles::CycleCount> {
+        if self.TAC.get_start() {
+            let count = Timer::divider(self.freq());
+            let need = u64::from(0 - self.TIMA);
+            let required = if need == 0 {
+                cycles::CycleCount::new(0)
+            } else if need == 1 {
+                self.timer.next_ready(count)
+            } else {
+                self.timer.next_ready(count) + count * (need - 1)
+            };
+            Some(required)
+        } else {
+            Some(cycles::CycleCount::new(std::u64::MAX))
+        }
+    }
     fn step(&mut self, _real: &mut PeripheralData, time: cycles::CycleCount) -> Option<Interrupt> {
         use std::convert::TryInto;
         if let Some(c) = self
             .div_timer
             .ready(time, Timer::divider(TimerSpeed::ICS_65536hz))
         {
-            self.DIV = self.DIV.wrapping_add(c.try_into().unwrap());
+            self.DIV = self.DIV.wrapping_add((c & 0xff).try_into().unwrap());
         }
         if self.TAC.get_start() {
             if let Some(add) = self.timer.ready(time, Timer::divider(self.freq())) {

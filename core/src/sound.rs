@@ -303,6 +303,13 @@ impl WaitTimer {
             acc: cycles::Cycles::new(0),
         }
     }
+    pub fn next_ready(&self, required: cycles::CycleCount) -> cycles::CycleCount {
+        if required > self.acc {
+            required - self.acc
+        } else {
+            cycles::CycleCount::new(0)
+        }
+    }
     pub fn ready(
         &mut self,
         new_cycles: cycles::CycleCount,
@@ -452,6 +459,11 @@ impl Addressable for Mixer {
 }
 
 impl Peripheral for Mixer {
+    fn next_step(&self) -> Option<cycles::CycleCount> {
+        /* the sound device does not generate any interrupts and only needs to
+        be updated when observed */
+        Some(cycles::CycleCount::new(std::u64::MAX))
+    }
     fn step(&mut self, real: &mut PeripheralData, cycles: cycles::CycleCount) -> Option<Interrupt> {
         let orig_status = *self.nr52;
         let mut status = *self.nr52;

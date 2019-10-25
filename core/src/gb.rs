@@ -95,6 +95,7 @@ impl<'a> GB<'a> {
         let finish_time = time.map(|x| x + self.mem.time());
         real.reset_vblank();
         let mut mmu = MMU::new(&mut self.mem, real);
+
         while finish_time
             .map(|x| mmu.bus.time() < x)
             .unwrap_or_else(|| true)
@@ -102,15 +103,18 @@ impl<'a> GB<'a> {
             self.cpu.execute(&mut mmu);
 
             let time = mmu.bus.time();
-            mmu.sync_peripherals();
+            mmu.sync_peripherals(false);
             assert_eq!(time, mmu.bus.time());
             if self.cpu.is_dead(&mmu) {
+                mmu.sync_peripherals(true);
                 /* cpu permanently halted */
                 return GBReason::Dead;
             } else if mmu.ack_vblank() {
+                mmu.sync_peripherals(true);
                 return GBReason::VSync;
             }
         }
+        mmu.sync_peripherals(true);
         GBReason::Timeout
     }
     // #[cfg(test)]

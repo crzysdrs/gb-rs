@@ -1,4 +1,5 @@
 use super::controller::Controller;
+use super::cpu::Interrupt;
 use super::display::Display;
 use super::fakemem::FakeMem;
 use super::mem::Mem;
@@ -127,6 +128,76 @@ impl Addressable for MemReg {
     }
 }
 
+struct SyncPeripheral<T>
+where
+    T: Peripheral,
+{
+    last_sync: cycles::CycleCount,
+    next_sync: Option<cycles::CycleCount>,
+    peripheral: T,
+}
+
+impl<T> SyncPeripheral<T>
+where
+    T: Peripheral,
+{
+    fn new(peripheral: T) -> SyncPeripheral<T> {
+        SyncPeripheral {
+            last_sync: cycles::CycleCount::new(0),
+            next_sync: None,
+            peripheral,
+        }
+    }
+    pub fn inner(&self) -> &T {
+        &self.peripheral
+    }
+    pub fn inner_mut(&mut self) -> &mut T {
+        &mut self.peripheral
+    }
+}
+
+impl<T> Peripheral for SyncPeripheral<T>
+where
+    T: Peripheral,
+{
+    fn next_step(&self) -> Option<cycles::CycleCount> {
+        self.peripheral.next_step()
+    }
+    fn step(&mut self, real: &mut PeripheralData, time: cycles::CycleCount) -> Option<Interrupt> {
+        self.last_sync += time;
+        if let Some(next_sync) = self.next_sync {
+            if next_sync > time {
+                self.next_sync = Some(next_sync - time);
+                return None;
+            }
+        }
+        let result = self.peripheral.force_step(real, self.last_sync);
+        self.last_sync = cycles::CycleCount::new(0);
+        self.next_sync = self.peripheral.next_step();
+        result
+    }
+    fn force_step(
+        &mut self,
+        real: &mut PeripheralData,
+        time: cycles::CycleCount,
+    ) -> Option<Interrupt> {
+        self.next_sync = None;
+        self.step(real, time)
+    }
+}
+
+impl<T> Addressable for SyncPeripheral<T>
+where
+    T: Peripheral,
+{
+    fn read_byte(&mut self, addr: u16) -> u8 {
+        self.peripheral.read_byte(addr)
+    }
+    fn write_byte(&mut self, addr: u16, v: u8) {
+        self.peripheral.write_byte(addr, v);
+    }
+}
+
 pub struct MMU<'a, 'b, 'c> {
     pub bus: &'b mut MMUInternal<'a>,
     data: &'b mut PeripheralData<'c>,
@@ -135,11 +206,11 @@ pub struct MMU<'a, 'b, 'c> {
 pub struct MMUInternal<'a> {
     seek_pos: u16,
     bios_exists: bool,
-    timer: Timer,
-    display: Display,
+    timer: SyncPeripheral<Timer>,
+    display: SyncPeripheral<Display>,
     controller: Controller,
-    dma: DMA,
-    hdma: HDMA,
+    dma: SyncPeripheral<DMA>,
+    hdma: SyncPeripheral<HDMA>,
     svbk: MemReg, //TODO: GBC
     key1: MemReg, //TODO: GBC
     bios: Mem,
@@ -149,7 +220,7 @@ pub struct MMUInternal<'a> {
     serial: Serial<'a>,
     ram1: Mem,
     ram2: Mem,
-    sound: Mixer,
+    sound: SyncPeripheral<Mixer>,
     interrupt_flag: MemReg,
     interrupt_enable: MemReg,
     time: cycles::CycleCount,
@@ -198,17 +269,17 @@ impl<'a> MMUInternal<'a> {
             cart,
             svbk: MemReg::new(0, 0b111, 0b111),
             key1: MemReg::new(0, !0, 0b1),
-            display: Display::new(cart_mode),
-            timer: Timer::new(),
+            display: SyncPeripheral::new(Display::new(cart_mode)),
+            timer: SyncPeripheral::new(Timer::new()),
             serial: Serial::new(serial),
             controller: Controller::new(),
-            sound: Mixer::new(audio_sample_rate), //Mem::new(false, 0xff10, vec![0u8; 0xff3f - 0xff10 + 1]),
+            sound: SyncPeripheral::new(Mixer::new(audio_sample_rate)),
             ram0,
             fake_mem: FakeMem::new(),
             ram1,
             ram2,
-            dma: DMA::new(),
-            hdma: HDMA::new(),
+            dma: SyncPeripheral::new(DMA::new()),
+            hdma: SyncPeripheral::new(HDMA::new()),
             interrupt_flag,
             interrupt_enable,
         }
@@ -272,31 +343,36 @@ impl<'a> MMUInternal<'a> {
             _ => &mut self.fake_mem as &mut dyn Peripheral,
         }
     }
-    pub fn sync_peripherals(&mut self, data: &mut PeripheralData) {
+    pub fn sync_peripherals(&mut self, data: &mut PeripheralData, force: bool) {
         let time = self.time;
-        if self.last_sync < self.time {
-            use crate::cpu::Interrupt;
+        if force || self.last_sync < self.time {
             use std::convert::TryFrom;
             let mut interrupt_flag = Interrupt::new();
             let cycles = self.time - self.last_sync;
-            if self.dma.is_active() {
-                self.dma.step(data, cycles);
-                for (s, d) in self.dma.copy_bytes() {
+            if self.dma.inner_mut().is_active() {
+                self.dma.force_step(data, cycles);
+                for (s, d) in self.dma.inner_mut().copy_bytes() {
                     let v = self.read_byte_noeffect(s);
                     self.write_byte_noeffect(d, v);
                 }
             }
-            if self.hdma.is_active() {
+            if self.hdma.inner_mut().is_active() {
                 /* TODO: This needs to hook into Hblanks in some cases */
-                self.hdma.step(data, cycles);
-                for (s, d) in self.hdma.copy_bytes() {
+                self.hdma.force_step(data, cycles);
+                for (s, d) in self.hdma.inner_mut().copy_bytes() {
                     let v = self.read_byte_noeffect(s);
                     self.write_byte_noeffect(d, v);
                 }
             }
             self.walk_peripherals(|p| {
-                if let Some(i) = p.step(data, cycles) {
-                    interrupt_flag |= i;
+                if force {
+                    if let Some(i) = p.force_step(data, cycles) {
+                        interrupt_flag |= i;
+                    }
+                } else {
+                    if let Some(i) = p.step(data, cycles) {
+                        interrupt_flag |= i;
+                    }
                 }
             });
             let flags = Interrupt::try_from(&[self.interrupt_flag.reg()][..]).unwrap();
@@ -315,6 +391,7 @@ impl<'a> MMUInternal<'a> {
             }
             self.last_sync = self.time;
         }
+        //after pseudo-syncing, we need to make sure that a force sync is done on the target
         assert_eq!(self.time, time);
     }
     pub fn time(&self) -> cycles::CycleCount {
@@ -343,10 +420,10 @@ impl<'a> MMUInternal<'a> {
 
     #[allow(dead_code)]
     pub fn get_display(&self) -> &Display {
-        &self.display
+        self.display.inner()
     }
     pub fn get_display_mut(&mut self) -> &mut Display {
-        &mut self.display
+        self.display.inner_mut()
     }
     pub fn disable_bios(&mut self) {
         self.bios_exists = false;
@@ -400,8 +477,8 @@ impl<'a, 'b, 'c> MMU<'a, 'b, 'c> {
         MMU { bus, data }
     }
 
-    pub fn sync_peripherals(&mut self) {
-        self.bus.sync_peripherals(&mut self.data);
+    pub fn sync_peripherals(&mut self, force: bool) {
+        self.bus.sync_peripherals(&mut self.data, force);
     }
     pub fn ack_vblank(&mut self) -> bool {
         let r = self.data.vblank;
@@ -409,23 +486,49 @@ impl<'a, 'b, 'c> MMU<'a, 'b, 'c> {
         r
     }
     pub fn read_byte_noeffect(&mut self, addr: u16) -> u8 {
-        self.bus.sync_peripherals(&mut self.data);
-        self.bus.read_byte_noeffect(addr)
+        self.bus.sync_peripherals(&mut self.data, false);
+        self.bus
+            .lookup_peripheral(&mut addr.clone())
+            .force_step(&mut self.data, cycles::Cycles::new(0));
+        let byte = self.bus.read_byte_noeffect(addr);
+        self.bus
+            .lookup_peripheral(&mut addr.clone())
+            .force_step(&mut self.data, cycles::Cycles::new(0));
+        byte
     }
     pub fn write_byte_noeffect(&mut self, addr: u16, v: u8) {
-        self.bus.sync_peripherals(&mut self.data);
+        self.bus.sync_peripherals(&mut self.data, false);
+        self.bus
+            .lookup_peripheral(&mut addr.clone())
+            .force_step(&mut self.data, cycles::Cycles::new(0));
         self.bus.write_byte_noeffect(addr, v);
+        self.bus
+            .lookup_peripheral(&mut addr.clone())
+            .force_step(&mut self.data, cycles::Cycles::new(0));
     }
 }
 
 impl Addressable for MMU<'_, '_, '_> {
     fn read_byte(&mut self, addr: u16) -> u8 {
-        self.bus.sync_peripherals(&mut self.data);
-        self.bus.read_byte(addr)
+        self.bus.sync_peripherals(&mut self.data, false);
+        self.bus
+            .lookup_peripheral(&mut addr.clone())
+            .force_step(&mut self.data, cycles::Cycles::new(0));
+        let byte = self.bus.read_byte(addr);
+        self.bus
+            .lookup_peripheral(&mut addr.clone())
+            .force_step(&mut self.data, cycles::Cycles::new(0));
+        byte
     }
     fn write_byte(&mut self, addr: u16, v: u8) {
-        self.bus.sync_peripherals(&mut self.data);
+        self.bus.sync_peripherals(&mut self.data, false);
+        self.bus
+            .lookup_peripheral(&mut addr.clone())
+            .force_step(&mut self.data, cycles::Cycles::new(0));
         self.bus.write_byte(addr, v);
+        self.bus
+            .lookup_peripheral(&mut addr.clone())
+            .force_step(&mut self.data, cycles::Cycles::new(0));
     }
 }
 

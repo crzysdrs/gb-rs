@@ -54,7 +54,17 @@ impl<'a> PeripheralData<'a> {
 }
 
 pub trait Peripheral: Addressable {
+    fn force_step(
+        &mut self,
+        real: &mut PeripheralData,
+        time: cycles::CycleCount,
+    ) -> Option<Interrupt> {
+        self.step(real, time)
+    }
     fn step(&mut self, _real: &mut PeripheralData, _time: cycles::CycleCount) -> Option<Interrupt> {
+        None
+    }
+    fn next_step(&self) -> Option<cycles::CycleCount> {
         None
     }
 }
