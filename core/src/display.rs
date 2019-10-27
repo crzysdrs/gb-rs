@@ -412,10 +412,9 @@ impl Display {
                     .map({
                         let mode = self.mem.cgb_mode;
                         move |(i, oam)| {
-                            let priority = if let DisplayMode::CGBCompat = mode {
-                                i
-                            } else {
-                                usize::try_from(oam.x).unwrap()
+                            let priority = match mode {
+                                DisplayMode::CGBCompat | DisplayMode::CGB => i,
+                                _ => usize::try_from(oam.x).unwrap(),
                             };
                             (priority, *oam)
                         }
@@ -1133,7 +1132,7 @@ impl Tile {
             DisplayMode::CGB => true,
             DisplayMode::StrictGB | DisplayMode::CGBCompat => false,
         };
-        let low_priority = std::usize::MAX;
+        let high_priority = 0;
         let (priority, palette) = match *self {
             Tile::Sprite(p, oam, _) => {
                 let priority = if oam.flags.get_priority() {
@@ -1155,15 +1154,15 @@ impl Tile {
                     let bgmap = idx.1;
                     let palette_number = bgmap.get_color_palette();
                     (
-                        if bgmap.get_priority() != 0 {
+                        if bgmap.get_priority() == 0 {
                             Priority::BG
                         } else {
-                            Priority::Obj(low_priority)
+                            Priority::Obj(high_priority)
                         },
                         Palette::BGColor(palette_number),
                     )
                 } else {
-                    (Priority::Obj(low_priority), Palette::BG)
+                    (Priority::BG, Palette::BG)
                 }
             }
         };
@@ -1171,7 +1170,7 @@ impl Tile {
     }
 }
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Eq)]
 enum PaletteShade {
     Empty,
     Low,
@@ -1212,34 +1211,17 @@ impl PPU {
             match palette {
                 Palette::OBPColor(_) | Palette::OBP1 | Palette::OBP0 => {
                     if p != PaletteShade::Empty {
-                        match (&mut self.shift[x], priority, p) {
-                            (old @ Pixel(_, Palette::OBP0, _), _, _)
-                            | (old @ Pixel(_, Palette::OBP1, _), _, _)
-                            | (old @ Pixel(_, Palette::OBPColor(_), _), _, _) => {
-                                match (old.0, priority) {
-                                    (Priority::Obj(old_pri), Priority::Obj(new_pri))
-                                        if old_pri < new_pri =>
-                                    { /* preserve old object */ }
-                                    _ => *old = Pixel(priority, palette, p),
-                                }
-                            }
-                            (
-                                old @ Pixel(Priority::BG, _, PaletteShade::Empty),
-                                priority,
-                                shade,
-                            )
-                            | (
-                                old @ Pixel(Priority::Obj(_), _, _),
-                                priority @ Priority::Obj(_),
-                                shade,
-                            )
-                            | (
-                                old @ Pixel(Priority::Obj(_), _, PaletteShade::Empty),
-                                priority @ Priority::BG,
-                                shade,
-                            ) => *old = Pixel(priority, palette, shade),
-                            _ => { /* preserve background */ }
+                        let old = &mut self.shift[x];
+                        let overwrite = match (old.0, priority) {
+                            (Priority::BG, Priority::BG) => old.2 == PaletteShade::Empty,
+                            (Priority::BG, _) => true,
+                            (Priority::Obj(p1), Priority::Obj(p2)) => p1 > p2,
+                            (Priority::Obj(_), _) => false,
                         };
+
+                        if overwrite {
+                            *old = Pixel(priority, palette, p);
+                        }
                     }
                 }
                 Palette::BGColor(_) | Palette::BG => {
