@@ -19,7 +19,6 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
-    let timer_sub = sdl_context.timer().unwrap();
 
     // the window is the representation of a window in your operating system,
     // however you can only manipulate properties of that window, like its size, whether it's
@@ -70,24 +69,12 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         .unwrap();
 
     let mut controls: u8 = 0xff;
-
-    macro_rules! control_seq {
-        ( $event:path, $key:pat) => {
-            $event {
-                keycode: Some($key),
-                repeat: false,
-                ..
-            }
-        }
-    }
-
-    let mut last_ticks = timer_sub.performance_counter();
-    let mut frames = 0;
     let desired_spec = AudioSpecDesired {
         freq: Some(16384 * 4),
         channels: Some(2),
         samples: None,
     };
+    //let mut frames = 0;
     assert_eq!((4_194_304 / 4) % desired_spec.freq.unwrap(), 0);
     let audio_subsystem = sdl_context.audio().unwrap();
     let device = audio_subsystem
@@ -95,6 +82,19 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         .unwrap();
     device.resume();
 
+    fn match_keycode(key: Keycode) -> Option<GBControl> {
+        match key {
+            Keycode::Left => Some(GBControl::Left),
+            Keycode::Right => Some(GBControl::Right),
+            Keycode::Up => Some(GBControl::Up),
+            Keycode::Down => Some(GBControl::Down),
+            Keycode::Z => Some(GBControl::A),
+            Keycode::X => Some(GBControl::B),
+            Keycode::Tab => Some(GBControl::Select),
+            Keycode::Return => Some(GBControl::Start),
+            _ => None,
+        }
+    }
     'running: loop {
         // get the inputs here
         for event in event_pump.poll_iter() {
@@ -105,75 +105,33 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                     ..
                 } => break 'running,
                 Event::KeyDown {
-                    keycode: Some(Keycode::Space),
-                    repeat: false,
-                    ..
-                } => {}
-                Event::KeyDown {
                     keycode: Some(Keycode::T),
                     repeat: false,
                     ..
                 } => gb.toggle_trace(),
-                control_seq!(Event::KeyDown, Keycode::Right) => {
-                    controls &= !(GBControl::Right as u8);
+                Event::KeyDown {
+                    keycode: Some(k),
+                    repeat: false,
+                    ..
+                } => {
+                    if let Some(k) = match_keycode(k) {
+                        controls &= !(k as u8);
+                    }
                 }
-                control_seq!(Event::KeyDown, Keycode::Left) => {
-                    controls &= !(GBControl::Left as u8);
-                }
-                control_seq!(Event::KeyDown, Keycode::Up) => {
-                    controls &= !(GBControl::Up as u8);
-                }
-                control_seq!(Event::KeyDown, Keycode::Down) => {
-                    controls &= !(GBControl::Down as u8);
-                }
-                control_seq!(Event::KeyDown, Keycode::Z) => {
-                    controls &= !(GBControl::B as u8);
-                }
-                control_seq!(Event::KeyDown, Keycode::A) => {
-                    controls &= !(GBControl::A as u8);
-                }
-                control_seq!(Event::KeyDown, Keycode::Tab) => {
-                    controls &= !(GBControl::Select as u8);
-                }
-                control_seq!(Event::KeyDown, Keycode::Return) => {
-                    controls &= !(GBControl::Start as u8);
-                }
-                control_seq!(Event::KeyUp, Keycode::Right) => {
-                    controls |= GBControl::Right as u8;
-                }
-                control_seq!(Event::KeyUp, Keycode::Left) => {
-                    controls |= GBControl::Left as u8;
-                }
-                control_seq!(Event::KeyUp, Keycode::Up) => {
-                    controls |= GBControl::Up as u8;
-                }
-                control_seq!(Event::KeyUp, Keycode::Down) => {
-                    controls |= GBControl::Down as u8;
-                }
-                control_seq!(Event::KeyUp, Keycode::Z) => {
-                    controls |= GBControl::B as u8;
-                }
-                control_seq!(Event::KeyUp, Keycode::A) => {
-                    controls |= GBControl::A as u8;
-                }
-                control_seq!(Event::KeyUp, Keycode::Tab) => {
-                    controls |= GBControl::Select as u8;
-                }
-                control_seq!(Event::KeyUp, Keycode::Return) => {
-                    controls |= GBControl::Start as u8;
+                Event::KeyUp {
+                    keycode: Some(k),
+                    repeat: false,
+                    ..
+                } => {
+                    if let Some(k) = match_keycode(k) {
+                        controls |= k as u8;
+                    }
                 }
                 _ => {}
             }
         }
         //controls = !(GBControl::Up as u8 | GBControl::A as u8);
         gb.set_controls(controls);
-        let ticks = timer_sub.performance_counter();
-        let elapsed = ticks - last_ticks;
-        let freq = timer_sub.performance_frequency();
-        let elapsed_ms = elapsed as f64 / freq as f64;
-        last_ticks = ticks;
-        let start_frame = timer_sub.performance_counter();
-        let cycles = gb.cpu_cycles();
         let start = gb.cpu_cycles();
         let time = gb::cycles::SECOND / 60;
         'frame: loop {
@@ -199,40 +157,17 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                     ),
                 )
             });
-            let r = r.unwrap();
-            //let end_cycles = gb.cpu_cycles();
-
-            //let time: gb::dimensioned::si::Second<f64> = (end_cycles - cycles).into();
-            // println!(
-            //     "Seconds: {} Cycles: {} Sounds: {}",
-            //     time,
-            //     end_cycles - cycles,
-            //     count
-            // );
-            //assert_eq!(count, device.spec().freq as u32 / 60);
             match r {
-                GBReason::VSync => {
-                    frames += 1;
-                    //break 'frame;
+                Ok(GBReason::VSync) => {
+                    //frames += 1;
                 }
-                GBReason::Dead => {
+                Ok(GBReason::Dead) => {
                     break 'running;
                 }
-                GBReason::Timeout => {
+                Ok(GBReason::Timeout) => {
                     break 'frame;
                 }
-            }
-        }
-
-        #[cfg(not(Debug))]
-        {
-            let end_cycles = gb.cpu_cycles();
-            let end_frame = timer_sub.performance_counter();
-            let frame_time = (end_frame - start_frame) as f64 / freq as f64 * 1000.0;
-            if frame_time > 10.0 || elapsed_ms > 0.017 {
-                println!("Elapsed: {}", elapsed_ms * 1000.0);
-                println!("Frame Time: {} Frames {}", frame_time, frames);
-                println!("Cycles: {}", end_cycles - cycles);
+                _ => {}
             }
         }
         canvas.copy(&texture, None, None).unwrap();
