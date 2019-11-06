@@ -51,7 +51,13 @@ impl CartPhysical {
     }
 }
 
-impl Peripheral for Cart {}
+impl Peripheral for Cart {
+    fn next_step(&self) -> Option<cycles::CycleCount> {
+        /* the carts does not generate any interrupts and only needs to
+        be updated when observed */
+        Some(cycles::CycleCount::new(std::u64::MAX))
+    }
+}
 impl Addressable for Cart {
     fn read_byte(&mut self, addr: u16) -> u8 {
         self.cart.read_byte(addr)
