@@ -266,25 +266,28 @@ pub fn start() {
                     true
                 };
 
-                let mut data = PeripheralData::new(
-                    if remain < 2 * vsync_time {
-                        Some(&mut raw)
-                    } else {
-                        None
-                    },
-                    Some(AudioSpec {
-                        silence: 0,
-                        freq: sample_rate as u32,
-                        queue: Box::new(&mut sampler),
-                    }),
-                );
-                gb.set_controls(*keys.borrow());
-                let r = gb.step(Some(remain), &mut data);
+                let r = {
+                    let mut data = PeripheralData::new(
+                        if remain < 2 * vsync_time {
+                            Some(&mut raw)
+                        } else {
+                            None
+                        },
+                        Some(AudioSpec {
+                            silence: 0,
+                            freq: sample_rate as u32,
+                            queue: Box::new(&mut sampler),
+                        }),
+                    );
+                    gb.set_controls(*keys.borrow());
+                    gb.step(Some(remain), &mut data)
+                };
+
                 match r {
                     GBReason::VSync => {
                         if remain < 2 * gb::cycles::CycleCount::new(35112) {
                             let lcd = ImageData::new_with_u8_clamped_array_and_sh(
-                                Clamped(&mut raw),
+                                Clamped(raw.as_mut()),
                                 width as u32,
                                 height as u32,
                             )

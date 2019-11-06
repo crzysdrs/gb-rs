@@ -896,7 +896,7 @@ impl CPU {
             /* halt cpu and lcd display until button press */
             Instr::STOP => {
                 if mem.bus.speed_change() {
-                    mem.bus.toggle_speed();
+                    mem.toggle_speed();
                 } else {
                     self.halted = true;
                 };

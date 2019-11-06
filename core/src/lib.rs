@@ -319,8 +319,15 @@ mod tests {
         let bg_tiles = gb.get_mem().get_display().all_bgs();
         bg_tiles
             .chunks(32)
-            .map(|line| std::str::from_utf8(&line).unwrap().trim())
-            .intersperse(&"\n".to_owned())
+            .map(|line| {
+                let bytes = line
+                    .iter()
+                    .map(|t| t.get_idx(true) as u8)
+                    .collect::<Vec<_>>();
+                let s = std::str::from_utf8(bytes.as_slice()).unwrap();
+                s.trim().to_owned()
+            })
+            .intersperse("\n".to_owned())
             .map(|s| s.replace('\0', &" "))
             .filter(|s| s.len() > 0)
             .collect::<String>()

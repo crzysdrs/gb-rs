@@ -231,10 +231,6 @@ impl<'a> MMUInternal<'a> {
     pub fn double_speed(&self) -> bool {
         (self.key1.reg & (1 << 7)) != 0
     }
-    pub fn toggle_speed(&mut self) {
-        self.key1.reg &= !0x1; //remove speed request
-        self.key1.reg ^= 1 << 7;
-    }
     pub fn speed_change(&self) -> bool {
         (self.key1.reg & 0x1) != 0
     }
@@ -475,6 +471,14 @@ impl<'a, 'b, 'c> MMU<'a, 'b, 'c> {
     // }
     pub fn new(bus: &'b mut MMUInternal<'a>, data: &'b mut PeripheralData<'c>) -> Self {
         MMU { bus, data }
+    }
+    pub fn toggle_speed(&mut self) {
+        self.bus.key1.reg &= !0x1; //remove speed request
+        self.bus.key1.reg ^= 1 << 7;
+
+        self.bus.timer.force_step(self.data, cycles::Cycles::new(0));
+        self.bus.timer.inner_mut().toggle_double();
+        self.bus.timer.force_step(self.data, cycles::Cycles::new(0));
     }
 
     pub fn sync_peripherals(&mut self, force: bool) {

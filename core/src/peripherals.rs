@@ -3,8 +3,8 @@ use crate::cycles;
 #[cfg(feature = "vcd_dump")]
 use crate::VCDDump::VCD;
 
-pub struct AudioSpec<'a, T: 'a> {
-    pub queue: Box<&'a mut dyn FnMut(&[T]) -> bool>,
+pub struct AudioSpec<'a, T> {
+    pub queue: Box<dyn FnMut(&[T]) -> bool + 'a>,
     pub freq: u32,
     pub silence: T,
 }

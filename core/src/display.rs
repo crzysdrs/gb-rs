@@ -301,8 +301,42 @@ pub struct Display {
     time: cycles::CycleCount,
 }
 
+#[derive(Copy, Clone)]
+pub struct BGMapIdx(u8);
+
+impl BGMapIdx {
+    fn value(&self) -> u8 {
+        self.0
+    }
+    fn set_value(&mut self, v: u8) {
+        self.0 = v;
+    }
+    pub fn get_idx(&self, bg_win_tile_data_select: bool) -> usize {
+        if !bg_win_tile_data_select {
+            (256i16 + self.0 as i8 as i16) as usize
+        } else {
+            self.0 as usize
+        }
+    }
+}
+
+struct BGMap {
+    map: [BGMapIdx; 32 * 32],
+    flags: [BGMapFlag; 32 * 32],
+}
+
+impl Default for BGMap {
+    fn default() -> BGMap {
+        BGMap {
+            map: [BGMapIdx(0); 32 * 32],
+            flags: [BGMapFlag::new(); 32 * 32],
+        }
+    }
+}
+const BYTES_PER_TILE: usize = 16;
 struct DispMem {
-    vram: [u8; (2 * 8) << 10],
+    tiles: [[u8; 384 * BYTES_PER_TILE]; 2],
+    bgmaps: [BGMap; 2],
     oam: [SpriteAttribute; 40],
     scx: u8,
     scy: u8,
@@ -327,17 +361,6 @@ struct DispMem {
     objpalette: [[Color; 4]; 8],
 }
 
-fn bank_vram(vram: &mut [u8], bank: u8) -> &mut [u8] {
-    let start = usize::from(bank) * (8 << 10);
-    let len = 8 << 10;
-    &mut vram[start..start + len]
-}
-fn bank_vram_ro(vram: &[u8], bank: u8) -> &[u8] {
-    let start = usize::from(bank) * (8 << 10);
-    let len = 8 << 10;
-    &vram[start..start + len]
-}
-
 impl Display {
     pub fn new(cgb: CGBStatus) -> Display {
         let cgb_mode = match cgb {
@@ -359,7 +382,8 @@ impl Display {
             time: 0 * cycles::GB,
             mem: DispMem {
                 cgb_mode,
-                vram: [0; (2 * 8) << 10],
+                bgmaps: [BGMap::default(), BGMap::default()],
+                tiles: [[0; 384 * BYTES_PER_TILE]; 2],
                 oam: [SpriteAttribute {
                     x: 0,
                     y: 0,
@@ -698,8 +722,8 @@ impl Display {
     }
 
     #[cfg(test)]
-    pub fn all_bgs(&self) -> [u8; 1024] {
-        let mut bgs = [0u8; 1024];
+    pub fn all_bgs(&self) -> [BGMapIdx; 1024] {
+        let mut bgs = [BGMapIdx(0); 1024];
 
         for y in 0..32 {
             for x in 0..32 {
@@ -760,35 +784,33 @@ impl DispMem {
     }
 
     fn get_bg_tile(&self, true_x: u8, true_y: u8) -> BGIdx {
-        let bg_map = if !self.lcdc.get_bg_tile_map_select() {
-            0x1800
+        let idx = u16::from(true_y) * 32 + u16::from(true_x);
+        let high_low = if self.lcdc.get_bg_tile_map_select() {
+            1
         } else {
-            0x1C00
+            0
         };
-        let idx = bg_map + u16::from(true_y) * 32 + u16::from(true_x);
         let flags = match self.cgb_mode {
-            DisplayMode::StrictGB | DisplayMode::CGBCompat => 0,
-            DisplayMode::CGB => bank_vram_ro(&self.vram, 1)[idx as usize],
+            DisplayMode::StrictGB | DisplayMode::CGBCompat => BGMapFlag::new(),
+            DisplayMode::CGB => self.bgmaps[high_low].flags[idx as usize],
         };
-        let flags = BGMapFlag::try_from(&[flags][..]).unwrap();
-        BGIdx(bank_vram_ro(&self.vram, 0)[idx as usize], flags)
+        BGIdx(self.bgmaps[high_low].map[idx as usize], flags)
     }
     fn get_win_tile(&self, x: u8) -> Tile {
         let x = x.wrapping_sub(self.wx.wrapping_sub(7));
         let y = self.ly.wrapping_sub(self.wy);
-        let win_map = if !self.lcdc.get_window_tile_map_display_select() {
-            0x1800u16
+        let high_low = if self.lcdc.get_window_tile_map_display_select() {
+            1
         } else {
-            0x1c00u16
+            0
         };
-        let idx = win_map + (u16::from(y) / 8) * 32 + (u16::from(x) / 8);
+        let idx = (u16::from(y) / 8) * 32 + (u16::from(x) / 8);
         let flags = match self.cgb_mode {
-            DisplayMode::StrictGB | DisplayMode::CGBCompat => 0,
-            DisplayMode::CGB => bank_vram_ro(&self.vram, 1)[idx as usize],
+            DisplayMode::StrictGB | DisplayMode::CGBCompat => BGMapFlag::new(),
+            DisplayMode::CGB => self.bgmaps[high_low].flags[idx as usize],
         };
-        let flags = BGMapFlag::try_from(&[flags][..]).unwrap();
         Tile::Window(
-            BGIdx(bank_vram_ro(&self.vram, 0)[idx as usize], flags),
+            BGIdx(self.bgmaps[high_low].map[idx as usize], flags),
             Coord(0, y % 8),
         )
     }
@@ -824,9 +846,6 @@ impl DispMem {
     // }
     fn lookup(&mut self, addr: u16) -> &mut u8 {
         match addr {
-            0x8000..=0x9fff => {
-                &mut bank_vram(&mut self.vram, self.vbk & 0b1)[(addr - 0x8000) as usize]
-            }
             0xFE00..=0xFE9F => {
                 let idx = ((addr & 0xff) >> 2) as usize;
                 let oam = &mut self.oam[idx];
@@ -972,7 +991,7 @@ fn draw_window<'sprite, T: Iterator<Item = &'sprite (usize, SpriteAttribute)>>(
     // if std::ops::Range::is_empty(range) {
     //     return;
     // }
-    let fake = Tile::BG(BGIdx(0, BGMapFlag::new()), Coord(0, 0));
+    let fake = Tile::BG(BGIdx(BGMapIdx(0), BGMapFlag::new()), Coord(0, 0));
     let l = fake.fetch(mem);
     const IGNORED_OFFSET: usize = 8;
     ppu.load(&fake, l);
@@ -1011,7 +1030,7 @@ fn draw_window<'sprite, T: Iterator<Item = &'sprite (usize, SpriteAttribute)>>(
 #[derive(Copy, Clone)]
 struct SpriteIdx(u8);
 #[derive(Copy, Clone)]
-struct BGIdx(u8, BGMapFlag);
+struct BGIdx(BGMapIdx, BGMapFlag);
 #[derive(Copy, Clone)]
 struct TileIdx(u8);
 #[derive(Copy, Clone)]
@@ -1073,59 +1092,51 @@ impl Tile {
         }
     }
     pub fn fetch(&self, display: &DispMem) -> (Priority, Palette, u16) {
-        let (start, line_offset, flip_x, vbank) = match *self {
+        let bytes_per_line = 2;
+        let (offset, bank, flip_x) = match *self {
             Tile::Window(idx, coord) | Tile::BG(idx, coord) => {
-                let bytes_per_tile: u16 = 16;
-                let start = if !display.lcdc.get_bg_win_tile_data_select() {
-                    /* signed tile idx */
-                    let signed_idx = i16::from(idx.0 as i8);
-                    (0x1000 + signed_idx * bytes_per_tile as i16) as u16
-                } else {
-                    /*unsigned tile_idx */
-                    u16::from(idx.0) * bytes_per_tile
-                };
+                // let start = if !display.lcdc.get_bg_win_tile_data_select() {
+                //     /* signed tile idx */
+                //     (0x1000 + signed_idx * bytes_per_tile as i16) as u16
+                // } else {
+                //     /*unsigned tile_idx */
+                //     idx.0.get_idx(display.lcdc.get_bg_win_tile_data_select()) as u16 * bytes_per_tile
+                // };
                 let bgmap = idx.1;
                 let y = if bgmap.get_flip_y() {
-                    bytes_per_tile as i16 - 1 - i16::from(coord.y())
+                    BYTES_PER_TILE as i16 - 1 - i16::from(coord.y())
                 } else {
                     i16::from(coord.y())
                 };
-                (
-                    start as usize,
-                    (y % 8) as usize,
-                    bgmap.get_flip_x(),
-                    bgmap.get_vram_bank(),
-                )
+                let idx = idx.0.get_idx(display.lcdc.get_bg_win_tile_data_select());
+                let target_idx = idx * BYTES_PER_TILE + (y % 8) as usize * bytes_per_line;
+                (target_idx, bgmap.get_vram_bank(), bgmap.get_flip_x())
             }
             Tile::Sprite(_, oam, coord) => {
-                let bytes_per_line = 2;
                 let idx = if display.sprite_size() == 16 {
                     oam.pattern.0 >> 1
                 } else {
                     oam.pattern.0
                 };
-                let start = u16::from(idx) * bytes_per_line * u16::from(display.sprite_size());
                 let y = if oam.flags.get_flip_y() {
                     display.sprite_size() - 1 - coord.y()
                 } else {
                     coord.y()
                 };
-                (
-                    start as usize,
-                    y as usize,
-                    oam.flags.get_flip_x(),
-                    oam.flags.get_vram_bank(),
-                )
+                let offset = usize::from(idx) * bytes_per_line * usize::from(display.sprite_size())
+                    + usize::from(y) * bytes_per_line;
+                (offset, oam.flags.get_vram_bank(), oam.flags.get_flip_x())
             }
         };
-
-        let b1 = bank_vram_ro(&display.vram, vbank)[start + (line_offset * 2)];
-        let b2 = bank_vram_ro(&display.vram, vbank)[start + (line_offset * 2) + 1];
+        use std::convert::TryInto;
+        let bs: [u8; 2] = display.tiles[bank as usize][offset..][..2]
+            .try_into()
+            .unwrap();
 
         let line = if flip_x {
-            u16::from_le_bytes([b1.reverse_bits(), b2.reverse_bits()])
+            u16::from_le_bytes([bs[0].reverse_bits(), bs[1].reverse_bits()])
         } else {
-            u16::from_le_bytes([b1, b2])
+            u16::from_le_bytes(bs)
         };
 
         let gbc = match display.cgb_mode {
@@ -1269,6 +1280,23 @@ impl Addressable for Display {
 impl Addressable for DispMem {
     fn read_byte(&mut self, addr: u16) -> u8 {
         match addr {
+            0x9800..=0x9BFF => {
+                let low = 0;
+                if self.vbk & 0b1 == 0 {
+                    self.bgmaps[low].map[(addr - 0x9800) as usize].value()
+                } else {
+                    self.bgmaps[low].flags[(addr - 0x9800) as usize].to_bytes()[0]
+                }
+            }
+            0x9C00..=0x9FFF => {
+                let low = 1;
+                if self.vbk & 0b1 == 0 {
+                    self.bgmaps[low].map[(addr - 0x9C00) as usize].value()
+                } else {
+                    self.bgmaps[low].flags[(addr - 0x9C00) as usize].to_bytes()[0]
+                }
+            }
+            0x8000..=0x97FF => self.tiles[(self.vbk & 0b1) as usize][(addr - 0x8000) as usize],
             0xFE00..=0xFE9F => {
                 let idx = ((addr & 0xff) >> 2) as usize;
                 let oam = &mut self.oam[idx];
@@ -1307,6 +1335,27 @@ impl Addressable for DispMem {
             }
         }
         match addr {
+            0x9800..=0x9BFF => {
+                let low = 0;
+                if self.vbk & 0b1 == 0 {
+                    self.bgmaps[low].map[(addr - 0x9800) as usize].set_value(v)
+                } else {
+                    self.bgmaps[low].flags[(addr - 0x9800) as usize] =
+                        BGMapFlag::try_from(&[v][..]).unwrap();
+                }
+            }
+            0x9C00..=0x9FFF => {
+                let low = 1;
+                if self.vbk & 0b1 == 0 {
+                    self.bgmaps[low].map[(addr - 0x9C00) as usize].set_value(v)
+                } else {
+                    self.bgmaps[low].flags[(addr - 0x9C00) as usize] =
+                        BGMapFlag::try_from(&[v][..]).unwrap();
+                }
+            }
+            0x8000..=0x97FF => {
+                self.tiles[(self.vbk & 0b1) as usize][(addr - 0x8000) as usize] = v;
+            }
             0xFE00..=0xFE9F => {
                 let idx = ((addr & 0xff) >> 2) as usize;
                 let oam = &mut self.oam[idx];

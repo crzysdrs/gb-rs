@@ -95,20 +95,28 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
             _ => None,
         }
     }
+    let mut mute = false;
     'running: loop {
         // get the inputs here
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. }
-                | Event::KeyDown {
+                | Event::KeyUp {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => break 'running,
-                Event::KeyDown {
+                Event::KeyUp {
                     keycode: Some(Keycode::T),
                     repeat: false,
                     ..
                 } => gb.toggle_trace(),
+                Event::KeyUp {
+                    keycode: Some(Keycode::M),
+                    repeat: false,
+                    ..
+                } => {
+                    mute = !mute;
+                }
                 Event::KeyDown {
                     keycode: Some(k),
                     repeat: false,
@@ -130,31 +138,31 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                 _ => {}
             }
         }
-        //controls = !(GBControl::Up as u8 | GBControl::A as u8);
+
         gb.set_controls(controls);
         let start = gb.cpu_cycles();
         let time = gb::cycles::SECOND / 60;
         'frame: loop {
             let mut count = 0;
             let remain = time - (gb.cpu_cycles() - start);
+
             let r = texture.with_lock(sdl2::rect::Rect::new(0, 0, 160, 144), |mut slice, _size| {
+                let audio_spec = Some(AudioSpec {
+                    silence: 0,
+                    freq: device.spec().freq as u32,
+                    queue: Box::new(|samples| {
+                        count += 1;
+                        if !mute {
+                            device.queue(samples)
+                        } else {
+                            device.queue(&[0, 0])
+                        }
+                    }),
+                });
+
                 gb.step(
                     Some(remain),
-                    &mut PeripheralData::new(
-                        Some(&mut slice),
-                        //None
-                        Some(AudioSpec {
-                            silence: 0,
-                            freq: device.spec().freq as u32,
-                            queue: Box::new(&mut |samples| {
-                                count += 1;
-                                // if samples[0] != 0 || samples[1] != 0 {
-                                //     println!("{:?}", samples);
-                                // }
-                                device.queue(samples)
-                            }),
-                        }),
-                    ),
+                    &mut PeripheralData::new(Some(&mut slice), audio_spec),
                 )
             });
             match r {
