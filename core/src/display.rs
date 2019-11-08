@@ -900,16 +900,10 @@ impl DispMem {
                 PaletteShade::Empty => 0,
             };
             match palette {
+                Palette::None => white,
                 Palette::BG | Palette::OBP0 | Palette::OBP1 => {
                     let pal = match palette {
-                        Palette::BG => {
-                            /* turns off all background/windowing */
-                            if !self.lcdc.get_bg_display_priority() {
-                                0
-                            } else {
-                                self.bgp
-                            }
-                        }
+                        Palette::BG =>  self.bgp,
                         Palette::OBP0 => self.obp0,
                         Palette::OBP1 => self.obp1,
                         _ => unreachable!(),
@@ -1095,13 +1089,6 @@ impl Tile {
         let bytes_per_line = 2;
         let (offset, bank, flip_x) = match *self {
             Tile::Window(idx, coord) | Tile::BG(idx, coord) => {
-                // let start = if !display.lcdc.get_bg_win_tile_data_select() {
-                //     /* signed tile idx */
-                //     (0x1000 + signed_idx * bytes_per_tile as i16) as u16
-                // } else {
-                //     /*unsigned tile_idx */
-                //     idx.0.get_idx(display.lcdc.get_bg_win_tile_data_select()) as u16 * bytes_per_tile
-                // };
                 let bgmap = idx.1;
                 let y = if bgmap.get_flip_y() {
                     BYTES_PER_TILE as i16 - 1 - i16::from(coord.y())
@@ -1143,14 +1130,10 @@ impl Tile {
             DisplayMode::CGB => true,
             DisplayMode::StrictGB | DisplayMode::CGBCompat => false,
         };
-        let high_priority = 0;
         let (priority, palette) = match *self {
             Tile::Sprite(p, oam, _) => {
-                let priority = if oam.flags.get_priority() {
-                    Priority::BG
-                } else {
-                    Priority::Obj(p)
-                };
+                let priority = 
+                    Priority::Obj(p, oam.flags.get_priority());
                 let palette = if gbc {
                     Palette::OBPColor(oam.flags.get_color_palette())
                 } else if oam.flags.get_palette_number() == 0 {
@@ -1164,16 +1147,22 @@ impl Tile {
                 if gbc {
                     let bgmap = idx.1;
                     let palette_number = bgmap.get_color_palette();
+                    let bg_priority = if !display.lcdc.get_bg_display_priority() {
+                        false
+                    } else {
+                        bgmap.get_priority() == 1 
+                    };
+
                     (
-                        if bgmap.get_priority() == 0 {
-                            Priority::BG
-                        } else {
-                            Priority::Obj(high_priority)
-                        },
+                        Priority::BG(bg_priority),
                         Palette::BGColor(palette_number),
                     )
                 } else {
-                    (Priority::BG, Palette::BG)
+                    if display.lcdc.get_bg_display_priority() {
+                        (Priority::BG(false), Palette::BG)
+                    } else {
+                        (Priority::BG(false), Palette::None)
+                    }
                 }
             }
         };
@@ -1190,6 +1179,7 @@ enum PaletteShade {
 }
 #[derive(Copy, Clone)]
 enum Palette {
+    None,
     BG,
     OBP0,
     OBP1,
@@ -1205,8 +1195,8 @@ struct PPU {
 
 #[derive(Copy, Clone)]
 enum Priority {
-    Obj(usize),
-    BG,
+    Obj(usize, bool),
+    BG(bool),
 }
 
 impl PPU {
@@ -1224,10 +1214,11 @@ impl PPU {
                     if p != PaletteShade::Empty {
                         let old = &mut self.shift[x];
                         let overwrite = match (old.0, priority) {
-                            (Priority::BG, Priority::BG) => old.2 == PaletteShade::Empty,
-                            (Priority::BG, _) => true,
-                            (Priority::Obj(p1), Priority::Obj(p2)) => p1 > p2,
-                            (Priority::Obj(_), _) => false,
+                            (Priority::BG(true), Priority::Obj(_, _)) => old.2 == PaletteShade::Empty,
+                            (Priority::BG(false), Priority::Obj(_, behind)) => old.2 == PaletteShade::Empty || !behind,
+                            (Priority::Obj(p1, _), Priority::Obj(p2, _)) => p1 > p2,
+                            (Priority::Obj(_, _), _) => false,
+                            (_, Priority::BG(_)) => unreachable!("BG Elements should have already been loaded"),
                         };
 
                         if overwrite {
@@ -1235,7 +1226,7 @@ impl PPU {
                         }
                     }
                 }
-                Palette::BGColor(_) | Palette::BG => {
+                Palette::None | Palette::BGColor(_) | Palette::BG => {
                     self.shift.push_back(Pixel(priority, palette, p));
                 }
             }
