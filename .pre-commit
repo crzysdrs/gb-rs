@@ -18,9 +18,17 @@ if [ ! -d "mooneye-gb" ] ; then
     (cd mooneye-gb && env -i git checkout -f  bc620a6)
 fi
 
-cargo fmt
 cargo build 
 cargo build --release
 (cd mooneye-gb && make -C tests all)
 (cd blarg && ./ninja.py && ninja)
 cargo test --release
+set +e
+cargo fmt -- --check > /dev/null
+need_fmt=$?
+set -e
+if [[ $need_fmt -ne 0 ]]; then
+    echo "Need to run cargo fmt before commit"
+    exit 1
+fi
+exit 0

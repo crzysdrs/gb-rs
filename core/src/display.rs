@@ -903,7 +903,7 @@ impl DispMem {
                 Palette::None => white,
                 Palette::BG | Palette::OBP0 | Palette::OBP1 => {
                     let pal = match palette {
-                        Palette::BG =>  self.bgp,
+                        Palette::BG => self.bgp,
                         Palette::OBP0 => self.obp0,
                         Palette::OBP1 => self.obp1,
                         _ => unreachable!(),
@@ -1132,8 +1132,7 @@ impl Tile {
         };
         let (priority, palette) = match *self {
             Tile::Sprite(p, oam, _) => {
-                let priority = 
-                    Priority::Obj(p, oam.flags.get_priority());
+                let priority = Priority::Obj(p, oam.flags.get_priority());
                 let palette = if gbc {
                     Palette::OBPColor(oam.flags.get_color_palette())
                 } else if oam.flags.get_palette_number() == 0 {
@@ -1150,13 +1149,10 @@ impl Tile {
                     let bg_priority = if !display.lcdc.get_bg_display_priority() {
                         false
                     } else {
-                        bgmap.get_priority() == 1 
+                        bgmap.get_priority() == 1
                     };
 
-                    (
-                        Priority::BG(bg_priority),
-                        Palette::BGColor(palette_number),
-                    )
+                    (Priority::BG(bg_priority), Palette::BGColor(palette_number))
                 } else {
                     if display.lcdc.get_bg_display_priority() {
                         (Priority::BG(false), Palette::BG)
@@ -1214,11 +1210,17 @@ impl PPU {
                     if p != PaletteShade::Empty {
                         let old = &mut self.shift[x];
                         let overwrite = match (old.0, priority) {
-                            (Priority::BG(true), Priority::Obj(_, _)) => old.2 == PaletteShade::Empty,
-                            (Priority::BG(false), Priority::Obj(_, behind)) => old.2 == PaletteShade::Empty || !behind,
+                            (Priority::BG(true), Priority::Obj(_, _)) => {
+                                old.2 == PaletteShade::Empty
+                            }
+                            (Priority::BG(false), Priority::Obj(_, behind)) => {
+                                old.2 == PaletteShade::Empty || !behind
+                            }
                             (Priority::Obj(p1, _), Priority::Obj(p2, _)) => p1 > p2,
                             (Priority::Obj(_, _), _) => false,
-                            (_, Priority::BG(_)) => unreachable!("BG Elements should have already been loaded"),
+                            (_, Priority::BG(_)) => {
+                                unreachable!("BG Elements should have already been loaded")
+                            }
                         };
 
                         if overwrite {
