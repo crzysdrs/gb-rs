@@ -32,6 +32,13 @@ impl DMA {
 }
 
 impl Peripheral for DMA {
+    fn next_step(&self) -> Option<cycles::CycleCount> {
+        if self.is_active() {
+            Some(self.wait.next_ready(cycles::GB))
+        } else {
+            Some(cycles::CycleCount::new(std::u64::MAX))
+        }
+    }
     fn step(&mut self, _real: &mut PeripheralData, time: cycles::CycleCount) -> Option<Interrupt> {
         if !self.is_active() {
             /* do nothing */

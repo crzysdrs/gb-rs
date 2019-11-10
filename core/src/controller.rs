@@ -58,6 +58,11 @@ impl Addressable for Controller {
     }
 }
 impl Peripheral for Controller {
+    fn next_step(&self) -> Option<cycles::CycleCount> {
+        /* Controller does not generate any interrupts and only needs to
+        be updated when observed */
+        Some(cycles::CycleCount::new(std::u64::MAX))
+    }
     fn step(&mut self, _real: &mut PeripheralData, _time: cycles::CycleCount) -> Option<Interrupt> {
         let res = if (self.old ^ self.read) & !self.read != 0 {
             let mut i = Interrupt::new();

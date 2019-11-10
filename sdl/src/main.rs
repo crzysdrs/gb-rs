@@ -142,10 +142,10 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         gb.set_controls(controls);
         let start = gb.cpu_cycles();
         let time = gb::cycles::SECOND / 60;
+        let mut prev = start;
         'frame: loop {
             let mut count = 0;
             let remain = time - (gb.cpu_cycles() - start);
-
             let r = texture.with_lock(sdl2::rect::Rect::new(0, 0, 160, 144), |mut slice, _size| {
                 let audio_spec = Some(AudioSpec {
                     silence: 0,
@@ -165,6 +165,13 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                     &mut PeripheralData::new(Some(&mut slice), audio_spec),
                 )
             });
+            println!(
+                "R: {:?} Time: {} Samples {}",
+                r,
+                gb.cpu_cycles() - prev,
+                count
+            );
+            prev = gb.cpu_cycles();
             match r {
                 Ok(GBReason::VSync) => {
                     //frames += 1;
@@ -304,7 +311,7 @@ fn main() -> Result<(), std::io::Error> {
                     ))
                 }
             }
-            Some("gb") => Ok(std::fs::read(rom)?),
+            Some("gb") | Some("gbc") => Ok(std::fs::read(rom)?),
             Some(e) => Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("Unknown Extension {}", e),

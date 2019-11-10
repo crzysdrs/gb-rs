@@ -45,6 +45,13 @@ impl HDMA {
 }
 
 impl Peripheral for HDMA {
+    fn next_step(&self) -> Option<cycles::CycleCount> {
+        if self.is_active() {
+            Some(self.wait.next_ready(cycles::CGB))
+        } else {
+            Some(cycles::CycleCount::new(std::u64::MAX))
+        }
+    }
     fn step(&mut self, _real: &mut PeripheralData, time: cycles::CycleCount) -> Option<Interrupt> {
         if !self.is_active() {
             /* do nothing */
@@ -59,7 +66,7 @@ impl Peripheral for HDMA {
                 /* TODO: This actually needs to stop the CPU (or fake time add) */
                 self.remain
             };
-            self.remain -= copy;
+            self.remain = self.remain.saturating_sub(copy);
             self.copy.extend(q.take(copy));
             if self.copy.len() == start_len {
                 self.hdma5.write_byte(0, 0b1000_0000);

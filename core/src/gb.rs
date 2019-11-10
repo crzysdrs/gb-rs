@@ -72,7 +72,6 @@ impl<'a> GB<'a> {
     pub fn set_controls(&mut self, controls: u8) {
         self.mem.set_controls(controls);
     }
-
     pub fn step_timeout(
         &mut self,
         time: Option<cycles::CycleCount>,

@@ -3,6 +3,7 @@ use crate::cpu::Interrupt;
 use crate::cycles;
 use crate::mmu::MemRegister;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
+use crate::sound::WaitTimer;
 use modular_bitfield::prelude::*;
 use std::collections::VecDeque;
 use std::convert::TryFrom;
@@ -295,7 +296,7 @@ pub struct Display {
     ppu: PPU,
     oam_searched: Vec<(usize, SpriteAttribute)>,
     mem: DispMem,
-    unused_cycles: cycles::CycleCount,
+    unused_cycles: WaitTimer,
     state: DisplayState,
     frame: u64,
     time: cycles::CycleCount,
@@ -377,7 +378,7 @@ impl Display {
         Display {
             needs_clear: true,
             state: DisplayState::OAMSearch,
-            unused_cycles: cycles::Cycles::new(0),
+            unused_cycles: WaitTimer::new(),
             frame: 0,
             time: 0 * cycles::GB,
             mem: DispMem {
@@ -1407,6 +1408,23 @@ impl Addressable for DispMem {
 // }
 
 impl Peripheral for Display {
+    fn next_step(&self) -> Option<cycles::CycleCount> {
+        if self.display_enabled() {
+            let next_change = match self.state {
+                DisplayState::OAMSearch => 20,
+                DisplayState::PixelTransfer => 43,
+                DisplayState::HBlank => 51,
+                DisplayState::VBlank => (43 + 51 + 20),
+            } * cycles::GB;
+            Some(self.unused_cycles.next_ready(next_change))
+        } else {
+            if self.needs_clear {
+                Some(cycles::CycleCount::new(0))
+            } else {
+                Some(cycles::CycleCount::new(std::u64::MAX))
+            }
+        }
+    }
     fn step(&mut self, real: &mut PeripheralData, time: cycles::CycleCount) -> Option<Interrupt> {
         self.time += time;
         if !self.mem.lcdc.get_lcd_display_enable() {
@@ -1420,24 +1438,24 @@ impl Peripheral for Display {
             self.needs_clear = false;
             self.state = DisplayState::OAMSearch;
             self.mem.ly = 0;
-            self.unused_cycles = cycles::Cycles::new(0);
+            self.unused_cycles.reset();
             return None;
         }
         self.needs_clear = true;
         let mut new_ly = self.mem.ly;
-        self.unused_cycles += time;
         let next_state = match self.state {
             DisplayState::OAMSearch => {
-                if self.unused_cycles >= 20 * cycles::GB {
+                if let Some(c) = self.unused_cycles.ready(time, 20 * cycles::GB) {
+                    assert_eq!(c, 1);
                     self.oam_search();
-                    self.unused_cycles -= 20 * cycles::GB;
                     DisplayState::PixelTransfer
                 } else {
                     self.state
                 }
             }
             DisplayState::PixelTransfer => {
-                if self.unused_cycles >= 43 * cycles::GB {
+                if let Some(c) = self.unused_cycles.ready(time, 43 * cycles::GB) {
+                    assert_eq!(c, 1);
                     /* do work */
                     self.ppu.clear();
                     // let orig_oams =
@@ -1479,7 +1497,6 @@ impl Peripheral for Display {
                     };
 
                     self.ppu.clear();
-                    self.unused_cycles -= 43 * cycles::GB;
                     //  }
                     //std::mem::replace(&mut self.oam_searched, orig_oams);
                     DisplayState::HBlank
@@ -1488,9 +1505,9 @@ impl Peripheral for Display {
                 }
             }
             DisplayState::HBlank => {
-                if self.unused_cycles >= 51 * cycles::GB {
+                if let Some(c) = self.unused_cycles.ready(time, 51 * cycles::GB) {
+                    assert_eq!(c, 1);
                     /* do work */
-                    self.unused_cycles -= 51 * cycles::GB;
                     new_ly += 1;
                     if new_ly == 144 {
                         DisplayState::VBlank
@@ -1502,9 +1519,9 @@ impl Peripheral for Display {
                 }
             }
             DisplayState::VBlank => {
-                if self.unused_cycles >= (43 + 51 + 20) * cycles::GB {
+                if let Some(c) = self.unused_cycles.ready(time, (43 + 51 + 20) * cycles::GB) {
+                    assert_eq!(c, 1);
                     /* do work */
-                    self.unused_cycles -= (43 + 51 + 20) * cycles::GB;
                     new_ly += 1;
                     if new_ly == 154 {
                         self.frame += 1;

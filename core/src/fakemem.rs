@@ -22,6 +22,12 @@ impl Addressable for FakeMem {
     }
 }
 impl Peripheral for FakeMem {
+    fn next_step(&self) -> Option<cycles::CycleCount> {
+        /* Memory does not generate any interrupts and only needs to
+        be updated when observed */
+        Some(cycles::CycleCount::new(std::u64::MAX))
+    }
+
     fn step(&mut self, _real: &mut PeripheralData, _time: cycles::CycleCount) -> Option<Interrupt> {
         None
     }

@@ -33,6 +33,10 @@ impl<'a> Addressable for Serial<'a> {
     }
 }
 impl<'a> Peripheral for Serial<'a> {
+    fn next_step(&self) -> Option<cycles::CycleCount> {
+        /* TODO: serial don't do anything right now */
+        Some(cycles::CycleCount::new(std::u64::MAX))
+    }
     fn step(&mut self, _real: &mut PeripheralData, _time: cycles::CycleCount) -> Option<Interrupt> {
         if (self.sc & 0x80) != 0 {
             //TODO: Wait appropriate amount of time to send serial data.

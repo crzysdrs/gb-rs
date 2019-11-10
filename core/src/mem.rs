@@ -1,3 +1,4 @@
+use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral};
 use std::ops::Deref;
 
@@ -44,7 +45,13 @@ impl Deref for Mem {
     }
 }
 
-impl Peripheral for Mem {}
+impl Peripheral for Mem {
+    fn next_step(&self) -> Option<cycles::CycleCount> {
+        /* Memory does not generate any interrupts and only needs to
+        be updated when observed */
+        Some(cycles::CycleCount::new(std::u64::MAX))
+    }
+}
 
 impl Addressable for Mem {
     fn write_byte(&mut self, addr: u16, val: u8) {

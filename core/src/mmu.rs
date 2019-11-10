@@ -118,7 +118,13 @@ impl MemReg {
     }
 }
 
-impl Peripheral for MemReg {}
+impl Peripheral for MemReg {
+    fn next_step(&self) -> Option<cycles::CycleCount> {
+        /* MemRegs does not generate any interrupts and only needs to
+        be updated when observed */
+        Some(cycles::CycleCount::new(std::u64::MAX))
+    }
+}
 impl Addressable for MemReg {
     fn write_byte(&mut self, _addr: u16, val: u8) {
         self.set_reg(val);
@@ -153,6 +159,9 @@ where
     }
     pub fn inner_mut(&mut self) -> &mut T {
         &mut self.peripheral
+    }
+    fn reset(&mut self) {
+        self.next_sync = Some(cycles::CycleCount::new(0));
     }
 }
 
@@ -208,16 +217,16 @@ pub struct MMUInternal<'a> {
     bios_exists: bool,
     timer: SyncPeripheral<Timer>,
     display: SyncPeripheral<Display>,
-    controller: Controller,
+    controller: SyncPeripheral<Controller>,
     dma: SyncPeripheral<DMA>,
     hdma: SyncPeripheral<HDMA>,
     svbk: MemReg, //TODO: GBC
     key1: MemReg, //TODO: GBC
     bios: Mem,
-    cart: Cart,
+    cart: SyncPeripheral<Cart>,
     ram0: Vec<Mem>,
     fake_mem: FakeMem,
-    serial: Serial<'a>,
+    serial: SyncPeripheral<Serial<'a>>,
     ram1: Mem,
     ram2: Mem,
     sound: SyncPeripheral<Mixer>,
@@ -228,6 +237,10 @@ pub struct MMUInternal<'a> {
 }
 
 impl<'a> MMUInternal<'a> {
+    pub fn set_controls(&mut self, controls: u8) {
+        self.controller.inner_mut().set_controls(controls);
+        self.controller.reset();
+    }
     pub fn double_speed(&self) -> bool {
         (self.key1.reg & (1 << 7)) != 0
     }
@@ -262,13 +275,13 @@ impl<'a> MMUInternal<'a> {
             seek_pos: 0,
             bios_exists: true,
             bios,
-            cart,
+            cart: SyncPeripheral::new(cart),
             svbk: MemReg::new(0, 0b111, 0b111),
             key1: MemReg::new(0, !0, 0b1),
             display: SyncPeripheral::new(Display::new(cart_mode)),
             timer: SyncPeripheral::new(Timer::new()),
-            serial: Serial::new(serial),
-            controller: Controller::new(),
+            serial: SyncPeripheral::new(Serial::new(serial)),
+            controller: SyncPeripheral::new(Controller::new()),
             sound: SyncPeripheral::new(Mixer::new(audio_sample_rate)),
             ram0,
             fake_mem: FakeMem::new(),
@@ -340,10 +353,8 @@ impl<'a> MMUInternal<'a> {
         }
     }
     pub fn sync_peripherals(&mut self, data: &mut PeripheralData, force: bool) {
-        let time = self.time;
         if force || self.last_sync < self.time {
             use std::convert::TryFrom;
-            let mut interrupt_flag = Interrupt::new();
             let cycles = self.time - self.last_sync;
             if self.dma.inner_mut().is_active() {
                 self.dma.force_step(data, cycles);
@@ -360,60 +371,54 @@ impl<'a> MMUInternal<'a> {
                     self.write_byte_noeffect(data, d, v);
                 }
             }
-            self.walk_peripherals(|p| {
-                if force {
-                    if let Some(i) = p.force_step(data, cycles) {
-                        interrupt_flag |= i;
-                    }
-                } else {
-                    if let Some(i) = p.step(data, cycles) {
-                        interrupt_flag |= i;
-                    }
-                }
-            });
-            let flags = Interrupt::try_from(&[self.interrupt_flag.reg()][..]).unwrap();
-            let mut rhs = flags | interrupt_flag;
-            if !self.get_display().display_enabled() {
-                /* remove vblank from IF when display disabled.
-                We still want it to synchronize speed with display */
-                rhs.set_vblank(false);
-            }
-            if rhs != flags {
-                self.interrupt_flag.set_reg(rhs.to_bytes()[0]);
-            }
 
-            if interrupt_flag.get_vblank() {
-                data.vblank = true;
+            let interrupt_flag = (&mut [
+                (&mut self.timer) as &mut dyn Peripheral,
+                (&mut self.display) as &mut dyn Peripheral,
+                (&mut self.serial) as &mut dyn Peripheral,
+                (&mut self.controller) as &mut dyn Peripheral,
+                (&mut self.sound) as &mut dyn Peripheral,
+                //(&mut self.cart) as &mut dyn Peripheral,
+            ])
+                .into_iter()
+                .map(|p| {
+                    if force {
+                        p.force_step(data, cycles)
+                    } else {
+                        p.step(data, cycles)
+                    }
+                })
+                .filter_map(|x| x)
+                .fold(None, |acc, i| {
+                    if let Some(acc) = acc {
+                        Some(acc | i)
+                    } else {
+                        Some(i)
+                    }
+                });
+
+            if let Some(interrupt_flag) = interrupt_flag {
+                let flags = Interrupt::try_from(&[self.interrupt_flag.reg()][..]).unwrap();
+                let mut rhs = flags | interrupt_flag;
+                if !self.get_display().display_enabled() {
+                    /* remove vblank from IF when display disabled.
+                    We still want it to synchronize speed with display */
+                    rhs.set_vblank(false);
+                }
+                if rhs != flags {
+                    self.interrupt_flag.set_reg(rhs.to_bytes()[0]);
+                }
+
+                if interrupt_flag.get_vblank() {
+                    data.vblank = true;
+                }
             }
             self.last_sync = self.time;
         }
-        //after pseudo-syncing, we need to make sure that a force sync is done on the target
-        assert_eq!(self.time, time);
     }
     pub fn time(&self) -> cycles::CycleCount {
         self.time
     }
-    pub fn set_controls(&mut self, controls: u8) {
-        self.controller.set_controls(controls);
-    }
-    pub fn walk_peripherals<F>(&mut self, mut walk: F)
-    where
-        F: FnMut(&mut dyn Peripheral) -> (),
-    {
-        let ps: &mut [&mut dyn Peripheral] = &mut [
-            &mut self.bios as &mut dyn Peripheral,
-            &mut self.timer as &mut dyn Peripheral,
-            &mut self.display as &mut dyn Peripheral,
-            &mut self.serial as &mut dyn Peripheral,
-            &mut self.controller as &mut dyn Peripheral,
-            &mut self.sound as &mut dyn Peripheral,
-            &mut self.cart as &mut dyn Peripheral,
-        ];
-        for p in ps.iter_mut() {
-            walk(*p)
-        }
-    }
-
     #[allow(dead_code)]
     pub fn get_display(&self) -> &Display {
         self.display.inner()
@@ -480,7 +485,6 @@ impl<'a, 'b, 'c> MMU<'a, 'b, 'c> {
         self.bus.timer.inner_mut().toggle_double();
         self.bus.timer.force_step(self.data, cycles::Cycles::new(0));
     }
-
     pub fn sync_peripherals(&mut self, force: bool) {
         self.bus.sync_peripherals(&mut self.data, force);
     }

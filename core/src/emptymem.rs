@@ -1,3 +1,4 @@
+use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral};
 
 pub struct EmptyMem {
@@ -12,7 +13,13 @@ impl EmptyMem {
     }
 }
 
-impl Peripheral for EmptyMem {}
+impl Peripheral for EmptyMem {
+    fn next_step(&self) -> Option<cycles::CycleCount> {
+        /* Memory does not generate any interrupts and only needs to
+        be updated when observed */
+        Some(cycles::CycleCount::new(std::u64::MAX))
+    }
+}
 
 impl Addressable for EmptyMem {
     fn write_byte(&mut self, addr: u16, _val: u8) {
