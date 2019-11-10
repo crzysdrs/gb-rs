@@ -142,7 +142,6 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         gb.set_controls(controls);
         let start = gb.cpu_cycles();
         let time = gb::cycles::SECOND / 60;
-        let mut prev = start;
         'frame: loop {
             let mut count = 0;
             let remain = time - (gb.cpu_cycles() - start);
@@ -165,13 +164,6 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                     &mut PeripheralData::new(Some(&mut slice), audio_spec),
                 )
             });
-            println!(
-                "R: {:?} Time: {} Samples {}",
-                r,
-                gb.cpu_cycles() - prev,
-                count
-            );
-            prev = gb.cpu_cycles();
             match r {
                 Ok(GBReason::VSync) => {
                     //frames += 1;
