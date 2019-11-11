@@ -13,7 +13,7 @@ use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use crate::sound::Mixer;
 
 use std::io;
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Seek, SeekFrom};
 enum_from_primitive! {
     #[derive(Debug, PartialEq, Clone, Copy)]
     pub enum MemRegister {
@@ -207,12 +207,12 @@ where
     }
 }
 
-pub struct MMU<'a, 'b, 'c> {
-    pub bus: &'b mut MMUInternal<'a>,
+pub struct MMU<'b, 'c> {
+    pub bus: &'b mut MMUInternal,
     data: &'b mut PeripheralData<'c>,
 }
 
-pub struct MMUInternal<'a> {
+pub struct MMUInternal {
     seek_pos: u16,
     bios_exists: bool,
     timer: SyncPeripheral<Timer>,
@@ -226,7 +226,7 @@ pub struct MMUInternal<'a> {
     cart: SyncPeripheral<Cart>,
     ram0: Vec<Mem>,
     fake_mem: FakeMem,
-    serial: SyncPeripheral<Serial<'a>>,
+    serial: SyncPeripheral<Serial>,
     ram1: Mem,
     ram2: Mem,
     sound: SyncPeripheral<Mixer>,
@@ -236,7 +236,7 @@ pub struct MMUInternal<'a> {
     last_sync: cycles::CycleCount,
 }
 
-impl<'a> MMUInternal<'a> {
+impl MMUInternal {
     pub fn set_controls(&mut self, controls: u8) {
         self.controller.inner_mut().set_controls(controls);
         self.controller.reset();
@@ -249,7 +249,6 @@ impl<'a> MMUInternal<'a> {
     }
     pub fn new(
         cart: Cart,
-        serial: Option<&'a mut dyn Write>,
         boot_rom: Option<Vec<u8>>,
         audio_sample_rate: Option<cycles::CycleCount>,
     ) -> Self {
@@ -280,7 +279,7 @@ impl<'a> MMUInternal<'a> {
             key1: MemReg::new(0, !0, 0b1),
             display: SyncPeripheral::new(Display::new(cart_mode)),
             timer: SyncPeripheral::new(Timer::new()),
-            serial: SyncPeripheral::new(Serial::new(serial)),
+            serial: SyncPeripheral::new(Serial::new()),
             controller: SyncPeripheral::new(Controller::new()),
             sound: SyncPeripheral::new(Mixer::new(audio_sample_rate)),
             ram0,
@@ -469,12 +468,12 @@ impl<'a> MMUInternal<'a> {
     }
 }
 
-impl<'a, 'b, 'c> MMU<'a, 'b, 'c> {
+impl<'b, 'c> MMU<'b, 'c> {
     // fn dump(&mut self) {
     //     self.seek(SeekFrom::Start(0));
     //     disasm(0, self, &mut std::io::stdout(), &|i| match i {Instr::NOP => false, _ => true});
     // }
-    pub fn new(bus: &'b mut MMUInternal<'a>, data: &'b mut PeripheralData<'c>) -> Self {
+    pub fn new(bus: &'b mut MMUInternal, data: &'b mut PeripheralData<'c>) -> Self {
         MMU { bus, data }
     }
     pub fn toggle_speed(&mut self) {
@@ -501,7 +500,7 @@ impl<'a, 'b, 'c> MMU<'a, 'b, 'c> {
     }
 }
 
-impl Addressable for MMU<'_, '_, '_> {
+impl Addressable for MMU<'_, '_> {
     fn read_byte(&mut self, addr: u16) -> u8 {
         self.bus.read_byte(&mut self.data, addr)
     }
@@ -510,7 +509,7 @@ impl Addressable for MMU<'_, '_, '_> {
     }
 }
 
-impl MMUInternal<'_> {
+impl MMUInternal {
     fn read_byte_noeffect(&mut self, data: &mut PeripheralData, mut addr: u16) -> u8 {
         self.sync_peripherals(data, false);
         let p = self.lookup_peripheral(&mut addr);
@@ -608,7 +607,7 @@ fn apply_offset(mut pos: u16, seek: i64) -> io::Result<u64> {
     Ok(u64::from(pos))
 }
 
-impl Seek for MMUInternal<'_> {
+impl Seek for MMUInternal {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         match pos {
             SeekFrom::Start(x) => {

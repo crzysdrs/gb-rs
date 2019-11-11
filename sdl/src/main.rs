@@ -8,8 +8,8 @@ use gb::controller::GBControl;
 use gb::gb::{GBReason, GB};
 use gb::peripherals::{AudioSpec, PeripheralData};
 use sdl2::pixels::Color;
-use std::fs::File;
-use std::io::{Read, Write};
+//use std::fs::File;
+use std::io::Read;
 
 fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
     use sdl2::audio::AudioSpecDesired;
@@ -161,7 +161,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
 
                 gb.step(
                     Some(remain),
-                    &mut PeripheralData::new(Some(&mut slice), audio_spec),
+                    &mut PeripheralData::new(Some(&mut slice), None, audio_spec),
                 )
             });
             match r {
@@ -319,17 +319,16 @@ fn main() -> Result<(), std::io::Error> {
 
     let cart = Cart::new(rom_vec);
 
-    let mut serial: Box<dyn Write> =
-        matches
-            .value_of("serial")
-            .map_or(Box::new(std::io::sink()), |p| {
-                let f = File::create(p).expect("Unable to create serial output file");
-                Box::new(std::io::BufWriter::new(f))
-            });
+    // let mut serial: Box<dyn Write> =
+    //     matches
+    //         .value_of("serial")
+    //         .map_or(Box::new(std::io::sink()), |p| {
+    //             let f = File::create(p).expect("Unable to create serial output file");
+    //             Box::new(std::io::BufWriter::new(f))
+    //         });
 
     let mut gb = GB::new(
         cart,
-        Some(&mut *serial),
         matches.occurrences_of("trace") > 0,
         boot_rom,
         palette,

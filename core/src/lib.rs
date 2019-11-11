@@ -346,10 +346,10 @@ mod tests {
             fn $name() {
                 use crate::cart::Cart;
                 use crate::cycles;
-                let mut buf = ::std::io::BufWriter::new(Vec::new());
                 let (mut v, mut f) = crate::test_data();
                 let mut p = crate::peripherals::PeripheralData::new(
                     Some(&mut v),
+                    None,
                     Some(crate::peripherals::AudioSpec {
                         queue: Box::new(&mut f),
                         freq: 16384 * 4,
@@ -359,7 +359,6 @@ mod tests {
                 let screen = {
                     let mut gb = crate::gb::GB::new(
                         Cart::new(include_bytes!(concat!("../../", $path)).to_vec()),
-                        Some(&mut buf),
                         false,
                         None,
                         None,
@@ -382,11 +381,9 @@ mod tests {
                 use crate::cpu::RegType;
                 use crate::cycles;
 
-                let mut buf = ::std::io::BufWriter::new(Vec::new());
                 let (finished, reg, screen) = {
                     let mut gb = crate::gb::GB::new(
                         Cart::new(include_bytes!(concat!("../../", $path)).to_vec()),
-                        Some(&mut buf),
                         false,
                         None,
                         None,
@@ -403,9 +400,6 @@ mod tests {
                         read_screen(&mut gb),
                     )
                 };
-                let buf = buf.into_inner().unwrap();
-                let output = ::std::str::from_utf8(&buf).unwrap();
-                println!("{}", output);
                 assert_eq!(finished, crate::gb::GBReason::Dead);
                 assert_eq!(reg.read(Reg8::B), 3);
                 assert_eq!(reg.read(Reg8::C), 5);

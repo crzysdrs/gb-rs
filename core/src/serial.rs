@@ -5,15 +5,14 @@ use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use enum_primitive::FromPrimitive;
 use std::io::Write;
 
-pub struct Serial<'a> {
+pub struct Serial {
     sb: u8,
     sc: u8,
-    out: Option<&'a mut dyn Write>,
 }
 
-impl<'a> Serial<'a> {
-    pub fn new(out: Option<&mut dyn Write>) -> Serial<'_> {
-        Serial { sb: 0, sc: 0, out }
+impl Serial {
+    pub fn new() -> Serial {
+        Serial { sb: 0, sc: 0 }
     }
     fn lookup(&mut self, addr: u16) -> &mut u8 {
         match MemRegister::from_u64(addr.into()).expect("Valid Register") {
@@ -24,7 +23,7 @@ impl<'a> Serial<'a> {
     }
 }
 
-impl<'a> Addressable for Serial<'a> {
+impl Addressable for Serial {
     fn read_byte(&mut self, addr: u16) -> u8 {
         *self.lookup(addr)
     }
@@ -32,15 +31,15 @@ impl<'a> Addressable for Serial<'a> {
         *self.lookup(addr) = v;
     }
 }
-impl<'a> Peripheral for Serial<'a> {
+impl Peripheral for Serial {
     fn next_step(&self) -> Option<cycles::CycleCount> {
         /* TODO: serial don't do anything right now */
         Some(cycles::CycleCount::new(std::u64::MAX))
     }
-    fn step(&mut self, _real: &mut PeripheralData, _time: cycles::CycleCount) -> Option<Interrupt> {
+    fn step(&mut self, real: &mut PeripheralData, _time: cycles::CycleCount) -> Option<Interrupt> {
         if (self.sc & 0x80) != 0 {
             //TODO: Wait appropriate amount of time to send serial data.
-            if let Some(ref mut o) = self.out {
+            if let Some(ref mut o) = real.serial {
                 o.write_all(&[self.sb])
                     .expect("Failed to write to serial output file");
             }

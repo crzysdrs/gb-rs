@@ -4,16 +4,19 @@ use crate::cart::{CGBStatus, Cart};
 #[cfg(test)]
 use crate::cpu::Registers;
 use crate::peripherals::PeripheralData;
-use std::io::Write;
+
+//use serde::{Serialize};
+//use serde_diff::SerdeDiff;
 
 use crate::cycles;
 
 #[cfg(feature = "vcd_dump")]
 use crate::VCDDump::VCD;
 
-pub struct GB<'a> {
+//#[derive(Serialize,SerdeDiff)]
+pub struct GB {
     cpu: CPU,
-    mem: MMUInternal<'a>,
+    mem: MMUInternal,
 }
 
 #[derive(Debug, PartialEq)]
@@ -23,10 +26,9 @@ pub enum GBReason {
     Dead,
 }
 
-impl<'a> GB<'a> {
+impl GB {
     pub fn new(
         cart: Cart,
-        serial: Option<&'a mut dyn Write>,
         trace: bool,
         boot_rom: Option<Vec<u8>>,
         palette: Option<usize>,
@@ -38,7 +40,7 @@ impl<'a> GB<'a> {
         let dis = *cart.title().as_bytes().iter().nth(3).unwrap();
         let mut gb = GB {
             cpu: CPU::new(trace),
-            mem: MMUInternal::new(cart, serial, boot_rom, audio_sample_rate),
+            mem: MMUInternal::new(cart, boot_rom, audio_sample_rate),
         };
         if !has_bootrom {
             let mut data = PeripheralData::empty();
@@ -66,7 +68,7 @@ impl<'a> GB<'a> {
         self.cpu.magic_breakpoint();
     }
     #[cfg(test)]
-    pub fn get_mem(&mut self) -> &mut MMUInternal<'a> {
+    pub fn get_mem(&mut self) -> &mut MMUInternal {
         &mut self.mem
     }
     pub fn set_controls(&mut self, controls: u8) {

@@ -2,6 +2,7 @@ use crate::cpu::Interrupt;
 use crate::cycles;
 #[cfg(feature = "vcd_dump")]
 use crate::VCDDump::VCD;
+use std::io::Write;
 
 pub struct AudioSpec<'a, T> {
     pub queue: Box<dyn FnMut(&[T]) -> bool + 'a>,
@@ -11,6 +12,7 @@ pub struct AudioSpec<'a, T> {
 
 pub struct PeripheralData<'a> {
     pub lcd: Option<&'a mut [u8]>,
+    pub serial: Option<&'a mut dyn Write>,
     pub audio_spec: Option<AudioSpec<'a, i16>>,
     pub vblank: bool,
 }
@@ -18,6 +20,7 @@ pub struct PeripheralData<'a> {
 impl<'a> PeripheralData<'a> {
     pub fn empty() -> PeripheralData<'a> {
         PeripheralData {
+            serial: None,
             lcd: None,
             audio_spec: None,
             vblank: false,
@@ -43,9 +46,11 @@ impl<'a> PeripheralData<'a> {
     // }
     pub fn new(
         lcd: Option<&'a mut [u8]>,
+        serial: Option<&'a mut dyn Write>,
         audio_spec: Option<AudioSpec<'a, i16>>,
     ) -> PeripheralData<'a> {
         PeripheralData {
+            serial,
             lcd,
             audio_spec,
             vblank: false,

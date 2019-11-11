@@ -147,7 +147,6 @@ pub fn start() {
 
     let mut gb = GB::new(
         cart,
-        None,
         false,
         None,
         None,
@@ -273,6 +272,7 @@ pub fn start() {
                         } else {
                             None
                         },
+                        None,
                         Some(AudioSpec {
                             silence: 0,
                             freq: sample_rate as u32,
