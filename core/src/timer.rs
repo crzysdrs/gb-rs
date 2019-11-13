@@ -5,6 +5,7 @@ use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use crate::sound::WaitTimer;
 use enum_primitive::FromPrimitive;
 use modular_bitfield::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
 #[derive(BitfieldSpecifier)]
@@ -17,7 +18,7 @@ pub enum TimerSpeed {
 }
 
 #[bitfield]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct TimerControl {
     #[bits = 2]
     speed: TimerSpeed,
@@ -25,6 +26,7 @@ pub struct TimerControl {
     unused: B5,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 #[allow(non_snake_case)]
 pub struct Timer {
     TIMA: u8,

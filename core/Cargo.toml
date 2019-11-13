@@ -13,10 +13,12 @@ lazy_static = "1.1.0"
 dimensioned = "0.7.0"
 num-traits = "0.2.8"
 modular-bitfield = { git = "https://github.com/Robbepop/modular-bitfield", rev="d99ca742"}
-serde-diff = "0.1.3"
 serde = "1.0.102"
 serde_derive = "1.0.102"
-#modular-bitfield = {path = "../../modular-bitfield"}
+serde-big-array = "0.2.0"
+typetag = "0.1.4"
+bincode = "1.2.0"
+objekt = "0.1.2"
 
 [features]
 vcd_dump = []

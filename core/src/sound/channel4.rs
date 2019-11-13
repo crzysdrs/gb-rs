@@ -2,13 +2,13 @@ use super::{AudioChannel, Clocks};
 use crate::cycles;
 use crate::mmu::MemRegister;
 use crate::peripherals::Addressable;
-use std::ops::{Deref, DerefMut};
-
 use crate::sound::channel::{
     AddressableChannel, ChannelRegs, Freq, HasRegs, LFSRPass, Length, LengthPass, Timer, Vol,
     VolumePass, LFSR,
 };
-
+use serde::{Deserialize, Serialize};
+use std::ops::{Deref, DerefMut};
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Channel4 {
     enabled: bool,
     regs: Channel4Regs,
@@ -103,7 +103,7 @@ impl AddressableChannel for Channel4 {
         }
     }
 }
-
+#[derive(Serialize, Deserialize, Clone)]
 struct Channel4Regs(ChannelRegs);
 impl Deref for Channel4Regs {
     type Target = ChannelRegs;

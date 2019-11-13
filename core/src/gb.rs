@@ -5,15 +5,14 @@ use crate::cart::{CGBStatus, Cart};
 use crate::cpu::Registers;
 use crate::peripherals::PeripheralData;
 
-//use serde::{Serialize};
-//use serde_diff::SerdeDiff;
+use serde::{Deserialize, Serialize};
 
 use crate::cycles;
 
 #[cfg(feature = "vcd_dump")]
 use crate::VCDDump::VCD;
 
-//#[derive(Serialize,SerdeDiff)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct GB {
     cpu: CPU,
     mem: MMUInternal,
@@ -27,6 +26,9 @@ pub enum GBReason {
 }
 
 impl GB {
+    pub fn cart_rom(&mut self) -> &mut Option<Vec<u8>> {
+        self.mem.mbc_rom()
+    }
     pub fn new(
         cart: Cart,
         trace: bool,

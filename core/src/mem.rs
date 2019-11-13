@@ -1,7 +1,9 @@
 use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral};
+use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Mem {
     read_only: bool,
     base: u16,

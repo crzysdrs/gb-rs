@@ -1,14 +1,17 @@
 use super::mmu::MemRegister;
 use crate::cpu::Interrupt;
 use crate::cycles;
+use crate::hdma::Copier;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use crate::sound::WaitTimer;
-use enum_primitive::FromPrimitive;
 
+use enum_primitive::FromPrimitive;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DMA {
     active: bool,
-    copy_queue: Option<Box<dyn Iterator<Item = (u16, u16)>>>,
-    copy: Vec<(u16, u16)>,
+    copy: Copier,
     wait: WaitTimer,
 }
 
@@ -16,18 +19,15 @@ impl DMA {
     pub fn new() -> DMA {
         DMA {
             active: false,
-            copy_queue: None,
-            copy: Vec::new(),
+            copy: Copier::new(0, 0, 0),
             wait: WaitTimer::new(),
         }
     }
     pub fn is_active(&self) -> bool {
         self.active
     }
-    pub fn copy_bytes(&mut self) -> Vec<(u16, u16)> {
-        let r = self.copy.clone();
-        self.copy.clear();
-        r
+    pub fn copy_bytes(&mut self) -> &mut Copier {
+        &mut self.copy
     }
 }
 
@@ -42,17 +42,12 @@ impl Peripheral for DMA {
     fn step(&mut self, _real: &mut PeripheralData, time: cycles::CycleCount) -> Option<Interrupt> {
         if !self.is_active() {
             /* do nothing */
-        } else if let (Some(c), Some(q)) = (
-            self.wait
-                .ready(time, /* TODO: It's faster in CGB Mode */ cycles::GB),
-            self.copy_queue.as_mut(),
-        ) {
-            use std::convert::TryFrom;
-            let start_len = self.copy.len();
-            self.copy.extend(q.take(usize::try_from(c).unwrap()));
-            if self.copy.len() == start_len {
+        } else if let Some(_) = self
+            .wait
+            .ready(time, /* TODO: It's faster in CGB Mode */ cycles::GB)
+        {
+            if self.copy.empty() {
                 self.active = false;
-                self.copy_queue = None;
             }
         }
         None
@@ -67,7 +62,7 @@ impl Addressable for DMA {
                 let target = 0xfe00;
                 let len = 0xA0;
                 self.wait.reset();
-                self.copy_queue = Some(Box::new((source..source + len).zip(target..target + len)));
+                self.copy = Copier::new(source, target, len);
             }
             _ => panic!("invalid dma address"),
         }

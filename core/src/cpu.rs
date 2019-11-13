@@ -7,6 +7,8 @@ use crate::peripherals::Addressable;
 use modular_bitfield::prelude::*;
 use std::convert::TryFrom;
 
+use serde::{Deserialize, Serialize};
+
 macro_rules! alu_mem {
     ($s:expr, $mem:expr, $addr:expr, $v:expr) => {
         alu_mem_mask!($s, $mem, $addr, $v, Registers::default_mask())
@@ -43,7 +45,7 @@ pub enum Reg16 {
     PC,
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum Flag {
     Z = 1 << 7,
     N = 1 << 6,
@@ -51,7 +53,7 @@ pub enum Flag {
     C = 1 << 4,
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum Cond {
     Z,
     NZ,
@@ -59,7 +61,7 @@ pub enum Cond {
     NC,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Registers {
     a: u8,
     f: u8,
@@ -74,6 +76,7 @@ pub struct Registers {
     ime: u8,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct CPU {
     reg: Registers,
     halted: bool,

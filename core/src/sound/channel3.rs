@@ -5,9 +5,10 @@ use crate::peripherals::Addressable;
 use crate::sound::channel::{
     AddressableChannel, ChannelRegs, Freq, HasRegs, Length, LengthPass, Timer, VolumeCode,
 };
-
+use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Channel3 {
     enabled: bool,
     regs: Channel3Regs,
@@ -109,6 +110,7 @@ impl AddressableChannel for Channel3 {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 struct Channel3Regs(ChannelRegs);
 
 impl HasRegs for Channel3Regs {}

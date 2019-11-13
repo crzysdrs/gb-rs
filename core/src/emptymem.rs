@@ -1,6 +1,8 @@
 use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral};
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct EmptyMem {
     default: u8,
     base: u16,

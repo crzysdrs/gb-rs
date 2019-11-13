@@ -35,6 +35,41 @@ pub mod cycles {
         _marker: std::marker::PhantomData,
     };
     pub type CycleCount = CGB<u64>;
+    mod temp {
+        use serde::{Deserialize, Serialize};
+        #[derive(Deserialize, Serialize)]
+        pub struct TempCycles<V> {
+            pub v: V,
+        }
+    }
+    use serde::ser::{Serialize, Serializer};
+    impl<V, U> Serialize for Cycles<V, U>
+    where
+        V: Serialize,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let t = temp::TempCycles {
+                v: self.value_unsafe(),
+            };
+            Serialize::serialize(&t, serializer)
+        }
+    }
+    use serde::de::{Deserialize, Deserializer};
+    impl<'de, V, U> Deserialize<'de> for Cycles<V, U>
+    where
+        V: Deserialize<'de>,
+    {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let c: temp::TempCycles<V> = Deserialize::deserialize(deserializer)?;
+            Ok(Self::new(c.v))
+        }
+    }
 }
 use dim::si;
 use dim::typenum::{Integer, Prod, Z0};
@@ -262,6 +297,7 @@ pub mod instr;
 mod mem;
 mod mmu;
 pub mod peripherals;
+pub mod rewind;
 mod serial;
 pub mod sound;
 mod timer;
@@ -314,6 +350,8 @@ fn test_data() -> (Vec<u8>, impl Fn(&[i16]) -> bool) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     fn read_screen(gb: &mut crate::gb::GB) -> String {
         use itertools::Itertools;
         let bg_tiles = gb.get_mem().get_display().all_bgs();

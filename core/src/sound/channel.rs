@@ -5,8 +5,11 @@ use crate::cycles;
 use crate::peripherals::Addressable;
 use std::ops::{Deref, DerefMut};
 
+use serde::{Deserialize, Serialize};
+
 use super::MaskReg;
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ChannelRegs {
     base: u16,
     on: bool,
@@ -200,6 +203,7 @@ pub trait Freq: HasRegs {
     // }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Vol {
     volume: Option<u8>,
     wait: WaitTimer,
@@ -238,6 +242,7 @@ impl Vol {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Timer {
     period_wait: WaitTimer,
 }
@@ -270,6 +275,7 @@ static DUTY_CYCLES: [[bool; 8]; 4] = [
     [false, true, true, true, true, true, true, false],
 ];
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Duty {
     offset: u8,
 }
@@ -288,6 +294,7 @@ impl Duty {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct LFSR {
     shift_reg: u16,
     wait: WaitTimer,
@@ -328,6 +335,7 @@ impl LFSR {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Sweep {
     shadow_freq: Option<u16>,
     wait: WaitTimer,
@@ -377,6 +385,7 @@ impl Sweep {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 struct CountDown {
     count: u16,
 }
@@ -397,6 +406,7 @@ impl CountDown {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Length {
     max_len: u16,
     enabled: bool,

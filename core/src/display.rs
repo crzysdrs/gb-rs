@@ -5,6 +5,8 @@ use crate::mmu::MemRegister;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use crate::sound::WaitTimer;
 use modular_bitfield::prelude::*;
+use serde::{self, Deserialize, Serialize};
+use serde_big_array::big_array;
 use std::collections::VecDeque;
 use std::convert::TryFrom;
 
@@ -200,7 +202,7 @@ pub const KEY_PALETTES: [KeyPalette; 12] = [
     },
 ];
 
-#[derive(PartialEq, Copy, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Copy, Clone, Debug)]
 enum DisplayState {
     OAMSearch,     //20 Clocks
     PixelTransfer, //43 + Clocks
@@ -209,6 +211,7 @@ enum DisplayState {
 }
 
 #[bitfield]
+#[derive(Serialize, Deserialize)]
 pub struct ColorEntry {
     r: B5,
     g: B5,
@@ -225,6 +228,7 @@ pub enum StatMode {
 }
 
 #[bitfield]
+#[derive(Serialize, Deserialize, Copy, Clone)]
 pub struct StatFlag {
     #[bits = 2]
     mode: StatMode,
@@ -237,6 +241,7 @@ pub struct StatFlag {
 }
 
 #[bitfield]
+#[derive(Serialize, Deserialize, Copy, Clone)]
 pub struct LCDCControl {
     bg_display_priority: bool,
     sprite_display_enable: bool,
@@ -249,7 +254,7 @@ pub struct LCDCControl {
 }
 
 #[bitfield]
-#[derive(Copy, Clone)]
+#[derive(Serialize, Deserialize, Copy, Clone, Default)]
 pub struct OAMFlag {
     color_palette: B3,
     vram_bank: B1,
@@ -260,7 +265,7 @@ pub struct OAMFlag {
 }
 
 #[bitfield]
-#[derive(Copy, Clone)]
+#[derive(Serialize, Deserialize, Copy, Clone, Default)]
 pub struct BGMapFlag {
     color_palette: B3,
     vram_bank: B1,
@@ -270,7 +275,7 @@ pub struct BGMapFlag {
     priority: B1,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default, Serialize, Deserialize)]
 pub struct SpriteAttribute {
     y: u8,
     x: u8,
@@ -278,19 +283,22 @@ pub struct SpriteAttribute {
     flags: OAMFlag,
 }
 
-#[derive(Copy, Clone)]
+use std::default::Default;
+
+#[derive(Copy, Clone, Serialize, Deserialize)]
 struct Color {
     high: u8,
     low: u8,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 enum DisplayMode {
     StrictGB,
     CGBCompat,
     CGB,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Display {
     needs_clear: bool,
     ppu: PPU,
@@ -302,7 +310,7 @@ pub struct Display {
     time: cycles::CycleCount,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default, Serialize, Deserialize)]
 pub struct BGMapIdx(u8);
 
 impl BGMapIdx {
@@ -321,8 +329,13 @@ impl BGMapIdx {
     }
 }
 
+big_array! { BigArray; 40, 1024, 6144, }
+
+#[derive(Serialize, Deserialize, Copy, Clone)]
 struct BGMap {
+    #[serde(with = "BigArray")]
     map: [BGMapIdx; 32 * 32],
+    #[serde(with = "BigArray")]
     flags: [BGMapFlag; 32 * 32],
 }
 
@@ -334,10 +347,51 @@ impl Default for BGMap {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Copy, Clone)]
+struct Tiles {
+    #[serde(with = "BigArray")]
+    tiles_bank0: [u8; 384 * BYTES_PER_TILE],
+    #[serde(with = "BigArray")]
+    tiles_bank1: [u8; 384 * BYTES_PER_TILE],
+}
+
+impl Tiles {
+    fn new() -> Tiles {
+        Tiles {
+            tiles_bank0: [0u8; 384 * BYTES_PER_TILE],
+            tiles_bank1: [0u8; 384 * BYTES_PER_TILE],
+        }
+    }
+}
+
+impl std::ops::Index<usize> for Tiles {
+    type Output = [u8; 384 * BYTES_PER_TILE];
+    fn index(&self, b: usize) -> &Self::Output {
+        match b {
+            0 => &self.tiles_bank0,
+            1 => &self.tiles_bank1,
+            _ => panic!("incorrect bank"),
+        }
+    }
+}
+impl std::ops::IndexMut<usize> for Tiles {
+    //type Output = [u8;384*BYTES_PER_TILE];
+    fn index_mut(&mut self, b: usize) -> &mut Self::Output {
+        match b {
+            0 => &mut self.tiles_bank0,
+            1 => &mut self.tiles_bank1,
+            _ => panic!("incorrect bank"),
+        }
+    }
+}
+
 const BYTES_PER_TILE: usize = 16;
+#[derive(Serialize, Deserialize, Clone)]
 struct DispMem {
-    tiles: [[u8; 384 * BYTES_PER_TILE]; 2],
+    tiles: Tiles,
     bgmaps: [BGMap; 2],
+    #[serde(with = "BigArray")]
     oam: [SpriteAttribute; 40],
     scx: u8,
     scy: u8,
@@ -384,7 +438,7 @@ impl Display {
             mem: DispMem {
                 cgb_mode,
                 bgmaps: [BGMap::default(), BGMap::default()],
-                tiles: [[0; 384 * BYTES_PER_TILE]; 2],
+                tiles: Tiles::new(),
                 oam: [SpriteAttribute {
                     x: 0,
                     y: 0,
@@ -417,7 +471,7 @@ impl Display {
         }
     }
     fn oam_search(&mut self) {
-        assert_eq!(self.oam_searched.capacity(), 10);
+        //assert_eq!(self.oam_searched.capacity(), 10);
         self.oam_searched.clear();
         if self.mem.lcdc.get_sprite_display_enable() {
             self.oam_searched.extend(
@@ -1022,15 +1076,15 @@ fn draw_window<'sprite, T: Iterator<Item = &'sprite (usize, SpriteAttribute)>>(
     ppu.clear();
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default, Serialize, Deserialize)]
 struct SpriteIdx(u8);
-#[derive(Copy, Clone)]
+#[derive(Serialize, Deserialize, Copy, Clone, Default)]
 struct BGIdx(BGMapIdx, BGMapFlag);
-#[derive(Copy, Clone)]
+#[derive(Serialize, Deserialize, Copy, Clone, Default)]
 struct TileIdx(u8);
-#[derive(Copy, Clone)]
+#[derive(Serialize, Deserialize, Copy, Clone, Default)]
 pub struct OAMIdx(u8);
-#[derive(Copy, Clone)]
+#[derive(Serialize, Deserialize, Copy, Clone)]
 struct Coord(u8, u8);
 
 impl Coord {
@@ -1117,7 +1171,7 @@ impl Tile {
             }
         };
         use std::convert::TryInto;
-        let bs: [u8; 2] = display.tiles[bank as usize][offset..][..2]
+        let bs: [u8; 2] = display.tiles[bank.try_into().unwrap()][offset..][..2]
             .try_into()
             .unwrap();
 
@@ -1167,14 +1221,14 @@ impl Tile {
     }
 }
 
-#[derive(PartialEq, Copy, Clone, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Copy, Clone, Eq)]
 enum PaletteShade {
     Empty,
     Low,
     Mid,
     High,
 }
-#[derive(Copy, Clone)]
+#[derive(Serialize, Deserialize, Copy, Clone)]
 enum Palette {
     None,
     BG,
@@ -1184,13 +1238,15 @@ enum Palette {
     OBPColor(u8),
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 struct Pixel(Priority, Palette, PaletteShade);
 
+#[derive(Serialize, Deserialize, Clone)]
 struct PPU {
     shift: VecDeque<Pixel>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Serialize, Deserialize, Copy, Clone)]
 enum Priority {
     Obj(usize, bool),
     BG(bool),
@@ -1247,7 +1303,7 @@ impl PPU {
 }
 
 #[bitfield]
-#[derive(Copy, Clone)]
+#[derive(Serialize, Deserialize, Copy, Clone)]
 pub struct ColorPaletteControl {
     high_low: bool,
     data: B2,
@@ -1257,6 +1313,7 @@ pub struct ColorPaletteControl {
 }
 
 #[bitfield]
+#[derive(Serialize, Deserialize)]
 pub struct ColorPaletteControlCount {
     count: B6,
     preserve: B2,

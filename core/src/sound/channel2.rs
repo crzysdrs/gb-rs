@@ -8,7 +8,9 @@ use crate::sound::channel::{
     AddressableChannel, ChannelRegs, Duty, DutyPass, Freq, HasRegs, Length, LengthPass, Timer, Vol,
     VolumePass,
 };
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Channel2 {
     enabled: bool,
     regs: Channel2Regs,
@@ -102,6 +104,7 @@ impl AddressableChannel for Channel2 {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 struct Channel2Regs(ChannelRegs);
 
 impl HasRegs for Channel2Regs {}

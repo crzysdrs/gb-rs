@@ -1,15 +1,17 @@
 use crate::cpu::Interrupt;
 use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
+use objekt;
+use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone)]
+#[derive(Serialize, Deserialize, Copy, Clone)]
 pub enum CGBStatus {
     GB,
     SupportsCGB,
     CGBOnly,
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 enum MBCType {
     MBC1,
     MBC2,
@@ -20,18 +22,20 @@ enum MBCType {
     MMM01,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 #[allow(dead_code)]
 pub struct Cart {
     mbc: Option<MBCType>,
     battery: bool,
     title: String,
     cgb: CGBStatus,
-    cart: Box<dyn Peripheral>,
+    cart: Box<dyn MBC>,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 struct CartPhysical {
     ram: Vec<u8>,
-    rom: Vec<u8>,
+    rom: Option<Vec<u8>>,
     rom_reg: usize,
     ram_reg: usize,
     bank_mode: BankMode,
@@ -42,12 +46,15 @@ impl CartPhysical {
     fn new(ram: Vec<u8>, rom: Vec<u8>) -> CartPhysical {
         CartPhysical {
             ram,
-            rom,
+            rom: Some(rom),
             ram_reg: 0,
             rom_reg: 1,
             bank_mode: BankMode::ROM,
             ram_enable: false,
         }
+    }
+    fn rom(&mut self) -> &mut Option<Vec<u8>> {
+        &mut self.rom
     }
 }
 
@@ -67,13 +74,16 @@ impl Addressable for Cart {
     }
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 enum BankMode {
     ROM,
     RAM,
 }
 
 impl Cart {
+    pub fn mbc_rom(&mut self) -> &mut Option<Vec<u8>> {
+        self.cart.mbc_rom()
+    }
     pub fn title(&self) -> &String {
         &self.title
     }
@@ -162,7 +172,7 @@ impl Cart {
         println!("ROM: {:4x}", rom[0x148]);
 
         let physical = CartPhysical::new(vec![0u8; ram_size], rom);
-        let peripheral: Box<dyn Peripheral> = match mbc {
+        let peripheral: Box<dyn MBC> = match mbc {
             None | Some(MBC1) => Box::new(CartMBC1 { cart: physical }),
             Some(MBC3) => Box::new(CartMBC3 {
                 cart: physical,
@@ -206,12 +216,21 @@ impl CartPhysical {
             (0x4000, BankMode::ROM) => self.rom_reg,
             (_, _) => panic!("Unhandled Rom Offset"),
         };
-        (addr as usize - base as usize + bank * (16 << 10)) & (self.rom.len() - 1)
+        (addr as usize - base as usize + bank * (16 << 10))
+            & (self.rom.as_ref().map(|rom| rom.len()).unwrap_or(0) - 1)
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 struct CartMBC1 {
     cart: CartPhysical,
+}
+
+#[typetag::serde]
+impl MBC for CartMBC1 {
+    fn mbc_rom(&mut self) -> &mut Option<Vec<u8>> {
+        self.cart.rom()
+    }
 }
 
 impl Peripheral for CartMBC1 {}
@@ -221,11 +240,11 @@ impl Addressable for CartMBC1 {
         match addr {
             0x0000..=0x3FFF => {
                 let addr = self.cart.rom_offset(0x0000, addr);
-                self.cart.rom[addr]
+                self.cart.rom.as_ref().map(|rom| rom[addr]).unwrap_or(0)
             }
             0x4000..=0x7FFF => {
                 let addr = self.cart.rom_offset(0x4000, addr);
-                self.cart.rom[addr]
+                self.cart.rom.as_ref().map(|rom| rom[addr]).unwrap_or(0)
             }
             0xA000..=0xBFFF => {
                 if let Some(addr) = self.cart.ram_offset(addr) {
@@ -275,7 +294,7 @@ impl Addressable for CartMBC1 {
         }
     }
 }
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 struct RTC {
     microseconds: u64,
     seconds: u8,
@@ -342,12 +361,21 @@ impl RTC {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 struct CartMBC3 {
     cart: CartPhysical,
     rtc: RTC,
     rtc_latch: Option<RTC>,
 }
 
+#[typetag::serde]
+impl MBC for CartMBC3 {
+    fn mbc_rom(&mut self) -> &mut Option<Vec<u8>> {
+        self.cart.rom()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 enum RTCMode {
     Seconds,
     Minutes,
@@ -381,11 +409,11 @@ impl Addressable for CartMBC3 {
         match addr {
             0x0000..=0x3FFF => {
                 let addr = self.cart.rom_offset(0x0000, addr);
-                self.cart.rom[addr]
+                self.cart.rom.as_ref().map(|rom| rom[addr]).unwrap_or(0)
             }
             0x4000..=0x7FFF => {
                 let addr = self.cart.rom_offset(0x4000, addr);
-                self.cart.rom[addr]
+                self.cart.rom.as_ref().map(|rom| rom[addr]).unwrap_or(0)
             }
             0xA000..=0xBFFF => {
                 if let Some(rtc_mode) = self.rtc_select() {
@@ -439,9 +467,22 @@ impl Addressable for CartMBC3 {
         }
     }
 }
-
+#[derive(Serialize, Deserialize, Clone)]
 struct CartMBC5 {
     cart: CartPhysical,
+}
+
+#[typetag::serde(tag = "type")]
+trait MBC: Peripheral + objekt::Clone {
+    fn mbc_rom(&mut self) -> &mut Option<Vec<u8>>;
+}
+
+objekt::clone_trait_object!(MBC);
+#[typetag::serde]
+impl MBC for CartMBC5 {
+    fn mbc_rom(&mut self) -> &mut Option<Vec<u8>> {
+        self.cart.rom()
+    }
 }
 
 impl Peripheral for CartMBC5 {}
@@ -451,11 +492,11 @@ impl Addressable for CartMBC5 {
         match addr {
             0x0000..=0x3FFF => {
                 let addr = self.cart.rom_offset(0x0000, addr);
-                self.cart.rom[addr]
+                self.cart.rom.as_ref().map(|rom| rom[addr]).unwrap_or(0)
             }
             0x4000..=0x7FFF => {
                 let addr = self.cart.rom_offset(0x4000, addr);
-                self.cart.rom[addr]
+                self.cart.rom.as_ref().map(|rom| rom[addr]).unwrap_or(0)
             }
             0xA000..=0xBFFF => {
                 if let Some(addr) = self.cart.ram_offset(addr) {

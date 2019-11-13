@@ -3,8 +3,10 @@ use crate::cpu::Interrupt;
 use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use enum_primitive::FromPrimitive;
+use serde::{Deserialize, Serialize};
 use std::io::Write;
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Serial {
     sb: u8,
     sc: u8,

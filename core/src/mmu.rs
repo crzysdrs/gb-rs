@@ -11,6 +11,7 @@ use crate::dma::DMA;
 use crate::hdma::HDMA;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
 use crate::sound::Mixer;
+use serde::{Deserialize, Serialize};
 
 use std::io;
 use std::io::{Seek, SeekFrom};
@@ -90,6 +91,7 @@ enum_from_primitive! {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct MemReg {
     reg: u8,
     read_mask: u8,
@@ -134,6 +136,7 @@ impl Addressable for MemReg {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 struct SyncPeripheral<T>
 where
     T: Peripheral,
@@ -212,6 +215,7 @@ pub struct MMU<'b, 'c> {
     data: &'b mut PeripheralData<'c>,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct MMUInternal {
     seek_pos: u16,
     bios_exists: bool,
@@ -237,6 +241,9 @@ pub struct MMUInternal {
 }
 
 impl MMUInternal {
+    pub fn mbc_rom(&mut self) -> &mut Option<Vec<u8>> {
+        self.cart.inner_mut().mbc_rom()
+    }
     pub fn set_controls(&mut self, controls: u8) {
         self.controller.inner_mut().set_controls(controls);
         self.controller.reset();
@@ -355,21 +362,6 @@ impl MMUInternal {
         if force || self.last_sync < self.time {
             use std::convert::TryFrom;
             let cycles = self.time - self.last_sync;
-            if self.dma.inner_mut().is_active() {
-                self.dma.force_step(data, cycles);
-                for (s, d) in self.dma.inner_mut().copy_bytes() {
-                    let v = self.read_byte_noeffect(data, s);
-                    self.write_byte_noeffect(data, d, v);
-                }
-            }
-            if self.hdma.inner_mut().is_active() {
-                /* TODO: This needs to hook into Hblanks in some cases */
-                self.hdma.force_step(data, cycles);
-                for (s, d) in self.hdma.inner_mut().copy_bytes() {
-                    let v = self.read_byte_noeffect(data, s);
-                    self.write_byte_noeffect(data, d, v);
-                }
-            }
 
             let interrupt_flag = (&mut [
                 (&mut self.timer) as &mut dyn Peripheral,
@@ -395,6 +387,27 @@ impl MMUInternal {
                         Some(i)
                     }
                 });
+            self.last_sync = self.time;
+
+            let mut v = vec![];
+            if self.dma.inner_mut().is_active() {
+                self.dma.force_step(data, cycles);
+                v.extend(self.dma.inner_mut().copy_bytes());
+                for (s, d) in v {
+                    let v = self.read_byte_noeffect(data, s);
+                    self.write_byte_noeffect(data, d, v);
+                }
+            }
+            let mut v = vec![];
+            if self.hdma.inner_mut().is_active() {
+                /* TODO: This needs to hook into Hblanks in some cases */
+                self.hdma.force_step(data, cycles);
+                v.extend(self.hdma.inner_mut().copy_bytes());
+                for (s, d) in v {
+                    let v = self.read_byte_noeffect(data, s);
+                    self.write_byte_noeffect(data, d, v);
+                }
+            }
 
             if let Some(interrupt_flag) = interrupt_flag {
                 let flags = Interrupt::try_from(&[self.interrupt_flag.reg()][..]).unwrap();
@@ -412,7 +425,6 @@ impl MMUInternal {
                     data.vblank = true;
                 }
             }
-            self.last_sync = self.time;
         }
     }
     pub fn time(&self) -> cycles::CycleCount {

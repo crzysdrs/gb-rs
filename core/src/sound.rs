@@ -4,6 +4,7 @@ use crate::emptymem::EmptyMem;
 use crate::mem::Mem;
 use crate::mmu::MemRegister;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
+use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
 mod channel;
@@ -17,6 +18,8 @@ use self::channel1::Channel1;
 use self::channel2::Channel2;
 use self::channel3::Channel3;
 use self::channel4::Channel4;
+
+#[derive(Serialize, Deserialize, Clone)]
 struct MaskReg {
     value: u8,
     mask: u8,
@@ -144,7 +147,7 @@ impl Clocks {
     }
 }
 
-#[derive(Copy, Clone, PartialOrd, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Copy, Clone, PartialOrd, PartialEq, Debug)]
 struct SoundEvent {
     time: cycles::CycleCount,
     typ: SoundEventType,
@@ -177,7 +180,7 @@ impl SoundEvent {
     }
 }
 
-#[derive(Copy, Clone, PartialOrd, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Copy, Clone, PartialOrd, PartialEq, Debug)]
 enum SoundEventType {
     VolumeClk,
     LengthClk,
@@ -217,11 +220,28 @@ impl<I: std::iter::Iterator> PeekableIterator for std::iter::Peekable<I> {
 //         }
 //     }
 // }
+
+#[derive(Serialize, Deserialize, Clone)]
 struct FrameSequencer {
-    //seq: Box<dyn itertools::PeekingNext<Item = SoundEvent>>,
-    //seq: Box<dyn Iterator<Item=SoundEvent>>,
-    seq: std::iter::Peekable<Box<dyn Iterator<Item = SoundEvent>>>,
-    last: cycles::CycleCount,
+    frame: Vec<SoundEvent>,
+    last_frame_index: usize,
+    time: cycles::CycleCount,
+}
+
+impl Iterator for FrameSequencer {
+    type Item = SoundEvent;
+    fn next(&mut self) -> Option<SoundEvent> {
+        if self.frame[self.last_frame_index].time <= self.time {
+            let hz512 = cycles::SECOND / 512;
+            let r = self.frame[self.last_frame_index].clone();
+            self.frame[self.last_frame_index].time += 8 * hz512;
+            self.last_frame_index += 1;
+            self.last_frame_index %= self.frame.len();
+            Some(r)
+        } else {
+            None
+        }
+    }
 }
 
 impl FrameSequencer {
@@ -264,35 +284,25 @@ impl FrameSequencer {
                 });
 
         use itertools::Itertools;
+        let frame = volume
+            .merge(sweep)
+            .merge(length)
+            .merge(sample)
+            .take_while(|ev| ev.time < 8 * hz512)
+            .collect::<Vec<_>>();
         FrameSequencer {
-            seq: (Box::new(volume.merge(sweep).merge(length).merge(sample))
-                as Box<dyn Iterator<Item = SoundEvent>>)
-                .peekable(),
-            last: 0 * hz512,
+            frame,
+            time: cycles::CycleCount::new(0),
+            last_frame_index: 0,
         }
     }
 
-    fn step<'a>(
-        &'a mut self,
-        time: cycles::CycleCount,
-        relative: bool,
-    ) -> impl Iterator<Item = SoundEvent> + 'a {
-        let now = self.last + time;
-        let old = self.last;
-        self.last += time;
-        use itertools::Itertools;
-        self.seq
-            .by_ref()
-            .peeking_take_while(move |ev| ev.time <= now)
-            .map(move |mut ev| {
-                if relative {
-                    ev.time -= old;
-                }
-                ev
-            })
+    fn step<'a>(&'a mut self, time: cycles::CycleCount) {
+        self.time += time;
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct WaitTimer {
     acc: cycles::CycleCount,
 }
@@ -332,6 +342,7 @@ impl WaitTimer {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Mixer {
     last_event: SoundEvent,
     frame_seq: FrameSequencer,
@@ -473,8 +484,9 @@ impl Peripheral for Mixer {
             &mut self.channel3,
             &mut self.channel4,
         ];
+        self.frame_seq.step(cycles);
         if let Some(ref mut audio) = real.audio_spec {
-            for mut ev in self.frame_seq.step(cycles, false) {
+            for mut ev in &mut self.frame_seq {
                 //println!("Sound Event {:?}", ev);
                 let mut clks = ev.get_clocks();
                 let old_event = self.last_event;

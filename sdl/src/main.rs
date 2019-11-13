@@ -7,11 +7,12 @@ use gb::cart::Cart;
 use gb::controller::GBControl;
 use gb::gb::{GBReason, GB};
 use gb::peripherals::{AudioSpec, PeripheralData};
+use gb::rewind::Rewind;
 use sdl2::pixels::Color;
 //use std::fs::File;
 use std::io::Read;
 
-fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
+fn sdl(gb: GB) -> Result<(), std::io::Error> {
     use sdl2::audio::AudioSpecDesired;
     use sdl2::event::Event;
     use sdl2::gfx::framerate::FPSManager;
@@ -96,7 +97,14 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
         }
     }
     let mut mute = false;
+
+    let mut rewind = Rewind::new(gb);
+
     'running: loop {
+        let mod_state = sdl_context.keyboard().mod_state();
+        let paused = mod_state.contains(sdl2::keyboard::LSHIFTMOD)
+            || mod_state.contains(sdl2::keyboard::RSHIFTMOD);
+
         // get the inputs here
         for event in event_pump.poll_iter() {
             match event {
@@ -109,7 +117,7 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                     keycode: Some(Keycode::T),
                     repeat: false,
                     ..
-                } => gb.toggle_trace(),
+                } => rewind.gb().toggle_trace(),
                 Event::KeyUp {
                     keycode: Some(Keycode::M),
                     repeat: false,
@@ -119,9 +127,16 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                 }
                 Event::KeyDown {
                     keycode: Some(k),
-                    repeat: false,
+                    repeat: _,
                     ..
                 } => {
+                    if paused {
+                        match k {
+                            Keycode::Right => rewind.forward(),
+                            Keycode::Left => rewind.back(),
+                            _ => {}
+                        }
+                    }
                     if let Some(k) = match_keycode(k) {
                         controls &= !(k as u8);
                     }
@@ -139,18 +154,16 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
             }
         }
 
-        gb.set_controls(controls);
-        let start = gb.cpu_cycles();
+        rewind.gb().set_controls(controls);
+        let start = rewind.gb().cpu_cycles();
         let time = gb::cycles::SECOND / 60;
         'frame: loop {
-            let mut count = 0;
-            let remain = time - (gb.cpu_cycles() - start);
+            let remain = time - (rewind.gb().cpu_cycles() - start);
             let r = texture.with_lock(sdl2::rect::Rect::new(0, 0, 160, 144), |mut slice, _size| {
                 let audio_spec = Some(AudioSpec {
                     silence: 0,
                     freq: device.spec().freq as u32,
                     queue: Box::new(|samples| {
-                        count += 1;
                         if !mute {
                             device.queue(samples)
                         } else {
@@ -158,11 +171,15 @@ fn sdl(gb: &mut GB) -> Result<(), std::io::Error> {
                         }
                     }),
                 });
-
-                gb.step(
-                    Some(remain),
-                    &mut PeripheralData::new(Some(&mut slice), None, audio_spec),
-                )
+                if !paused {
+                    rewind.step(
+                        Some(remain),
+                        &mut PeripheralData::new(Some(&mut slice), None, audio_spec),
+                    )
+                } else {
+                    rewind.restore(&mut PeripheralData::new(Some(&mut slice), None, None));
+                    GBReason::Timeout
+                }
             });
             match r {
                 Ok(GBReason::VSync) => {
@@ -343,6 +360,6 @@ fn main() -> Result<(), std::io::Error> {
         }
         Ok(())
     } else {
-        sdl(&mut gb)
+        sdl(gb)
     }
 }
