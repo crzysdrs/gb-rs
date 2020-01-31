@@ -457,7 +457,7 @@ fn dis_rom(
                 ("SerialTransferCompleteInterrupt", 0x0058),
                 ("JoypadTransitionInterrupt", 0x0060),
             ]
-            .into_iter()
+            .iter()
             .map(|(s, a)| (Cow::Borrowed(*s), *a as u64)),
         )
         .collect::<Vec<_>>();
