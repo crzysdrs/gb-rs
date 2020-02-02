@@ -25,6 +25,7 @@ fn sdl(gb: GB) -> Result<(), std::io::Error> {
     // however you can only manipulate properties of that window, like its size, whether it's
     // fullscreen, ..= but you cannot change its content without using a Canvas or using the
     // `surface()` method.
+
     let window = video_subsystem
         .window("rust-sdl2 demo: Game of Life", 160, 144)
         .position_centered()

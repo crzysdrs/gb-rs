@@ -7,6 +7,7 @@ use std::ops::Deref;
 pub struct Mem {
     read_only: bool,
     base: u16,
+    #[serde(with = "serde_bytes")]
     mem: Vec<u8>,
 }
 

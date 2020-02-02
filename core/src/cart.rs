@@ -34,8 +34,10 @@ pub struct Cart {
 
 #[derive(Serialize, Deserialize, Clone)]
 struct CartPhysical {
+    #[serde(with = "serde_bytes")]
     ram: Vec<u8>,
-    rom: Option<Vec<u8>>,
+    #[serde(with = "serde_bytes")]
+    rom: Vec<u8>,
     rom_reg: usize,
     ram_reg: usize,
     bank_mode: BankMode,
@@ -46,14 +48,14 @@ impl CartPhysical {
     fn new(ram: Vec<u8>, rom: Vec<u8>) -> CartPhysical {
         CartPhysical {
             ram,
-            rom: Some(rom),
+            rom,
             ram_reg: 0,
             rom_reg: 1,
             bank_mode: BankMode::ROM,
             ram_enable: false,
         }
     }
-    fn rom(&mut self) -> &mut Option<Vec<u8>> {
+    fn rom(&mut self) -> &mut Vec<u8> {
         &mut self.rom
     }
 }
@@ -81,7 +83,7 @@ enum BankMode {
 }
 
 impl Cart {
-    pub fn mbc_rom(&mut self) -> &mut Option<Vec<u8>> {
+    pub fn mbc_rom(&mut self) -> &mut Vec<u8> {
         self.cart.mbc_rom()
     }
     pub fn title(&self) -> &String {
@@ -216,8 +218,7 @@ impl CartPhysical {
             (0x4000, BankMode::ROM) => self.rom_reg,
             (_, _) => panic!("Unhandled Rom Offset"),
         };
-        (addr as usize - base as usize + bank * (16 << 10))
-            & (self.rom.as_ref().map(|rom| rom.len()).unwrap_or(0) - 1)
+        (addr as usize - base as usize + bank * (16 << 10)) & (self.rom.len() - 1)
     }
 }
 
@@ -228,7 +229,7 @@ struct CartMBC1 {
 
 #[typetag::serde]
 impl MBC for CartMBC1 {
-    fn mbc_rom(&mut self) -> &mut Option<Vec<u8>> {
+    fn mbc_rom(&mut self) -> &mut Vec<u8> {
         self.cart.rom()
     }
 }
@@ -240,11 +241,11 @@ impl Addressable for CartMBC1 {
         match addr {
             0x0000..=0x3FFF => {
                 let addr = self.cart.rom_offset(0x0000, addr);
-                self.cart.rom.as_ref().map(|rom| rom[addr]).unwrap_or(0)
+                self.cart.rom[addr]
             }
             0x4000..=0x7FFF => {
                 let addr = self.cart.rom_offset(0x4000, addr);
-                self.cart.rom.as_ref().map(|rom| rom[addr]).unwrap_or(0)
+                self.cart.rom[addr]
             }
             0xA000..=0xBFFF => {
                 if let Some(addr) = self.cart.ram_offset(addr) {
@@ -370,7 +371,7 @@ struct CartMBC3 {
 
 #[typetag::serde]
 impl MBC for CartMBC3 {
-    fn mbc_rom(&mut self) -> &mut Option<Vec<u8>> {
+    fn mbc_rom(&mut self) -> &mut Vec<u8> {
         self.cart.rom()
     }
 }
@@ -409,11 +410,11 @@ impl Addressable for CartMBC3 {
         match addr {
             0x0000..=0x3FFF => {
                 let addr = self.cart.rom_offset(0x0000, addr);
-                self.cart.rom.as_ref().map(|rom| rom[addr]).unwrap_or(0)
+                self.cart.rom[addr]
             }
             0x4000..=0x7FFF => {
                 let addr = self.cart.rom_offset(0x4000, addr);
-                self.cart.rom.as_ref().map(|rom| rom[addr]).unwrap_or(0)
+                self.cart.rom[addr]
             }
             0xA000..=0xBFFF => {
                 if let Some(rtc_mode) = self.rtc_select() {
@@ -474,13 +475,13 @@ struct CartMBC5 {
 
 #[typetag::serde(tag = "type")]
 trait MBC: Peripheral + objekt::Clone {
-    fn mbc_rom(&mut self) -> &mut Option<Vec<u8>>;
+    fn mbc_rom(&mut self) -> &mut Vec<u8>;
 }
 
 objekt::clone_trait_object!(MBC);
 #[typetag::serde]
 impl MBC for CartMBC5 {
-    fn mbc_rom(&mut self) -> &mut Option<Vec<u8>> {
+    fn mbc_rom(&mut self) -> &mut Vec<u8> {
         self.cart.rom()
     }
 }
@@ -492,11 +493,11 @@ impl Addressable for CartMBC5 {
         match addr {
             0x0000..=0x3FFF => {
                 let addr = self.cart.rom_offset(0x0000, addr);
-                self.cart.rom.as_ref().map(|rom| rom[addr]).unwrap_or(0)
+                self.cart.rom[addr]
             }
             0x4000..=0x7FFF => {
                 let addr = self.cart.rom_offset(0x4000, addr);
-                self.cart.rom.as_ref().map(|rom| rom[addr]).unwrap_or(0)
+                self.cart.rom[addr]
             }
             0xA000..=0xBFFF => {
                 if let Some(addr) = self.cart.ram_offset(addr) {

@@ -241,7 +241,7 @@ pub struct MMUInternal {
 }
 
 impl MMUInternal {
-    pub fn mbc_rom(&mut self) -> &mut Option<Vec<u8>> {
+    pub fn mbc_rom(&mut self) -> &mut Vec<u8> {
         self.cart.inner_mut().mbc_rom()
     }
     pub fn set_controls(&mut self, controls: u8) {

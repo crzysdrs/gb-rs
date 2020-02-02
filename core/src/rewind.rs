@@ -54,10 +54,7 @@ impl Rewind {
             Vec::new()
         };
         patch.clear();
-        let rom = self.gb.cart_rom().take();
-        let now = bincode::serialize(&self.gb).unwrap();
-        *self.gb.cart_rom() = rom;
-        let patch = now;
+        let patch = bincode::serialize(&self.gb).unwrap();
         self.states.push_back(State { s: patch });
         self.pos = if let Some(i) = self.pos {
             Some(i + 1)
@@ -67,10 +64,8 @@ impl Rewind {
     }
     pub fn restore(&mut self, data: &mut PeripheralData) {
         if let Some(pos) = self.pos {
-            let rom = self.gb.cart_rom().take();
             self.gb =
                 bincode::deserialize(&self.states[pos].s).expect("Invalid Bincode Deserialize");
-            *self.gb.cart_rom() = rom;
         }
 
         loop {

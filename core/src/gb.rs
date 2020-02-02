@@ -26,7 +26,7 @@ pub enum GBReason {
 }
 
 impl GB {
-    pub fn cart_rom(&mut self) -> &mut Option<Vec<u8>> {
+    pub fn cart_rom(&mut self) -> &mut Vec<u8> {
         self.mem.mbc_rom()
     }
     pub fn new(
