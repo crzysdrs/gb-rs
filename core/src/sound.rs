@@ -25,14 +25,14 @@ struct MaskReg {
     mask: u8,
 }
 
-// impl MaskReg {
-//     fn set(&mut self, byte: u8) {
-//         self.value = byte;
-//     }
-//     fn unmasked(&self) -> u8 {
-//         self.value | self.mask
-//     }
-// }
+impl MaskReg {
+    fn set(&mut self, byte: u8) {
+        self.value = byte;
+    }
+    // fn unmasked(&self) -> u8 {
+    //     self.value | self.mask
+    // }
+}
 
 impl Deref for MaskReg {
     type Target = u8;

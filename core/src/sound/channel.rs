@@ -195,12 +195,12 @@ pub trait Freq: HasRegs {
     fn period(&self) -> u16 {
         (1 << 11) - self.freq()
     }
-    // fn set_freq(&mut self, new_freq: u16) {
-    //     let [x0, x1] = new_freq.to_bytes();
-    //     let tmp = *self.nrx4;
-    //     self.nrx4.write_byte(self.((tmp & !0b111) | (x1 & 0b111));
-    //     self.nrx3.set(x0);
-    // }
+    fn set_freq(&mut self, new_freq: u16) {
+        let [x0, x1] = new_freq.to_le_bytes();
+        let tmp = *self.nrx4;
+        self.nrx4.set((tmp & !0b111) | (x1 & 0b111));
+        self.nrx3.set(x0);
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -326,6 +326,7 @@ impl LFSR {
                 let high_bit = (b0 ^ b1) & 0b1;
                 self.shift_reg = (self.shift_reg >> 1) | (high_bit << 14);
                 if regs.width_mode() {
+                    self.shift_reg &= !(0b1 << 6);
                     self.shift_reg |= high_bit << 6;
                 }
                 self.shift_reg &= 0x7fff;
@@ -373,10 +374,9 @@ impl Sweep {
                         }
                         if *freq > 2047 {
                             return None;
+                        } else {
+                            regs.set_freq(*freq);
                         }
-                        // else {
-                        //     regs.set_freq(*freq);
-                        // }
                     }
                 }
             }
@@ -392,6 +392,9 @@ struct CountDown {
 impl CountDown {
     fn new(count: u16) -> CountDown {
         CountDown { count }
+    }
+    fn count(&self) -> u16 {
+        self.count
     }
     fn update(&mut self, clk: &Clk) -> u16 {
         let next = if self.count > 0 { self.count - 1 } else { 0 };
@@ -429,7 +432,7 @@ impl Length {
         self.count = CountDown::new(val);
     }
     pub fn update(&mut self, enable: bool, trigger: bool) {
-        if trigger {
+        if trigger && self.count.count() == 0 {
             let new_val = if enable {
                 self.max_len - 1
             } else {
