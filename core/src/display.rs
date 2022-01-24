@@ -494,8 +494,8 @@ impl Display {
                         let mode = self.mem.cgb_mode;
                         move |(i, oam)| {
                             let priority = match mode {
-                                DisplayMode::CGBCompat | DisplayMode::CGB => i,
-                                _ => usize::try_from(oam.x).unwrap(),
+                                DisplayMode::CGB => i,
+                                DisplayMode::CGBCompat | DisplayMode::StrictGB => usize::try_from(oam.x).unwrap(),
                             };
                             (priority, *oam)
                         }
@@ -939,9 +939,9 @@ impl DispMem {
         fn rgb_from_palette_color(color: Color) -> (u8, u8, u8, u8) {
             let rgb = ColorEntry::try_from(&[color.low, color.high][..]).unwrap();
             (
-                rgb.get_r() << 3, //r
-                rgb.get_g() << 3, //g
-                rgb.get_b() << 3, //b
+                rgb.get_r() << 3 | rgb.get_r() >> 2, //r
+                rgb.get_g() << 3 | rgb.get_g() >> 2, //g
+                rgb.get_b() << 3 | rgb.get_b() >> 2, //b
                 0xff,
             )
         }
@@ -1188,7 +1188,7 @@ impl Tile {
             DisplayMode::StrictGB | DisplayMode::CGBCompat => false,
         };
         let (priority, palette) = match *self {
-            Tile::Sprite(p, oam, _) => {
+            Tile::Sprite(p, oam, _) => {                
                 let priority = Priority::Obj(p, oam.flags.get_priority());
                 let palette = if gbc {
                     Palette::OBPColor(oam.flags.get_color_palette())
