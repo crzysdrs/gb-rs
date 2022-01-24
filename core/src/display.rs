@@ -391,6 +391,7 @@ const BYTES_PER_TILE: usize = 16;
 struct DispMem {
     tiles: Tiles,
     bgmaps: [BGMap; 2],
+    window_line: u8,
     #[serde(with = "BigArray")]
     oam: [SpriteAttribute; 40],
     scx: u8,
@@ -445,6 +446,7 @@ impl Display {
                     flags: OAMFlag::new(),
                     pattern: SpriteIdx(0),
                 }; 40],
+                window_line: 0,
                 scx: 0,
                 scy: 0,
                 lcdc: LCDCControl::new(),
@@ -853,7 +855,7 @@ impl DispMem {
     }
     fn get_win_tile(&self, x: u8) -> Tile {
         let x = x.wrapping_sub(self.wx.wrapping_sub(7));
-        let y = self.ly.wrapping_sub(self.wy);
+        let y = self.window_line;
         let high_low = if self.lcdc.get_window_tile_map_display_select() {
             1
         } else {
@@ -1550,6 +1552,9 @@ impl Peripheral for Display {
                                 *offset,
                                 range,
                             );
+                            if *is_win && !line.is_empty() {
+                                self.mem.window_line += 1;
+                            }
                         }
                     };
 
@@ -1583,6 +1588,7 @@ impl Peripheral for Display {
                     if new_ly == 154 {
                         self.frame += 1;
                         self.time = 0 * cycles::GB;
+                        self.mem.window_line = 0;
                         new_ly = 0;
                         DisplayState::OAMSearch
                     } else {
