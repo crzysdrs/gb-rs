@@ -8,7 +8,6 @@ use modular_bitfield::prelude::*;
 use serde::{self, Deserialize, Serialize};
 use serde_big_array::big_array;
 use std::collections::VecDeque;
-use std::convert::TryFrom;
 
 pub const SCREEN_X: usize = 160;
 pub const SCREEN_Y: usize = 144;
@@ -1174,7 +1173,7 @@ impl Tile {
                 (offset, oam.flags.get_vram_bank(), oam.flags.get_flip_x())
             }
         };
-        use std::convert::TryInto;
+
         let bs: [u8; 2] = display.tiles[bank.try_into().unwrap()][offset..][..2]
             .try_into()
             .unwrap();

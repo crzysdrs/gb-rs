@@ -360,7 +360,6 @@ impl MMUInternal {
     }
     pub fn sync_peripherals(&mut self, data: &mut PeripheralData, force: bool) {
         if force || self.last_sync < self.time {
-            use std::convert::TryFrom;
             let cycles = self.time - self.last_sync;
 
             let interrupt_flag = (&mut [

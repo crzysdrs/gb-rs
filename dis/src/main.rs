@@ -333,7 +333,7 @@ where
             }
             Section::Code => {
                 let mut d = Disasm::new();
-                use std::convert::TryFrom;
+
                 for a in
                     r.clone().chain(std::iter::repeat(r.end - 1).take(
                         usize::try_from((f.end - f.start) - u64::from(r.end - r.start)).unwrap(),
@@ -700,7 +700,6 @@ fn dis_rom(
     //     .collect();
     // deduped.dedup_by_key(|(_, b)| b.clone());
 
-    use std::iter::FromIterator;
     let tree = IntervalTree::from_iter(ranges.into_iter());
 
     let rom_targets: HashMap<u64, String> = known_targets
@@ -746,7 +745,6 @@ fn dis_rom(
         points.sort();
         points.dedup();
 
-        use std::convert::TryFrom;
         let len = points.len();
         let points2 = points.clone();
         points
@@ -890,11 +888,8 @@ mod tests {
             write!(default, "[memmap]\n01 c000\n").unwrap();
         }
         dis_rom(
-            &rom.to_string_lossy(),
-            Some(vec![
-                &syms.to_string_lossy(),
-                &default_sym.to_string_lossy(),
-            ]),
+            &rom,
+            &vec![syms, default_sym],
             &std::path::PathBuf::from(dir.path()),
         )
         .unwrap();

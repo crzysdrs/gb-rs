@@ -93,7 +93,6 @@ impl Peripheral for HDMA {
         } else if self.remain == 0 && self.copy.empty() {
             self.hdma5.write_byte(0, 0b1000_0000);
         } else if let Some(c) = self.wait.ready(time, cycles::CGB) {
-            use std::convert::TryFrom;
             let copy = if self.hblank_dma {
                 16 * u16::try_from(c).unwrap()
             } else {
@@ -136,7 +135,6 @@ impl Addressable for HDMA {
             MemRegister::HDMA4 => self.hdma4.read_byte(addr),
             MemRegister::HDMA5 => {
                 if self.is_active() {
-                    use std::convert::TryFrom;
                     u8::try_from(self.remain / 10 - 1).unwrap()
                 } else {
                     0xff

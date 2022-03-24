@@ -6,7 +6,6 @@ use crate::sound::WaitTimer;
 use enum_primitive::FromPrimitive;
 use modular_bitfield::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
 
 #[derive(BitfieldSpecifier)]
 #[allow(non_camel_case_types)]
@@ -71,7 +70,6 @@ impl Peripheral for Timer {
         }
     }
     fn step(&mut self, _real: &mut PeripheralData, time: cycles::CycleCount) -> Option<Interrupt> {
-        use std::convert::TryInto;
         if let Some(c) = self
             .div_timer
             .ready(time, Timer::divider(TimerSpeed::ICS_16384hz, self.double))

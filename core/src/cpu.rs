@@ -5,7 +5,6 @@ use crate::cart::CGBStatus;
 use crate::mmu::MemRegister;
 use crate::peripherals::Addressable;
 use modular_bitfield::prelude::*;
-use std::convert::TryFrom;
 
 use serde::{Deserialize, Serialize};
 

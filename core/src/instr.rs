@@ -720,7 +720,6 @@ impl std::fmt::Display for Instr {
 
 impl FormatCode for RelAddr {
     fn to_code(&self, instr: std::ops::Range<u16>, remap: &NameAddressFn) -> String {
-        use std::convert::TryFrom;
         let rel = u16::try_from(self.0.abs()).unwrap();
         let pc = instr.end.wrapping_sub(1); /* jr computes from 1 byte back */
         let addr = if self.0 > 0 {
