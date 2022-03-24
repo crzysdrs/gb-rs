@@ -2,9 +2,6 @@
 
 #[macro_use]
 extern crate enum_primitive;
-extern crate itertools;
-extern crate num;
-extern crate vcd;
 
 #[macro_use]
 pub extern crate dimensioned;
