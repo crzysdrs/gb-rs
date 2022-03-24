@@ -171,7 +171,7 @@ impl Cart {
             u => panic!("Unhandled Ram Size: {}", u),
         };
         println!("Title: {}", title);
-        println!("Checksum: 0x{:2x}", rom[0x14d]);
+        println!("Checksum: 0x{:02x}", rom[0x14d]);
         println!("Ram Size: {}", ram_size);
         println!("ROM Size: {}", rom.len());
         println!("ROM Claimed Size: {}", (32 << 10) << rom[0x148]);
