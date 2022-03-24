@@ -1,4 +1,4 @@
-use clap::{App, Arg};
+use clap::{Arg, Command};
 use gb::instr::{Addr, Disasm, Instr, NameAddressFn};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
@@ -375,21 +375,21 @@ where
 }
 
 fn main() -> std::io::Result<()> {
-    let matches = App::new("ROM Disassembler")
+    let matches = Command::new("ROM Disassembler")
         .version("0.0.1")
         .author("Mitch Souders. <mitch.souders@gmail.com>")
         .about("Disassembles GB Roms")
         .arg(
-            Arg::with_name("SYMBOLS_ROM")
-                .short("s")
-                .multiple(true)
+            Arg::new("SYMBOLS_ROM")
+                .short('s')
+                .multiple_values(true)
                 .number_of_values(1)
                 .value_name("FILE")
                 .help("Maybe helps find existing symbols in your file")
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("ROM")
+            Arg::new("ROM")
                 .help("Sets the rom file to use")
                 .required(true)
                 .index(1),
@@ -503,7 +503,7 @@ fn dis_rom(
     enum WorkListItem {
         Code,
         Unknown,
-    };
+    }
     let mut worklist: Vec<(u64, _)> = entrys
         .iter()
         .map(|(_n, a)| (*a, WorkListItem::Code))

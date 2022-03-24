@@ -7,12 +7,11 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zip = "0.5"
-clap = "2.31"
+zip = "0.6.0"
+clap = "3.1.6"
 gb = { path = "../core" }
-modular-bitfield = "0.6.0"
 
 [dependencies.sdl2]
 default-features = false
 features = ["gfx"]
-version = "0.31.0"
+version = "0.35.2"

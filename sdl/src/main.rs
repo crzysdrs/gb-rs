@@ -103,8 +103,8 @@ fn sdl(gb: GB) -> Result<(), std::io::Error> {
 
     'running: loop {
         let mod_state = sdl_context.keyboard().mod_state();
-        let paused = mod_state.contains(sdl2::keyboard::LSHIFTMOD)
-            || mod_state.contains(sdl2::keyboard::RSHIFTMOD);
+        let paused = mod_state.contains(sdl2::keyboard::Mod::LSHIFTMOD)
+            || mod_state.contains(sdl2::keyboard::Mod::RSHIFTMOD);
 
         // get the inputs here
         for event in event_pump.poll_iter() {
@@ -166,10 +166,11 @@ fn sdl(gb: GB) -> Result<(), std::io::Error> {
                     freq: device.spec().freq as u32,
                     queue: Box::new(|samples| {
                         if !mute {
-                            device.queue(samples)
+                            device.queue_audio(samples)
                         } else {
-                            device.queue(&[0, 0])
+                            device.queue_audio(&[0, 0])
                         }
+                        .is_ok()
                     }),
                 });
                 if !paused {
@@ -204,7 +205,7 @@ fn sdl(gb: GB) -> Result<(), std::io::Error> {
 }
 
 fn main() -> Result<(), std::io::Error> {
-    use clap::{App, Arg};
+    use clap::{Arg, Command};
     use gb::dimensioned::si;
     //let s = si::Second::from(gb::cycles::SECOND);
     //let s : si::Second<u64> = gb::cycles::SECOND.into();
@@ -222,51 +223,47 @@ fn main() -> Result<(), std::io::Error> {
         .collect();
     let palettes: Vec<_> = palettes.iter().map(|x| x.as_str()).collect();
 
-    let matches = App::new("GB Rom Emulator")
+    let matches = Command::new("GB Rom Emulator")
         .version("0.0.1")
         .author("Mitch Souders. <mitch.souders@gmail.com>")
         .about("Runs GB Roms")
         .arg(
-            Arg::with_name("serial")
-                .short("s")
+            Arg::new("serial")
+                .short('s')
                 .long("serial")
                 .value_name("FILE")
                 .help("Sets a serial output file")
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("ROM")
+            Arg::new("ROM")
                 .help("Sets the rom file to use")
                 .required(true)
                 .index(1),
         )
+        .arg(Arg::new("trace").short('t').help("Enables Traced Runs"))
         .arg(
-            Arg::with_name("trace")
-                .short("t")
-                .help("Enables Traced Runs"),
-        )
-        .arg(
-            Arg::with_name("no-display")
-                .short("n")
+            Arg::new("no-display")
+                .short('n')
                 .help("Don't show a display (useful for testing, benchmarks)"),
         )
         .arg(
-            Arg::with_name("boot-rom")
-                .short("b")
+            Arg::new("boot-rom")
+                .short('b')
                 .takes_value(true)
                 .help("Specify a boot rom"),
         )
         .arg(
-            Arg::with_name("palette")
-                .short("p")
+            Arg::new("palette")
+                .short('p')
                 .takes_value(true)
                 .help("Specify a custom GBC Palette (if using GB rom w/ no boot rom)")
-                .long_help(&palettes.join("\n")),
+                .long_help(Some(palettes.join("\n").as_str())),
         )
         .arg(
-            Arg::with_name("v")
-                .short("v")
-                .multiple(true)
+            Arg::new("v")
+                .short('v')
+                .multiple_values(true)
                 .help("Sets the level of verbosity"),
         )
         .get_matches();

@@ -1,7 +1,7 @@
 use crate::cpu::Interrupt;
 use crate::cycles;
 use crate::peripherals::{Addressable, Peripheral, PeripheralData};
-use objekt;
+use dyn_clone;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Copy, Clone)]
@@ -474,11 +474,11 @@ struct CartMBC5 {
 }
 
 #[typetag::serde(tag = "type")]
-trait MBC: Peripheral + objekt::Clone {
+trait MBC: Peripheral + dyn_clone::DynClone {
     fn mbc_rom(&mut self) -> &mut Vec<u8>;
 }
 
-objekt::clone_trait_object!(MBC);
+dyn_clone::clone_trait_object!(MBC);
 #[typetag::serde]
 impl MBC for CartMBC5 {
     fn mbc_rom(&mut self) -> &mut Vec<u8> {

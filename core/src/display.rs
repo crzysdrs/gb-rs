@@ -495,7 +495,9 @@ impl Display {
                         move |(i, oam)| {
                             let priority = match mode {
                                 DisplayMode::CGB => i,
-                                DisplayMode::CGBCompat | DisplayMode::StrictGB => usize::try_from(oam.x).unwrap(),
+                                DisplayMode::CGBCompat | DisplayMode::StrictGB => {
+                                    usize::try_from(oam.x).unwrap()
+                                }
                             };
                             (priority, *oam)
                         }
@@ -1188,7 +1190,7 @@ impl Tile {
             DisplayMode::StrictGB | DisplayMode::CGBCompat => false,
         };
         let (priority, palette) = match *self {
-            Tile::Sprite(p, oam, _) => {                
+            Tile::Sprite(p, oam, _) => {
                 let priority = Priority::Obj(p, oam.flags.get_priority());
                 let palette = if gbc {
                     Palette::OBPColor(oam.flags.get_color_palette())

@@ -71,6 +71,7 @@ pub mod cycles {
         }
     }
 }
+
 use dim::si;
 use dim::typenum::{Integer, Prod, Z0};
 use std::convert::From;

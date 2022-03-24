@@ -99,7 +99,7 @@ pub trait SweepPass: HasRegs {
         (*self.nrx0 & 0b0000_1000) != 0
     }
     fn shift(&self) -> u8 {
-        (*self.nrx0 & 0b0000_0111)
+        *self.nrx0 & 0b0000_0111
     }
 }
 
@@ -173,7 +173,7 @@ pub trait VolumePass: HasRegs {
         (*self.nrx2 & 0b0000_1000) != 0
     }
     fn vol_period(&self) -> u8 {
-        (*self.nrx2 & 0b0000_0111)
+        *self.nrx2 & 0b0000_0111
     }
 }
 pub trait DutyPass: HasRegs {
