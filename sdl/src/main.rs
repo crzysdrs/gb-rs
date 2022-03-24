@@ -1,16 +1,12 @@
-extern crate clap;
-extern crate gb;
-extern crate sdl2;
-extern crate zip;
-
+use clap::Parser;
 use gb::cart::Cart;
 use gb::controller::GBControl;
 use gb::gb::{GBReason, GB};
 use gb::peripherals::{AudioSpec, PeripheralData};
 use gb::rewind::Rewind;
 use sdl2::pixels::Color;
-//use std::fs::File;
 use std::io::Read;
+use std::path::PathBuf;
 
 fn sdl(gb: GB) -> Result<(), std::io::Error> {
     use sdl2::audio::AudioSpecDesired;
@@ -204,8 +200,34 @@ fn sdl(gb: GB) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+#[derive(Parser)]
+struct Args {
+    #[clap(short, long, help = "Sets a serial output file")]
+    serial: bool,
+    #[clap(help = "ROM File")]
+    rom: PathBuf,
+
+    #[clap(short, long)]
+    trace: bool,
+
+    #[clap(short, long)]
+    boot_rom: Option<PathBuf>,
+
+    #[clap(long, help = "Don't show a display (useful for testing, benchmarks)")]
+    no_display: bool,
+
+    #[clap(
+        short,
+        long,
+        help = "Specify a custom GBC Palette (if using GB rom w/ no boot rom)"
+    )]
+    palette: Option<usize>,
+
+    #[clap(short, long, parse(from_occurrences))]
+    verbose: u32,
+}
+
 fn main() -> Result<(), std::io::Error> {
-    use clap::{Arg, Command};
     use gb::dimensioned::si;
     //let s = si::Second::from(gb::cycles::SECOND);
     //let s : si::Second<u64> = gb::cycles::SECOND.into();
@@ -216,63 +238,15 @@ fn main() -> Result<(), std::io::Error> {
     println!("SI from Cycles: {}", s2);
     let s3 = gb::cycles::CGB::from(1.0 * si::S / 4096.0);
     println!("Hz {}", s3);
-    let palettes: Vec<_> = gb::display::KEY_PALETTES
-        .iter()
-        .enumerate()
-        .map(|(i, k)| format!("{} ({})", i, k.keys))
-        .collect();
-    let palettes: Vec<_> = palettes.iter().map(|x| x.as_str()).collect();
+    // let palettes: Vec<_> = gb::display::KEY_PALETTES
+    //     .iter()
+    //     .enumerate()
+    //     .map(|(i, k)| format!("{} ({})", i, k.keys))
+    //     .collect();
+    //let palettes: Vec<_> = palettes.iter().map(|x| x.as_str()).collect();
+    let args = Args::parse();
 
-    let matches = Command::new("GB Rom Emulator")
-        .version("0.0.1")
-        .author("Mitch Souders. <mitch.souders@gmail.com>")
-        .about("Runs GB Roms")
-        .arg(
-            Arg::new("serial")
-                .short('s')
-                .long("serial")
-                .value_name("FILE")
-                .help("Sets a serial output file")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::new("ROM")
-                .help("Sets the rom file to use")
-                .required(true)
-                .index(1),
-        )
-        .arg(Arg::new("trace").short('t').help("Enables Traced Runs"))
-        .arg(
-            Arg::new("no-display")
-                .short('n')
-                .help("Don't show a display (useful for testing, benchmarks)"),
-        )
-        .arg(
-            Arg::new("boot-rom")
-                .short('b')
-                .takes_value(true)
-                .help("Specify a boot rom"),
-        )
-        .arg(
-            Arg::new("palette")
-                .short('p')
-                .takes_value(true)
-                .help("Specify a custom GBC Palette (if using GB rom w/ no boot rom)")
-                .long_help(Some(palettes.join("\n").as_str())),
-        )
-        .arg(
-            Arg::new("v")
-                .short('v')
-                .multiple_values(true)
-                .help("Sets the level of verbosity"),
-        )
-        .get_matches();
-
-    let rom = std::path::Path::new(matches.value_of("ROM").unwrap());
-    let palette: Option<usize> = matches
-        .value_of("palette")
-        .map(|x| x.parse().expect("Invalid Palette Number"));
-    let boot_rom = match matches.value_of("boot-rom") {
+    let boot_rom = match &args.boot_rom {
         Some(name) => {
             let mut file = std::fs::File::open(name)?;
             match file.metadata()?.len() {
@@ -290,14 +264,14 @@ fn main() -> Result<(), std::io::Error> {
         }
         None => None,
     };
-    let maybe_rom: std::io::Result<Vec<u8>> = match rom.extension() {
+    let maybe_rom: std::io::Result<Vec<u8>> = match args.rom.extension() {
         None => Err(std::io::Error::new(
             std::io::ErrorKind::Other,
-            format!("Missing file extension {}", rom.display()),
+            format!("Missing file extension {}", args.rom.display()),
         )),
         Some(ext) => match ext.to_str() {
             Some("zip") => {
-                let f = std::fs::File::open(rom)?;
+                let f = std::fs::File::open(&args.rom)?;
                 let mut z = zip::ZipArchive::new(f)?;
                 let mut res = None;
                 for c_id in 0..z.len() {
@@ -318,7 +292,7 @@ fn main() -> Result<(), std::io::Error> {
                     ))
                 }
             }
-            Some("gb") | Some("gbc") => Ok(std::fs::read(rom)?),
+            Some("gb") | Some("gbc") => Ok(std::fs::read(&args.rom)?),
             Some(e) => Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("Unknown Extension {}", e),
@@ -344,13 +318,13 @@ fn main() -> Result<(), std::io::Error> {
 
     let mut gb = GB::new(
         cart,
-        matches.occurrences_of("trace") > 0,
+        args.trace,
         boot_rom,
-        palette,
+        args.palette,
         Some((gb::cycles::SECOND / 65536).into()),
     );
 
-    if matches.occurrences_of("no-display") > 0 {
+    if args.no_display {
         loop {
             if let GBReason::Dead = gb.step(None, &mut PeripheralData::empty()) {
                 break;

@@ -1,9 +1,10 @@
-use clap::{Arg, Command};
+use clap::Parser;
 use gb::instr::{Addr, Disasm, Instr, NameAddressFn};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::io::{Read, Seek, SeekFrom};
 use std::ops::Range;
+use std::path::{Path, PathBuf};
 
 use intervaltree::IntervalTree;
 #[derive(Debug, Clone, PartialEq)]
@@ -374,38 +375,27 @@ where
     Ok(())
 }
 
+#[derive(Parser)]
+struct Args {
+    #[clap(help = "Maybe helps find existing symbols in your file")]
+    symbols_rom: Vec<PathBuf>,
+    #[clap(help = "Rom file to use")]
+    rom: PathBuf,
+}
+
 fn main() -> std::io::Result<()> {
-    let matches = Command::new("ROM Disassembler")
-        .version("0.0.1")
-        .author("Mitch Souders. <mitch.souders@gmail.com>")
-        .about("Disassembles GB Roms")
-        .arg(
-            Arg::new("SYMBOLS_ROM")
-                .short('s')
-                .multiple_values(true)
-                .number_of_values(1)
-                .value_name("FILE")
-                .help("Maybe helps find existing symbols in your file")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::new("ROM")
-                .help("Sets the rom file to use")
-                .required(true)
-                .index(1),
-        )
-        .get_matches();
+    let args = Args::parse();
 
     dis_rom(
-        matches.value_of("ROM").unwrap(),
-        matches.values_of("SYMBOLS_ROM").map(|v| v.collect()),
+        &args.rom,
+        &args.symbols_rom,
         &std::path::PathBuf::from("dis"),
     )
 }
 
 fn dis_rom(
-    rom_name: &str,
-    symbols: Option<Vec<&str>>,
+    rom_name: &Path,
+    symbols: &[PathBuf],
     dis_dir: &std::path::PathBuf,
 ) -> std::io::Result<()> {
     let mut entry_points = HashSet::new();
@@ -414,13 +404,11 @@ fn dis_rom(
     let num_banks = rom_size / BANK_SIZE;
 
     let mut master_syms = WlaSym::default();
-    if let Some(symbols) = symbols {
-        for symbol in symbols {
-            let sym_file = std::fs::read_to_string(symbol).unwrap();
-            let (remaining, syms) = wla_parse::parse(&sym_file).unwrap();
-            assert_eq!(remaining, "");
-            master_syms.merge(syms);
-        }
+    for symbol in symbols {
+        let sym_file = std::fs::read_to_string(symbol).unwrap();
+        let (remaining, syms) = wla_parse::parse(&sym_file).unwrap();
+        assert_eq!(remaining, "");
+        master_syms.merge(syms);
     }
 
     let bank_map = IntervalTree::from_iter((0..num_banks as u8).map(|b| {

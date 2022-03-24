@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 zip = "0.6.0"
-clap = "3.1.6"
+clap = {version="3.1.6", features=["derive"]}
 gb = { path = "../core" }
 
 [dependencies.sdl2]

@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 nom = "7.1.1"
 itertools = "0.10.3"
-clap = "3.1.6"
+clap = {version="3.1.6", features=["derive"]}
 gb = { path = "../core" }
 intervaltree = "0.2.7"
 
