@@ -39,7 +39,7 @@ impl GB {
         let has_bootrom = boot_rom.is_some();
         let cgb = cart.cgb();
         let hash = cart.title_hash();
-        let dis = *cart.title().as_bytes().iter().nth(3).unwrap();
+        let dis = cart.title_bytes()[3];
         let mut gb = GB {
             cpu: CPU::new(trace),
             mem: MMUInternal::new(cart, boot_rom, audio_sample_rate),

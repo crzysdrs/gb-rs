@@ -75,6 +75,9 @@ pub trait Peripheral: Addressable {
 }
 
 pub trait Addressable {
+    fn is_rom(&mut self, _addr: u16) -> bool {
+        false
+    }
     fn read_byte(&mut self, addr: u16) -> u8;
     fn write_byte(&mut self, addr: u16, v: u8);
 

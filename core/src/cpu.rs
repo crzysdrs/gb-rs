@@ -287,12 +287,13 @@ impl CPU {
         self.reg.dump();
     }
     fn manage_interrupt(&mut self, mem: &mut MMU) {
-        let iflag = mem.read_byte_noeffect(MemRegister::IF as u16);
-        let ienable = mem.read_byte_noeffect(MemRegister::IE as u16);
-        let mut interrupt = Interrupt::try_from(&[iflag & ienable][..]).unwrap();
-        if interrupt == Interrupt::try_from(&[0][..]).unwrap() {
+        let iflag = mem.bus.iflag().reg();
+        let ienable = mem.bus.ienable().reg();
+        if (iflag & ienable) == 0 {
             /* no change */
         } else if self.reg.ime != 0 {
+            let mut interrupt = Interrupt::try_from(&[iflag & ienable][..]).unwrap();
+
             self.reg.ime = 0;
             let addr = if interrupt.get_vblank() {
                 interrupt.set_vblank(false);
@@ -313,7 +314,7 @@ impl CPU {
                 panic!("Unknown interrupt {:?}", interrupt);
             };
             //Clear highest interrupt
-            mem.write_byte_noeffect(0xff0f, interrupt.to_bytes()[0]);
+            mem.bus.iflag().set_reg(interrupt.to_bytes()[0]);
             self.push16(mem, Reg16::PC);
             self.move_pc(mem, addr);
             self.halted = false;

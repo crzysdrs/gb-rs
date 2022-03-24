@@ -28,6 +28,7 @@ pub struct Cart {
     mbc: Option<MBCType>,
     battery: bool,
     title: String,
+    title_bytes: Vec<u8>,
     cgb: CGBStatus,
     cart: Box<dyn MBC>,
 }
@@ -74,6 +75,10 @@ impl Addressable for Cart {
     fn write_byte(&mut self, addr: u16, v: u8) {
         self.cart.write_byte(addr, v);
     }
+
+    fn is_rom(&mut self, addr: u16) -> bool {
+        self.cart.is_rom(addr)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -89,6 +94,9 @@ impl Cart {
     pub fn title(&self) -> &String {
         &self.title
     }
+    pub fn title_bytes(&self) -> &[u8] {
+        &self.title_bytes
+    }
     pub fn cgb(&self) -> CGBStatus {
         self.cgb
     }
@@ -102,6 +110,7 @@ impl Cart {
     pub fn fake() -> Cart {
         Cart {
             title: "Fake ROM".to_string(),
+            title_bytes: b"Fake ROM".to_vec(),
             cgb: CGBStatus::GB,
             mbc: None,
             battery: false,
@@ -121,11 +130,12 @@ impl Cart {
             CGBStatus::SupportsCGB | CGBStatus::CGBOnly => 0x143,
             _ => 0x144,
         };
-        let end = rom[0x134..end]
+        let title_bytes = &rom[0x134..end];
+        let len = title_bytes
             .iter()
             .position(|b| *b == 0)
             .unwrap_or(end - 0x134);
-        let title = std::str::from_utf8(rom[0x134..][..end].as_ref())
+        let title = std::str::from_utf8(title_bytes[..len].as_ref())
             .unwrap_or("Invalid Title")
             .to_owned();
 
@@ -177,6 +187,7 @@ impl Cart {
         println!("ROM Claimed Size: {}", (32 << 10) << rom[0x148]);
         println!("ROM: {:4x}", rom[0x148]);
 
+        let title_bytes = title_bytes.to_vec();
         let physical = CartPhysical::new(vec![0u8; ram_size], rom);
         let peripheral: Box<dyn MBC> = match mbc {
             None | Some(MBC1) => Box::new(CartMBC1 { cart: physical }),
@@ -190,6 +201,7 @@ impl Cart {
         };
         Cart {
             title,
+            title_bytes,
             cgb,
             mbc,
             battery,
@@ -493,6 +505,13 @@ impl MBC for CartMBC5 {
 impl Peripheral for CartMBC5 {}
 
 impl Addressable for CartMBC5 {
+    fn is_rom(&mut self, addr: u16) -> bool {
+        match addr {
+            0x0000..=0x3FFF => true,
+            0x4000..=0x7FFF => true,
+            _ => false,
+        }
+    }
     fn read_byte(&mut self, addr: u16) -> u8 {
         match addr {
             0x0000..=0x3FFF => {

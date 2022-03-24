@@ -66,4 +66,7 @@ impl Addressable for Mem {
     fn read_byte(&mut self, addr: u16) -> u8 {
         *self.lookup(addr)
     }
+    fn is_rom(&mut self, _addr: u16) -> bool {
+        self.read_only
+    }
 }

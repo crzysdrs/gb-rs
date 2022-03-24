@@ -208,6 +208,9 @@ where
     fn write_byte(&mut self, addr: u16, v: u8) {
         self.peripheral.write_byte(addr, v);
     }
+    fn is_rom(&mut self, mut addr: u16) -> bool {
+        self.peripheral.is_rom(addr)
+    }
 }
 
 pub struct MMU<'b, 'c> {
@@ -241,6 +244,13 @@ pub struct MMUInternal {
 }
 
 impl MMUInternal {
+    pub fn ienable(&mut self) -> &mut MemReg {
+        &mut self.interrupt_enable
+    }
+    pub fn iflag(&mut self) -> &mut MemReg {
+        &mut self.interrupt_flag
+    }
+
     pub fn mbc_rom(&mut self) -> &mut Vec<u8> {
         self.cart.inner_mut().mbc_rom()
     }
@@ -259,6 +269,7 @@ impl MMUInternal {
         boot_rom: Option<Vec<u8>>,
         audio_sample_rate: Option<cycles::CycleCount>,
     ) -> Self {
+        let bios_exists = boot_rom.is_some();
         let bios = Mem::new(
             true,
             0,
@@ -279,7 +290,7 @@ impl MMUInternal {
             time: cycles::Cycles::new(0),
             last_sync: cycles::Cycles::new(0),
             seek_pos: 0,
-            bios_exists: true,
+            bios_exists,
             bios,
             cart: SyncPeripheral::new(cart),
             svbk: MemReg::new(0, 0b111, 0b111),
@@ -299,7 +310,7 @@ impl MMUInternal {
             interrupt_enable,
         }
     }
-    fn lookup_peripheral(&mut self, addr: &mut u16) -> &mut dyn Peripheral {
+    pub fn lookup_peripheral(&mut self, addr: &mut u16) -> &mut dyn Peripheral {
         match addr {
             0x0000..=0x00FF => {
                 if self.bios_exists {
@@ -379,17 +390,11 @@ impl MMUInternal {
                     }
                 })
                 .filter_map(|x| x)
-                .fold(None, |acc, i| {
-                    if let Some(acc) = acc {
-                        Some(acc | i)
-                    } else {
-                        Some(i)
-                    }
-                });
+                .fold(Interrupt::new(), |acc, i| acc | i);
             self.last_sync = self.time;
 
-            let mut v = vec![];
             if self.dma.inner_mut().is_active() {
+                let mut v = vec![];
                 self.dma.force_step(data, cycles);
                 v.extend(self.dma.inner_mut().copy_bytes());
                 for (s, d) in v {
@@ -397,8 +402,8 @@ impl MMUInternal {
                     self.write_byte_noeffect(data, d, v);
                 }
             }
-            let mut v = vec![];
             if self.hdma.inner_mut().is_active() {
+                let mut v = vec![];
                 /* TODO: This needs to hook into Hblanks in some cases */
                 self.hdma.force_step(data, cycles);
                 v.extend(self.hdma.inner_mut().copy_bytes());
@@ -408,21 +413,19 @@ impl MMUInternal {
                 }
             }
 
-            if let Some(interrupt_flag) = interrupt_flag {
-                let flags = Interrupt::try_from(&[self.interrupt_flag.reg()][..]).unwrap();
-                let mut rhs = flags | interrupt_flag;
-                if !self.get_display().display_enabled() {
-                    /* remove vblank from IF when display disabled.
-                    We still want it to synchronize speed with display */
-                    rhs.set_vblank(false);
-                }
-                if rhs != flags {
-                    self.interrupt_flag.set_reg(rhs.to_bytes()[0]);
-                }
+            let flags = Interrupt::try_from(&[self.interrupt_flag.reg()][..]).unwrap();
+            let mut rhs = flags | interrupt_flag;
+            if !self.get_display().display_enabled() {
+                /* remove vblank from IF when display disabled.
+                We still want it to synchronize speed with display */
+                rhs.set_vblank(false);
+            }
+            if rhs != flags {
+                self.interrupt_flag.set_reg(rhs.to_bytes()[0]);
+            }
 
-                if interrupt_flag.get_vblank() {
-                    data.vblank = true;
-                }
+            if interrupt_flag.get_vblank() {
+                data.vblank = true;
             }
         }
     }
@@ -522,11 +525,18 @@ impl Addressable for MMU<'_, '_> {
 
 impl MMUInternal {
     fn read_byte_noeffect(&mut self, data: &mut PeripheralData, mut addr: u16) -> u8 {
-        self.sync_peripherals(data, false);
-        let p = self.lookup_peripheral(&mut addr);
-        p.force_step(data, cycles::Cycles::new(0));
-        let v = p.read_byte(addr);
-        p.force_step(data, cycles::Cycles::new(0));
+        let mut tmp_addr = addr;
+        let p = self.lookup_peripheral(&mut tmp_addr);
+        let v = if p.is_rom(tmp_addr) {
+            p.read_byte(tmp_addr)
+        } else {
+            self.sync_peripherals(data, false);
+            let p = self.lookup_peripheral(&mut addr);
+            p.force_step(data, cycles::Cycles::new(0));
+            let v = p.read_byte(addr);
+            p.force_step(data, cycles::Cycles::new(0));
+            v
+        };
         self.main_bus(false, addr, v);
         v
     }
