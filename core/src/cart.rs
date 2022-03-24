@@ -121,7 +121,11 @@ impl Cart {
             CGBStatus::SupportsCGB | CGBStatus::CGBOnly => 0x143,
             _ => 0x144,
         };
-        let title = std::str::from_utf8(rom[0x134..end].as_ref())
+        let end = rom[0x134..end]
+            .iter()
+            .position(|b| *b == 0)
+            .unwrap_or(end - 0x134);
+        let title = std::str::from_utf8(rom[0x134..][..end].as_ref())
             .unwrap_or("Invalid Title")
             .to_owned();
 
