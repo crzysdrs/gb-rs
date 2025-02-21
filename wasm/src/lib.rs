@@ -12,9 +12,6 @@ macro_rules! log {
     }
 }
 
-#[wasm_bindgen]
-pub struct ClosureHandle(Closure<dyn FnMut()>);
-
 fn request_animation_frame(f: &Closure<dyn FnMut()>) {
     web_sys::window()
         .unwrap()
@@ -158,7 +155,6 @@ pub fn start() {
     let rgba = 4;
     use wasm_bindgen::Clamped;
     let mut raw = vec![0; height * width * rgba];
-    let mut frames = 0;
     use gb::controller::GBControl;
     let keys = std::rc::Rc::new(std::cell::RefCell::new(0xff));
 
@@ -302,7 +298,6 @@ pub fn start() {
                             context.scale(2.0, 2.0).unwrap();
                             context.put_image_data(&lcd, 0.0, 0.0).unwrap();
                         }
-                        frames += 1;
                     }
                     GBReason::Timeout => {
                         sound_buf.commit();

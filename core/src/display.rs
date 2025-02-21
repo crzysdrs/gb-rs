@@ -1474,7 +1474,7 @@ impl Peripheral for Display {
                 DisplayState::OAMSearch => 20,
                 DisplayState::PixelTransfer => 43,
                 DisplayState::HBlank => 51,
-                DisplayState::VBlank => (43 + 51 + 20),
+                DisplayState::VBlank => 43 + 51 + 20,
             } * cycles::GB;
             Some(self.unused_cycles.next_ready(next_change))
         } else {

@@ -1,2 +1,3 @@
 [workspace]
 members = ["core", "sdl", "wasm", "dis"]
+resolver = "2"

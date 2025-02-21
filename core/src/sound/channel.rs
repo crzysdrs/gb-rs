@@ -129,7 +129,7 @@ pub trait LengthPass: HasRegs {
     fn length(&self, max: u16) -> u16 {
         match max {
             64 => 64 - (u16::from(*self.nrx1) & 0b0011_1111),
-            256 => (256 - u16::from(*self.nrx1)),
+            256 => 256 - u16::from(*self.nrx1),
             _ => unreachable!("Invalid Length in LengthPass"),
         }
     }

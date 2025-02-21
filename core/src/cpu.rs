@@ -129,9 +129,6 @@ where
         self.write(reg, (val & mask) | (old & !mask));
     }
     fn read(&self, reg: Register) -> Self::Output;
-    fn read_mask(&self, reg: Register, mask: Self::Output) -> Self::Output {
-        self.read(reg) & mask
-    }
 }
 
 impl RegType<Reg8> for Registers {
@@ -248,10 +245,6 @@ impl Registers {
         mask_u8!(Flag::Z | Flag::N | Flag::H | Flag::C)
     }
 }
-
-trait AnyReg: Copy {}
-impl AnyReg for Reg8 {}
-impl AnyReg for Reg16 {}
 
 impl CPU {
     pub fn new(trace: bool) -> CPU {

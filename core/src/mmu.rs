@@ -208,7 +208,7 @@ where
     fn write_byte(&mut self, addr: u16, v: u8) {
         self.peripheral.write_byte(addr, v);
     }
-    fn is_rom(&mut self, mut addr: u16) -> bool {
+    fn is_rom(&mut self, addr: u16) -> bool {
         self.peripheral.is_rom(addr)
     }
 }
